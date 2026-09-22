@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StudyFlow — Library Management</title>
+  <meta name="description" content="StudyFlow is a production-quality Study Library Management SaaS for owners to manage seats, students, memberships, payments, and attendance." />
+  <meta name="theme-color" content="#6172f3" />
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;450;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="css/tokens.css" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/pages.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Loading screen -->
+    <div id="app-loader" style="
+      position:fixed;inset:0;
+      background:var(--color-bg-primary);
+      display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;
+      z-index:9999;
+      transition:opacity 0.3s;
+    ">
+      <div style="
+        width:56px;height:56px;
+        background:linear-gradient(135deg, var(--sf-indigo-500) 0%, var(--sf-indigo-700) 100%);
+        border-radius:16px;
+        display:flex;align-items:center;justify-content:center;
+        font-size:22px;font-weight:800;color:white;letter-spacing:-0.5px;
+        box-shadow: 0 8px 24px rgba(97,114,243,0.4);
+      ">SF</div>
+      <div style="text-align:center;">
+        <div style="font-size:22px;font-weight:700;color:var(--color-text-primary);letter-spacing:-0.5px;">StudyFlow</div>
+        <div style="font-size:13px;color:var(--color-text-tertiary);margin-top:4px;">Loading your library...</div>
+      </div>
+      <div class="spinner" style="border-color:var(--sf-indigo-200);border-top-color:var(--sf-indigo-600);"></div>
+    </div>
+  </div>
+
+  <!-- Scripts (load order matters!) -->
+  <script src="js/icons.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/seed.js"></script>
+  <script src="js/bundle.js"></script>
+
+  <script>
+    // Robust loader dismissal
+    function dismissAppLoader() {
+      const loader = document.getElementById('app-loader');
+      if (loader) {
+        loader.style.opacity = '0';
+        loader.style.pointerEvents = 'none';
+        setTimeout(() => { if (loader.parentNode) loader.remove(); }, 300);
+      }
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => setTimeout(dismissAppLoader, 200));
+    } else {
+      setTimeout(dismissAppLoader, 200);
+    }
+  </script>
+</body>
+</html>

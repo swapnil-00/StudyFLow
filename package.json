@@ -1,0 +1,25 @@
+{
+  "name": "studyflow",
+  "version": "1.0.0",
+  "description": "StudyFlow — Production Study Library Management SaaS",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "migrate": "node db/migrate.js",
+    "build": "node build.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "pg": "^8.13.3"
+  },
+  "devDependencies": {},
+  "keywords": [
+    "library-management",
+    "study-hall",
+    "seat-booking",
+    "neon-db",
+    "postgresql"
+  ],
+  "author": "StudyFlow",
+  "license": "ISC"
+}
