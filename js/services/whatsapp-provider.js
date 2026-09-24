@@ -154,12 +154,29 @@ class MetaWhatsAppProvider extends BaseWhatsAppProvider {
     this.businessAccountId = config.businessAccountId || '';
   }
 
+  _getCredentials() {
+    const s = (typeof store !== 'undefined' && store.getSettings) ? store.getSettings() : {};
+    return {
+      token: this.accessToken || s.waToken || '',
+      phoneNumberId: this.phoneNumberId || s.waPhoneId || ''
+    };
+  }
+
   async sendTemplateMessage({ to, templateName, language = 'en', variables = {}, document = null }) {
     try {
+      const creds = this._getCredentials();
       const response = await fetch('/api/notify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to, templateName, language, variables, document })
+        body: JSON.stringify({
+          to,
+          templateName,
+          language,
+          variables,
+          document,
+          token: creds.token,
+          phoneNumberId: creds.phoneNumberId
+        })
       });
 
       const data = await response.json();
@@ -189,10 +206,16 @@ class MetaWhatsAppProvider extends BaseWhatsAppProvider {
 
   async sendTextMessage({ to, text }) {
     try {
+      const creds = this._getCredentials();
       const response = await fetch('/api/notify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to, customText: text })
+        body: JSON.stringify({
+          to,
+          customText: text,
+          token: creds.token,
+          phoneNumberId: creds.phoneNumberId
+        })
       });
       const data = await response.json();
       return {
@@ -208,12 +231,15 @@ class MetaWhatsAppProvider extends BaseWhatsAppProvider {
 
   async sendDocument({ to, documentUrl, filename, caption = '' }) {
     try {
+      const creds = this._getCredentials();
       const response = await fetch('/api/notify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           to,
-          document: { url: documentUrl, filename: filename || 'Invoice.pdf', caption }
+          document: { url: documentUrl, filename: filename || 'Invoice.pdf', caption },
+          token: creds.token,
+          phoneNumberId: creds.phoneNumberId
         })
       });
       const data = await response.json();

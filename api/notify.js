@@ -1,61 +1,97 @@
 // api/notify.js — Server-side WhatsApp notification dispatcher
-// Ensures WhatsApp Business API credentials stay strictly on the server
-const { cors, query } = require('./db');
+// Supports Meta WhatsApp Cloud API (Graph API) with custom tenant credentials or server env variables
+const { cors } = require('./db');
+const { getAuthSession } = require('./auth-util');
 
 module.exports = async function handler(req, res) {
   cors(res);
   if (req.method === 'OPTIONS') { res.status(204).end(); return; }
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'POST only' });
 
-  const { to, templateName, language = 'en', variables = {}, document = null, messageId = null } = req.body || {};
+  const {
+    to,
+    templateName,
+    language = 'en',
+    variables = {},
+    document = null,
+    customText = null,
+    text = null,
+    phoneNumberId: overridePhoneId,
+    token: overrideToken
+  } = req.body || {};
 
-  const token = process.env.WHATSAPP_TOKEN;
-  const phoneNumberId = process.env.WHATSAPP_PHONE_ID;
+  // Priority: 1. Body override / tenant settings, 2. Process environment variables
+  const token = overrideToken || process.env.WHATSAPP_TOKEN;
+  const phoneNumberId = overridePhoneId || process.env.WHATSAPP_PHONE_ID;
 
-  // If no server-side credentials are configured, return mock delivery response
+  // Clean and format recipient phone number (E.164 without plus)
+  let cleanTo = String(to || '').replace(/[^0-9]/g, '');
+  if (cleanTo.length === 10) {
+    cleanTo = '91' + cleanTo; // Default to India prefix if 10 digits
+  }
+
+  // If no live WhatsApp Cloud API credentials are provided, return mock success with helpful guide
   if (!token || !phoneNumberId) {
-    const mockId = `mock_server_wa_${Date.now()}`;
+    const mockId = `mock_wa_${Date.now()}`;
     return res.status(200).json({
       ok: true,
       provider: 'mock',
       providerMessageId: mockId,
       status: 'SENT',
-      note: 'Processed via Mock Provider. Set WHATSAPP_TOKEN & WHATSAPP_PHONE_ID in Vercel to enable live delivery.'
+      note: 'Processed via Mock Sandbox. To deliver real WhatsApp messages, enter WhatsApp Phone ID & Token in Settings or set WHATSAPP_TOKEN & WHATSAPP_PHONE_ID in Vercel.'
     });
   }
 
-  // Format body parameters for Meta WhatsApp Cloud API
-  const parameters = Object.entries(variables).map(([key, value]) => ({
-    type: 'text',
-    text: String(value)
-  }));
-
-  const components = [{ type: 'body', parameters }];
-
-  if (document && document.url) {
-    components.unshift({
-      type: 'header',
-      parameters: [{
-        type: 'document',
-        document: {
-          link: document.url,
-          filename: document.filename || 'Document.pdf'
-        }
-      }]
-    });
+  if (!cleanTo) {
+    return res.status(400).json({ ok: false, error: 'Recipient phone number is required' });
   }
 
-  const payload = {
-    messaging_product: 'whatsapp',
-    recipient_type: 'individual',
-    to: String(to).replace(/[^0-9]/g, ''),
-    type: 'template',
-    template: {
-      name: templateName,
-      language: { code: language },
-      components
+  let payload;
+
+  const msgText = customText || text;
+  if (msgText && !templateName) {
+    // Direct WhatsApp Text Message
+    payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: cleanTo,
+      type: 'text',
+      text: { body: msgText }
+    };
+  } else {
+    // Official Approved WhatsApp Template
+    const parameters = Object.entries(variables).map(([key, value]) => ({
+      type: 'text',
+      text: String(value)
+    }));
+
+    const components = [{ type: 'body', parameters }];
+
+    if (document && document.url) {
+      components.unshift({
+        type: 'header',
+        parameters: [{
+          type: 'document',
+          document: {
+            link: document.url,
+            filename: document.filename || 'Invoice.pdf'
+          }
+        }]
+      });
     }
-  };
+
+    payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: cleanTo,
+      type: 'template',
+      template: {
+        name: templateName || 'seat_assignment_confirmation',
+        language: { code: language },
+        components
+      }
+    };
+  }
 
   try {
     const metaRes = await fetch(`https://graph.facebook.com/v19.0/${phoneNumberId}/messages`, {
@@ -89,3 +125,4 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ ok: false, error: err.message });
   }
 };
+
