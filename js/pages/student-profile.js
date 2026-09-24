@@ -64,7 +64,7 @@ export function renderStudentProfile(container, params) {
           <button class="btn btn-secondary" onclick="openRenewModal('${studentId}', '${seat?.id}')">
             ${icons.repeat} Renew
           </button>` : ''}
-          ${!assignment ? `<button class="btn btn-primary" onclick="openAssignModal()">
+          ${!assignment ? `<button class="btn btn-primary" onclick="openAssignModal(null, '${studentId}')">
             ${icons['map-pin']} Assign Seat
           </button>` : ''}
           <button class="btn btn-secondary" onclick="openEditStudentModal('${studentId}')">
@@ -165,7 +165,7 @@ export function renderStudentProfile(container, params) {
                 <div class="empty-state" style="padding:var(--space-6);">
                   <div class="empty-icon">${icons.map}</div>
                   <div class="empty-title" style="font-size:var(--text-sm);">No seat assigned</div>
-                  <button class="btn btn-secondary btn-sm" onclick="openAssignModal()">Assign Seat</button>
+                  <button class="btn btn-secondary btn-sm" onclick="openAssignModal(null, '${studentId}')">Assign Seat</button>
                 </div>
               `}
             </div>

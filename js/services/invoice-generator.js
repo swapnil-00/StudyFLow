@@ -13,7 +13,9 @@ const invoiceGenerator = {
     const settings = store.getSettings();
 
     const invoiceNumber = `INV-${new Date().getFullYear()}-${Math.floor(10000 + Math.random() * 90000)}`;
-    const payment = paymentId ? store.getPayment(paymentId) : (membership ? store.getPaymentsForMembership(membership.id)[0] : null);
+    const payment = paymentId
+      ? (store.getPayment ? store.getPayment(paymentId) : (store.getPayments ? store.getPayments().find(p => p.id === paymentId) : null))
+      : (membership ? (store.getPaymentsForMembership ? store.getPaymentsForMembership(membership.id)[0] : (store.getPayments ? store.getPayments(membership.id)[0] : null)) : null);
 
     const baseAmount = membership?.price || 0;
     const discount = membership?.discount || 0;
@@ -63,7 +65,7 @@ const invoiceGenerator = {
 
   // ── 2. Generate Payment Receipt ──────────────────────────────────
   generateReceipt({ paymentId, studentId = null, membershipId = null }) {
-    const payment = store.getPayment(paymentId);
+    const payment = (store.getPayment ? store.getPayment(paymentId) : (store.getPayments ? store.getPayments().find(p => p.id === paymentId) : null)) || null;
     const mId = membershipId || payment?.membershipId;
     const membership = mId ? store.getMembership(mId) : null;
     const sId = studentId || payment?.studentId || membership?.studentId;

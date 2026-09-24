@@ -503,6 +503,16 @@ class Store {
     return membershipId ? payments.filter(p => p.membershipId === membershipId) : payments;
   }
 
+  getPayment(paymentId) {
+    if (!paymentId) return null;
+    const payments = this._db?.payments || [];
+    return payments.find(p => p.id === paymentId || p.receiptNumber === paymentId || p.referenceNumber === paymentId) || null;
+  }
+
+  getPaymentsForMembership(membershipId) {
+    return this.getPayments(membershipId);
+  }
+
   getPaymentsForStudent(studentId) {
     const membershipIds = this.getMemberships(studentId).map(m => m.id);
     return (this._db?.payments || []).filter(p => membershipIds.includes(p.membershipId));

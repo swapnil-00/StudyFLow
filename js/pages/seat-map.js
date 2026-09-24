@@ -474,13 +474,14 @@ window.releaseMaintenance = function(seatId) {
 };
 
 // ── Assign Seat Modal ─────────────────────────────────────────────
-window.openAssignModal = function(seatId) {
+window.openAssignModal = function(seatId, preselectedStudentId) {
   const branchId = store.getActiveBranchId();
   const students = store.getStudents(branchId);
   const plans = store.getMembershipPlans(branchId);
 
   // Pre-fill if seat already selected
   const seat = seatId ? store.getSeat(seatId) : null;
+  const targetStudentId = preselectedStudentId || null;
 
   // Get available seats
   const allSeats = store.getSeatsForBranch(branchId);
@@ -496,7 +497,8 @@ window.openAssignModal = function(seatId) {
           <option value="">Select student...</option>
           ${students.map(s => {
             const hasActiveSeat = !!store.getStudentAssignment(s.id);
-            return `<option value="${s.id}" ${hasActiveSeat ? 'disabled' : ''}>${s.name} — ${s.phone}${hasActiveSeat ? ' (has seat)' : ''}</option>`;
+            const isSelected = (s.id === targetStudentId);
+            return `<option value="${s.id}" ${isSelected ? 'selected' : ''} ${hasActiveSeat && !isSelected ? 'disabled' : ''}>${s.name} — ${s.phone}${hasActiveSeat && !isSelected ? ' (has seat)' : ''}</option>`;
           }).join('')}
         </select>
       </div>
@@ -610,7 +612,7 @@ window.openAssignModal = function(seatId) {
   };
 };
 
-window.confirmAssignSeat = function() {
+window.confirmAssignSeat = async function() {
   const studentId = document.getElementById('assign-student-id')?.value;
   const seatId = document.getElementById('assign-seat-id')?.value;
   const planId = document.getElementById('assign-plan-id')?.value;
@@ -631,7 +633,7 @@ window.confirmAssignSeat = function() {
 
   try {
     // Create membership
-    const membership = store.addMembership({
+    const membership = await store.addMembership({
       studentId,
       planId,
       planName: plan.name,
@@ -643,7 +645,7 @@ window.confirmAssignSeat = function() {
     });
 
     // Assign seat
-    store.assignSeat({
+    await store.assignSeat({
       studentId,
       seatId,
       membershipId: membership.id,
@@ -664,7 +666,7 @@ window.confirmAssignSeat = function() {
 
     let paymentRecord = null;
     if (payAmount > 0) {
-      paymentRecord = store.recordPayment({
+      paymentRecord = await store.recordPayment({
         membershipId: membership.id,
         studentId,
         amount: payAmount,

@@ -568,6 +568,16 @@ class Store {
     return membershipId ? payments.filter(p => p.membershipId === membershipId) : payments;
   }
 
+  getPayment(paymentId) {
+    if (!paymentId) return null;
+    const payments = this._db?.payments || [];
+    return payments.find(p => p.id === paymentId || p.receiptNumber === paymentId || p.referenceNumber === paymentId) || null;
+  }
+
+  getPaymentsForMembership(membershipId) {
+    return this.getPayments(membershipId);
+  }
+
   getPaymentsForStudent(studentId) {
     const membershipIds = this.getMemberships(studentId).map(m => m.id);
     return (this._db?.payments || []).filter(p => membershipIds.includes(p.membershipId));
@@ -1362,7 +1372,9 @@ const invoiceGenerator = {
     const settings = store.getSettings();
 
     const invoiceNumber = `INV-${new Date().getFullYear()}-${Math.floor(10000 + Math.random() * 90000)}`;
-    const payment = paymentId ? store.getPayment(paymentId) : (membership ? store.getPaymentsForMembership(membership.id)[0] : null);
+    const payment = paymentId
+      ? (store.getPayment ? store.getPayment(paymentId) : (store.getPayments ? store.getPayments().find(p => p.id === paymentId) : null))
+      : (membership ? (store.getPaymentsForMembership ? store.getPaymentsForMembership(membership.id)[0] : (store.getPayments ? store.getPayments(membership.id)[0] : null)) : null);
 
     const baseAmount = membership?.price || 0;
     const discount = membership?.discount || 0;
@@ -1412,7 +1424,7 @@ const invoiceGenerator = {
 
   // ── 2. Generate Payment Receipt ──────────────────────────────────
   generateReceipt({ paymentId, studentId = null, membershipId = null }) {
-    const payment = store.getPayment(paymentId);
+    const payment = (store.getPayment ? store.getPayment(paymentId) : (store.getPayments ? store.getPayments().find(p => p.id === paymentId) : null)) || null;
     const mId = membershipId || payment?.membershipId;
     const membership = mId ? store.getMembership(mId) : null;
     const sId = studentId || payment?.studentId || membership?.studentId;
@@ -3128,13 +3140,14 @@ window.releaseMaintenance = function(seatId) {
 };
 
 // ── Assign Seat Modal ─────────────────────────────────────────────
-window.openAssignModal = function(seatId) {
+window.openAssignModal = function(seatId, preselectedStudentId) {
   const branchId = store.getActiveBranchId();
   const students = store.getStudents(branchId);
   const plans = store.getMembershipPlans(branchId);
 
   // Pre-fill if seat already selected
   const seat = seatId ? store.getSeat(seatId) : null;
+  const targetStudentId = preselectedStudentId || null;
 
   // Get available seats
   const allSeats = store.getSeatsForBranch(branchId);
@@ -3150,7 +3163,8 @@ window.openAssignModal = function(seatId) {
           <option value="">Select student...</option>
           ${students.map(s => {
             const hasActiveSeat = !!store.getStudentAssignment(s.id);
-            return `<option value="${s.id}" ${hasActiveSeat ? 'disabled' : ''}>${s.name} — ${s.phone}${hasActiveSeat ? ' (has seat)' : ''}</option>`;
+            const isSelected = (s.id === targetStudentId);
+            return `<option value="${s.id}" ${isSelected ? 'selected' : ''} ${hasActiveSeat && !isSelected ? 'disabled' : ''}>${s.name} — ${s.phone}${hasActiveSeat && !isSelected ? ' (has seat)' : ''}</option>`;
           }).join('')}
         </select>
       </div>
@@ -3264,7 +3278,7 @@ window.openAssignModal = function(seatId) {
   };
 };
 
-window.confirmAssignSeat = function() {
+window.confirmAssignSeat = async function() {
   const studentId = document.getElementById('assign-student-id')?.value;
   const seatId = document.getElementById('assign-seat-id')?.value;
   const planId = document.getElementById('assign-plan-id')?.value;
@@ -3285,7 +3299,7 @@ window.confirmAssignSeat = function() {
 
   try {
     // Create membership
-    const membership = store.addMembership({
+    const membership = await store.addMembership({
       studentId,
       planId,
       planName: plan.name,
@@ -3297,7 +3311,7 @@ window.confirmAssignSeat = function() {
     });
 
     // Assign seat
-    store.assignSeat({
+    await store.assignSeat({
       studentId,
       seatId,
       membershipId: membership.id,
@@ -3318,7 +3332,7 @@ window.confirmAssignSeat = function() {
 
     let paymentRecord = null;
     if (payAmount > 0) {
-      paymentRecord = store.recordPayment({
+      paymentRecord = await store.recordPayment({
         membershipId: membership.id,
         studentId,
         amount: payAmount,
@@ -4442,7 +4456,7 @@ window.Pages.renderStudentProfile = function renderStudentProfile(container, par
           <button class="btn btn-secondary" onclick="openRenewModal('${studentId}', '${seat?.id}')">
             ${icons.repeat} Renew
           </button>` : ''}
-          ${!assignment ? `<button class="btn btn-primary" onclick="openAssignModal()">
+          ${!assignment ? `<button class="btn btn-primary" onclick="openAssignModal(null, '${studentId}')">
             ${icons['map-pin']} Assign Seat
           </button>` : ''}
           <button class="btn btn-secondary" onclick="openEditStudentModal('${studentId}')">
@@ -4543,7 +4557,7 @@ window.Pages.renderStudentProfile = function renderStudentProfile(container, par
                 <div class="empty-state" style="padding:var(--space-6);">
                   <div class="empty-icon">${icons.map}</div>
                   <div class="empty-title" style="font-size:var(--text-sm);">No seat assigned</div>
-                  <button class="btn btn-secondary btn-sm" onclick="openAssignModal()">Assign Seat</button>
+                  <button class="btn btn-secondary btn-sm" onclick="openAssignModal(null, '${studentId}')">Assign Seat</button>
                 </div>
               `}
             </div>
