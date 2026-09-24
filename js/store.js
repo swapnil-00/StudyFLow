@@ -206,18 +206,23 @@ class Store {
     const reservation = this.getActiveReservation(seatId);
     if (reservation && !assignment) return 'reserved';
 
-    const membership = this.getMembership(assignment.membershipId);
-    if (!membership) return 'available';
+    const membership = this.getMembership(assignment.membershipId || assignment.membership_id);
+    if (!membership) return 'occupied';
 
-    const today = new Date();
-    const expiry = new Date(membership.endDate);
+    const todayStr = new Date().toISOString().split('T')[0];
+    const expiryDate = membership.endDate || assignment.endDate || assignment.end_date;
+    const expiryStr = typeof expiryDate === 'string' ? expiryDate.split('T')[0] : (expiryDate ? new Date(expiryDate).toISOString().split('T')[0] : '');
 
     const payment = this.getPaymentStatus(membership.id);
     if (payment === 'overdue' || payment === 'pending') return 'payment-due';
 
-    const daysLeft = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
-    if (daysLeft <= 7 && daysLeft > 0) return 'expiring';
-    if (expiry < today) return 'available';
+    if (expiryDate) {
+      const today = new Date();
+      const expiry = new Date(expiryDate);
+      const daysLeft = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
+      if (daysLeft <= 7 && daysLeft > 0) return 'expiring';
+      if (expiryStr && expiryStr < todayStr) return 'available';
+    }
 
     return 'occupied';
   }
@@ -419,17 +424,27 @@ class Store {
   }
 
   getStudentAssignment(studentId) {
-    const today = new Date();
-    return (this._db?.seatAssignments || []).find(a =>
-      a.studentId === studentId && a.status === 'active' && new Date(a.endDate) >= today
-    );
+    const todayStr = new Date().toISOString().split('T')[0];
+    return (this._db?.seatAssignments || []).find(a => {
+      if (a.studentId !== studentId && a.student_id !== studentId) return false;
+      if (a.status !== 'active') return false;
+      if (!a.endDate && !a.end_date) return true;
+      const end = (a.endDate || a.end_date);
+      const endStr = typeof end === 'string' ? end.split('T')[0] : new Date(end).toISOString().split('T')[0];
+      return endStr >= todayStr;
+    });
   }
 
   getActiveAssignment(seatId) {
-    const today = new Date();
-    return (this._db?.seatAssignments || []).find(a =>
-      a.seatId === seatId && a.status === 'active' && new Date(a.endDate) >= today
-    );
+    const todayStr = new Date().toISOString().split('T')[0];
+    return (this._db?.seatAssignments || []).find(a => {
+      if (a.seatId !== seatId && a.seat_id !== seatId) return false;
+      if (a.status !== 'active') return false;
+      if (!a.endDate && !a.end_date) return true;
+      const end = (a.endDate || a.end_date);
+      const endStr = typeof end === 'string' ? end.split('T')[0] : new Date(end).toISOString().split('T')[0];
+      return endStr >= todayStr;
+    });
   }
 
   async assignSeat(data) {
@@ -451,7 +466,7 @@ class Store {
   }
 
   async releaseSeat(seatId, reason, userId) {
-    const idx = this._db.seatAssignments.findIndex(a => a.seatId === seatId && a.status === 'active');
+    const idx = this._db.seatAssignments.findIndex(a => (a.seatId === seatId || a.seat_id === seatId) && a.status === 'active');
     if (idx === -1) throw new Error('No active assignment found');
     await apiWrite('seat_assignments', 'release', { seatId, reason, userId });
     this._db.seatAssignments[idx] = {
@@ -475,15 +490,29 @@ class Store {
     const destAssignment = this.getActiveAssignment(toSeatId);
     if (destAssignment) throw new Error('Destination seat is already occupied.');
 
-    const fromIdx = this._db.seatAssignments.findIndex(a => a.seatId === fromSeatId && a.status === 'active');
+    let fromIdx = (this._db?.seatAssignments || []).findIndex(a =>
+      (a.seatId === fromSeatId || a.seat_id === fromSeatId) && a.status === 'active'
+    );
+    if (fromIdx === -1 && studentId) {
+      fromIdx = (this._db?.seatAssignments || []).findIndex(a =>
+        (a.studentId === studentId || a.student_id === studentId) && a.status === 'active'
+      );
+    }
     if (fromIdx === -1) throw new Error('Source seat has no active assignment.');
 
     const oldAssignment = this._db.seatAssignments[fromIdx];
-    const fromSeat = this.getSeat(fromSeatId);
+    const actualFromSeatId = oldAssignment.seatId || oldAssignment.seat_id || fromSeatId;
+    const actualStudentId = studentId || oldAssignment.studentId || oldAssignment.student_id;
+    const fromSeat = this.getSeat(actualFromSeatId);
     const toSeat = this.getSeat(toSeatId);
 
     // Atomic transfer execution in backend
-    const res = await apiWrite('seat_assignments', 'transfer', { fromSeatId, toSeatId, studentId, reason });
+    const res = await apiWrite('seat_assignments', 'transfer', {
+      fromSeatId: actualFromSeatId,
+      toSeatId,
+      studentId: actualStudentId,
+      reason
+    });
 
     this._db.seatAssignments[fromIdx] = {
       ...oldAssignment,
@@ -496,22 +525,27 @@ class Store {
       id: res.id || uid('ASN'),
       status: 'active',
       seatId: toSeatId,
-      studentId: oldAssignment.studentId,
-      membershipId: oldAssignment.membershipId,
+      seat_id: toSeatId,
+      studentId: actualStudentId,
+      student_id: actualStudentId,
+      membershipId: oldAssignment.membershipId || oldAssignment.membership_id,
+      membership_id: oldAssignment.membershipId || oldAssignment.membership_id,
       startDate: now(),
-      endDate: oldAssignment.endDate,
+      start_date: now(),
+      endDate: oldAssignment.endDate || oldAssignment.end_date,
+      end_date: oldAssignment.endDate || oldAssignment.end_date,
       createdAt: now(),
-      transferredFrom: fromSeatId
+      transferredFrom: actualFromSeatId
     };
     this._db.seatAssignments.push(newAssignment);
 
     if (fromSeat) { fromSeat.status = 'available'; fromSeat.currentStudentId = null; }
-    if (toSeat) { toSeat.status = 'occupied'; toSeat.currentStudentId = oldAssignment.studentId; }
+    if (toSeat) { toSeat.status = 'occupied'; toSeat.currentStudentId = actualStudentId; }
 
     const transfer = {
       id: res.transferId || uid('TRF'),
-      studentId,
-      fromSeatId,
+      studentId: actualStudentId,
+      fromSeatId: actualFromSeatId,
       toSeatId,
       reason,
       date: now(),
@@ -524,8 +558,8 @@ class Store {
     this.addActivity({
       action: 'seat_transferred',
       entity: 'seat',
-      entityId: fromSeatId,
-      description: `Seat transferred from ${fromSeat?.label || fromSeatId} to ${toSeat?.label || toSeatId}. Reason: ${reason}`
+      entityId: toSeatId,
+      description: `Seat transferred from ${fromSeat?.label || actualFromSeatId} to ${toSeat?.label || toSeatId}. Reason: ${reason}`
     });
     this._notify();
     return newAssignment;

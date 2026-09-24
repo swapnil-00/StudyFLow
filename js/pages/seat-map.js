@@ -975,21 +975,23 @@ window.openTransferModal = function(fromSeatId) {
   `);
 };
 
-window.confirmTransfer = function(fromSeatId, studentId) {
+window.confirmTransfer = async function(fromSeatId, studentId) {
   const toSeatId = document.getElementById('transfer-to-seat')?.value;
-  const reason = document.getElementById('transfer-reason')?.value;
+  const reason = document.getElementById('transfer-reason')?.value || 'Student request';
 
   if (!toSeatId) { toast.show('Please select a destination seat', 'error'); return; }
 
   try {
-    store.transferSeat(fromSeatId, toSeatId, studentId, reason);
-    modal.close();
-    drawer.close();
     const fromSeat = store.getSeat(fromSeatId);
     const toSeat = store.getSeat(toSeatId);
     const student = store.getStudent(studentId);
     const branch = store.getBranch(store.getActiveBranchId());
     const room = toSeat?.roomId ? store.getRoom(toSeat.roomId) : null;
+
+    await store.transferSeat(fromSeatId, toSeatId, studentId, reason);
+
+    modal.close();
+    drawer.close();
 
     if (window.notificationService && student) {
       notificationService.dispatch(NOTIFICATION_EVENTS.SEAT_TRANSFERRED, {
@@ -1006,7 +1008,7 @@ window.confirmTransfer = function(fromSeatId, studentId) {
       });
     }
 
-    toast.show(`Seat transferred to ${toSeat.label}! WhatsApp confirmation sent.`, 'success');
+    toast.show(`Seat transferred to ${toSeat?.label || 'new seat'}! WhatsApp confirmation sent.`, 'success');
     app._navigate();
   } catch (e) {
     toast.show(e.message, 'error');

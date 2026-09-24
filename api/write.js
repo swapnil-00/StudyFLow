@@ -343,14 +343,21 @@ module.exports = async function handler(req, res) {
           }
 
           // Fetch and lock source assignment
-          const curr = await client.query(
+          let curr = await client.query(
             'SELECT * FROM seat_assignments WHERE seat_id = $1 AND status = $2 FOR UPDATE',
             [fromSeatId, 'active']
           );
+          if (curr.rows.length === 0 && studentId) {
+            curr = await client.query(
+              'SELECT * FROM seat_assignments WHERE student_id = $1 AND status = $2 FOR UPDATE',
+              [studentId, 'active']
+            );
+          }
           if (curr.rows.length === 0) {
             return res.status(404).json({ ok: false, error: 'Source seat has no active assignment.' });
           }
           const old = curr.rows[0];
+          const actualFromSeatId = old.seat_id || fromSeatId;
 
           // 1. Mark old assignment transferred
           await client.query(
@@ -361,7 +368,7 @@ module.exports = async function handler(req, res) {
           // 2. Free old seat
           await client.query(
             `UPDATE seats SET status = 'available', current_student_id = NULL WHERE id = $1`,
-            [fromSeatId]
+            [actualFromSeatId]
           );
 
           // 3. Create new assignment
@@ -380,7 +387,7 @@ module.exports = async function handler(req, res) {
           // 5. Insert audit log in seat_transfers
           await client.query(
             `INSERT INTO seat_transfers (id,student_id,from_seat_id,to_seat_id,date,reason) VALUES ($1,$2,$3,$4,$5,$6)`,
-            [transferId, studentId || old.student_id, fromSeatId, toSeatId, now(), reason || '']
+            [transferId, studentId || old.student_id, actualFromSeatId, toSeatId, now(), reason || '']
           );
 
           return res.json({ ok: true, id: newAssignmentId, transferId });
