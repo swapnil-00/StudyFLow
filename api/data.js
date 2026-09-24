@@ -1,40 +1,56 @@
-// api/data.js — Main data API: returns app data from Neon DB
+// api/data.js — Main data API: returns app data from Neon DB partitioned by organization_id
 const { cors, query } = require('./db');
+const { ensureMultiTenantSchema } = require('./db-init');
+const { getAuthSession } = require('./auth-util');
 
 module.exports = async function handler(req, res) {
   cors(res);
   if (req.method === 'OPTIONS') { res.status(204).end(); return; }
 
+  // Ensure tables and columns exist
+  await ensureMultiTenantSchema();
+
   try {
-    const branchFilter = req.query.branchId;
+    const session = getAuthSession(req);
+    const orgId = session?.orgId || req.query.orgId || 'ORG-DEFAULT';
+
+    // Fetch tenant organization metadata
+    const orgRes = await query('SELECT * FROM organizations WHERE id = $1', [orgId]);
+    const org = orgRes.rows[0] || {
+      id: orgId,
+      name: 'StudyFlow Library',
+      plan: 'trial',
+      seat_limit: 75,
+      subscription_status: 'active',
+      currency: 'INR',
+      onboarding_completed: true
+    };
 
     const [
       branches, floors, rooms, seats, students,
       membershipPlans, memberships, seatAssignments,
-      reservations, payments, attendance, expenses,
-      notifications, activityLogs, waitlist, staff,
-      seatTransfers, settingsRes, documentsRes, commLogsRes
+      payments, expenses, notifications, activityLogs,
+      waitlist, staff, seatTransfers, settingsRes,
+      documentsRes, commLogsRes
     ] = await Promise.all([
-      query('SELECT * FROM branches ORDER BY created_at'),
-      query('SELECT * FROM floors ORDER BY created_at'),
-      query('SELECT * FROM rooms ORDER BY created_at'),
-      query('SELECT * FROM seats ORDER BY created_at'),
-      query('SELECT * FROM students ORDER BY created_at DESC'),
-      query('SELECT * FROM membership_plans ORDER BY created_at'),
-      query('SELECT * FROM memberships ORDER BY created_at DESC'),
-      query('SELECT * FROM seat_assignments ORDER BY created_at DESC'),
-      query('SELECT * FROM reservations ORDER BY created_at DESC'),
-      query('SELECT * FROM payments ORDER BY created_at DESC'),
-      query('SELECT * FROM attendance ORDER BY created_at DESC'),
-      query('SELECT * FROM expenses ORDER BY created_at DESC'),
-      query('SELECT * FROM notifications ORDER BY created_at DESC LIMIT 100'),
-      query('SELECT * FROM activity_logs ORDER BY created_at DESC LIMIT 500'),
-      query('SELECT * FROM waitlist ORDER BY created_at DESC'),
-      query('SELECT * FROM staff ORDER BY created_at'),
-      query('SELECT * FROM seat_transfers ORDER BY created_at DESC'),
-      query('SELECT * FROM settings WHERE id=$1', ['default']),
-      query('SELECT * FROM documents ORDER BY created_at DESC LIMIT 100').catch(() => ({ rows: [] })),
-      query('SELECT * FROM communication_logs ORDER BY created_at DESC LIMIT 200').catch(() => ({ rows: [] })),
+      query('SELECT * FROM branches WHERE organization_id = $1 ORDER BY created_at', [orgId]),
+      query('SELECT * FROM floors WHERE organization_id = $1 ORDER BY created_at', [orgId]),
+      query('SELECT * FROM rooms WHERE organization_id = $1 ORDER BY created_at', [orgId]),
+      query('SELECT * FROM seats WHERE organization_id = $1 ORDER BY created_at', [orgId]),
+      query('SELECT * FROM students WHERE organization_id = $1 ORDER BY created_at DESC', [orgId]),
+      query('SELECT * FROM membership_plans WHERE organization_id = $1 ORDER BY created_at', [orgId]),
+      query('SELECT * FROM memberships WHERE organization_id = $1 ORDER BY created_at DESC', [orgId]),
+      query('SELECT * FROM seat_assignments WHERE organization_id = $1 ORDER BY created_at DESC', [orgId]),
+      query('SELECT * FROM payments WHERE organization_id = $1 ORDER BY created_at DESC', [orgId]),
+      query('SELECT * FROM expenses WHERE organization_id = $1 ORDER BY created_at DESC', [orgId]),
+      query('SELECT * FROM notifications WHERE organization_id = $1 ORDER BY created_at DESC LIMIT 100', [orgId]),
+      query('SELECT * FROM activity_logs WHERE organization_id = $1 ORDER BY created_at DESC LIMIT 500', [orgId]),
+      query('SELECT * FROM waitlist WHERE organization_id = $1 ORDER BY created_at DESC', [orgId]),
+      query('SELECT * FROM staff WHERE organization_id = $1 ORDER BY created_at', [orgId]),
+      query('SELECT * FROM seat_transfers WHERE organization_id = $1 ORDER BY created_at DESC', [orgId]),
+      query('SELECT * FROM settings WHERE organization_id = $1 OR id = $1 LIMIT 1', [orgId]),
+      query('SELECT * FROM documents WHERE organization_id = $1 ORDER BY created_at DESC LIMIT 100', [orgId]).catch(() => ({ rows: [] })),
+      query('SELECT * FROM communication_logs WHERE organization_id = $1 ORDER BY created_at DESC LIMIT 200', [orgId]).catch(() => ({ rows: [] })),
     ]);
 
     // Map snake_case DB columns → camelCase for frontend compatibility
@@ -62,14 +78,8 @@ module.exports = async function handler(req, res) {
     function mapAssignment(a) {
       return { id: a.id, seatId: a.seat_id, studentId: a.student_id, membershipId: a.membership_id, branchId: a.branch_id, startDate: a.start_date, endDate: a.end_date, slotType: a.slot_type, status: a.status, createdAt: a.created_at };
     }
-    function mapReservation(r) {
-      return { id: r.id, seatId: r.seat_id, studentId: r.student_id, branchId: r.branch_id, startDate: r.reservation_date || r.start_date, endDate: r.end_date, slotType: r.slot_type, startTime: r.start_time, endTime: r.end_time, notes: r.notes, status: r.status, createdAt: r.created_at };
-    }
     function mapPayment(p) {
       return { id: p.id, studentId: p.student_id, membershipId: p.membership_id, branchId: p.branch_id, amount: parseFloat(p.amount), method: p.mode, mode: p.mode, receiptNumber: p.reference_number, referenceNumber: p.reference_number, date: p.date, recordedAt: p.created_at, notes: p.notes, status: p.status, createdAt: p.created_at };
-    }
-    function mapAttendance(a) {
-      return { id: a.id, studentId: a.student_id, seatId: a.seat_id, branchId: a.branch_id, checkIn: a.check_in, checkOut: a.check_out, date: a.date, method: a.method, status: a.check_out ? 'checked-out' : 'checked-in', createdAt: a.created_at };
     }
     function mapExpense(e) {
       return { id: e.id, branchId: e.branch_id, category: e.category, title: e.title, description: e.title, amount: parseFloat(e.amount), date: e.date, method: e.payment_mode, paymentMode: e.payment_mode, vendor: e.vendor, receiptRef: e.receipt_ref, recordedBy: e.recorded_by, createdAt: e.created_at };
@@ -110,7 +120,6 @@ module.exports = async function handler(req, res) {
         templateName: c.template_name,
         language: c.language,
         bodyText: c.body_text,
-        idempotencyKey: c.idempotency_key,
         status: c.status,
         provider: c.provider,
         providerMessageId: c.provider_message_id,
@@ -125,22 +134,34 @@ module.exports = async function handler(req, res) {
 
     const rawSettings = settingsRes.rows[0] || {};
     const sanitizedData = { ...(rawSettings.data || {}) };
-    // Security: never leak sensitive credentials to client
     delete sanitizedData.waToken;
     delete sanitizedData.accessToken;
     delete sanitizedData.apiKey;
     delete sanitizedData.secretKey;
 
     const settings = {
-      currency: rawSettings.currency || 'INR',
+      currency: org.currency || rawSettings.currency || 'INR',
       timezone: rawSettings.timezone || 'Asia/Kolkata',
-      orgName: rawSettings.org_name || 'StudyFlow Library',
-      address: rawSettings.address || '',
-      phone: rawSettings.phone || '',
-      email: rawSettings.email || '',
+      orgName: org.name || rawSettings.org_name || 'StudyFlow Library',
+      address: org.address || rawSettings.address || '',
+      phone: org.phone || rawSettings.phone || '',
+      email: org.email || rawSettings.email || '',
       theme: rawSettings.theme || 'light',
       ...sanitizedData,
       waConfigured: Boolean(rawSettings.data?.waToken || process.env.WHATSAPP_TOKEN),
+    };
+
+    const organization = {
+      id: org.id,
+      name: org.name,
+      slug: org.slug,
+      plan: org.plan || 'trial',
+      seatLimit: org.seat_limit || 75,
+      currentSeatCount: seats.rows.length,
+      subscriptionStatus: org.subscription_status || 'active',
+      currency: org.currency || 'INR',
+      logoUrl: org.logo_url,
+      onboardingCompleted: org.onboarding_completed !== false
     };
 
     const db = {
@@ -152,9 +173,7 @@ module.exports = async function handler(req, res) {
       membershipPlans: membershipPlans.rows.map(mapPlan),
       memberships: memberships.rows.map(mapMembership),
       seatAssignments: seatAssignments.rows.map(mapAssignment),
-      reservations: reservations.rows.map(mapReservation),
       payments: payments.rows.map(mapPayment),
-      attendance: attendance.rows.map(mapAttendance),
       expenses: expenses.rows.map(mapExpense),
       notifications: notifications.rows.map(mapNotification),
       activityLog: activityLogs.rows.map(mapActivity),
@@ -164,9 +183,10 @@ module.exports = async function handler(req, res) {
       documents: documentsRes.rows.map(mapDocument),
       notificationMessages: commLogsRes.rows.map(mapCommLog),
       settings,
+      organization
     };
 
-    res.status(200).json({ ok: true, db });
+    res.status(200).json({ ok: true, db, organization });
   } catch (err) {
     console.error('API /data error:', err);
     res.status(500).json({ ok: false, error: err.message });

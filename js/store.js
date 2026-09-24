@@ -5,10 +5,18 @@
 
 const API_BASE = '';  // Same origin — works on Vercel and local
 
+function getAuthToken() {
+  return typeof localStorage !== 'undefined' ? (localStorage.getItem('studyflow_auth_token') || '') : '';
+}
+
 async function apiWrite(table, action, data, id) {
+  const token = getAuthToken();
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
   const res = await fetch(`${API_BASE}/api/write`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     credentials: 'same-origin',
     body: JSON.stringify({ table, action, data, id }),
   });
@@ -20,18 +28,18 @@ async function apiWrite(table, action, data, id) {
 class Store {
   constructor() {
     this._db = null;
+    this._organization = null;
     this._subscribers = [];
     this._loading = false;
     this._loaded = false;
     this._lastLoadError = null;
-    this._activeBranchId = null; // in-memory branch selection (no sessionStorage)
+    this._activeBranchId = null;
   }
 
   // ── Bootstrap ────────────────────────────────────────────────────
   async load() {
     if (this._loaded) return;
     if (this._loading) {
-      // Wait for in-flight load
       await new Promise(resolve => {
         const unsub = this.subscribe(() => { if (this._loaded) { unsub(); resolve(); } });
       });
@@ -39,20 +47,139 @@ class Store {
     }
     this._loading = true;
     try {
-      const res = await fetch(`${API_BASE}/api/data`, { credentials: 'same-origin' });
+      const token = getAuthToken();
+      const headers = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch(`${API_BASE}/api/data`, { headers, credentials: 'same-origin' });
       const json = await res.json();
       if (!json.ok) throw new Error(json.error || 'Failed to load data');
       this._db = json.db;
+      this._organization = json.organization || null;
       this._loaded = true;
     } catch (e) {
       console.error('Store load failed:', e);
       this._lastLoadError = e.message;
-      // Fallback: empty DB so app doesn't crash
-      this._db = { branches:[], floors:[], rooms:[], seats:[], students:[], membershipPlans:[], memberships:[], seatAssignments:[], reservations:[], payments:[], attendance:[], expenses:[], notifications:[], activityLog:[], waitlist:[], staff:[], seatTransfers:[], notificationMessages:[], documents:[], settings:{} };
+      this._db = { branches:[], floors:[], rooms:[], seats:[], students:[], membershipPlans:[], memberships:[], seatAssignments:[], payments:[], expenses:[], notifications:[], activityLog:[], waitlist:[], staff:[], seatTransfers:[], documents:[], settings:{} };
       this._loaded = true;
     }
     this._loading = false;
     this._notify();
+  }
+
+  // ── Multi-Tenant SaaS Auth Methods ──────────────────────────────
+  get authToken() {
+    return getAuthToken();
+  }
+
+  get currentUser() {
+    try {
+      const u = localStorage.getItem('studyflow_user');
+      return u ? JSON.parse(u) : { name: 'Admin', email: 'admin@studyflow.in', role: 'owner', avatarColor: '#6172f3' };
+    } catch (e) {
+      return { name: 'Admin', email: 'admin@studyflow.in', role: 'owner', avatarColor: '#6172f3' };
+    }
+  }
+
+  get organization() {
+    return this._organization || {
+      name: 'StudyFlow Library',
+      plan: 'trial',
+      seatLimit: 75,
+      subscriptionStatus: 'active',
+      currency: 'INR',
+      onboardingCompleted: true
+    };
+  }
+
+  isAuthenticated() {
+    return Boolean(this.authToken);
+  }
+
+  async login(email, password) {
+    const res = await fetch(`${API_BASE}/api/auth`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'login', email, password })
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || 'Login failed');
+
+    localStorage.setItem('studyflow_auth_token', json.token);
+    localStorage.setItem('studyflow_user', JSON.stringify(json.user));
+    localStorage.setItem('studyflow_org', JSON.stringify(json.organization));
+    this._organization = json.organization;
+
+    this._loaded = false;
+    await this.load();
+    return json;
+  }
+
+  async register(orgName, name, email, password, phone) {
+    const res = await fetch(`${API_BASE}/api/auth`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'register', orgName, name, email, password, phone })
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || 'Registration failed');
+
+    localStorage.setItem('studyflow_auth_token', json.token);
+    localStorage.setItem('studyflow_user', JSON.stringify(json.user));
+    localStorage.setItem('studyflow_org', JSON.stringify(json.organization));
+    this._organization = json.organization;
+
+    this._loaded = false;
+    await this.load();
+    return json;
+  }
+
+  async logout() {
+    localStorage.removeItem('studyflow_auth_token');
+    localStorage.removeItem('studyflow_user');
+    localStorage.removeItem('studyflow_org');
+    this._loaded = false;
+    await this.load();
+  }
+
+  async completeOnboarding(onboardingData) {
+    const token = this.authToken;
+    const res = await fetch(`${API_BASE}/api/auth`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ action: 'onboarding', ...onboardingData })
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || 'Onboarding failed');
+
+    if (this._organization) this._organization.onboardingCompleted = true;
+    this._loaded = false;
+    await this.load();
+    return json;
+  }
+
+  async upgradePlan(plan) {
+    const token = this.authToken;
+    const res = await fetch(`${API_BASE}/api/auth`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ action: 'upgrade_plan', plan })
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || 'Upgrade failed');
+
+    if (this._organization) {
+      this._organization.plan = json.plan;
+      this._organization.seatLimit = json.seatLimit;
+    }
+    this._notify();
+    return json;
   }
 
   isSeeded() {

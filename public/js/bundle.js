@@ -70,10 +70,18 @@ window.icons = icons;
 
 const API_BASE = '';  // Same origin — works on Vercel and local
 
+function getAuthToken() {
+  return typeof localStorage !== 'undefined' ? (localStorage.getItem('studyflow_auth_token') || '') : '';
+}
+
 async function apiWrite(table, action, data, id) {
+  const token = getAuthToken();
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
   const res = await fetch(`${API_BASE}/api/write`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     credentials: 'same-origin',
     body: JSON.stringify({ table, action, data, id }),
   });
@@ -85,18 +93,18 @@ async function apiWrite(table, action, data, id) {
 class Store {
   constructor() {
     this._db = null;
+    this._organization = null;
     this._subscribers = [];
     this._loading = false;
     this._loaded = false;
     this._lastLoadError = null;
-    this._activeBranchId = null; // in-memory branch selection (no sessionStorage)
+    this._activeBranchId = null;
   }
 
   // ── Bootstrap ────────────────────────────────────────────────────
   async load() {
     if (this._loaded) return;
     if (this._loading) {
-      // Wait for in-flight load
       await new Promise(resolve => {
         const unsub = this.subscribe(() => { if (this._loaded) { unsub(); resolve(); } });
       });
@@ -104,20 +112,139 @@ class Store {
     }
     this._loading = true;
     try {
-      const res = await fetch(`${API_BASE}/api/data`, { credentials: 'same-origin' });
+      const token = getAuthToken();
+      const headers = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch(`${API_BASE}/api/data`, { headers, credentials: 'same-origin' });
       const json = await res.json();
       if (!json.ok) throw new Error(json.error || 'Failed to load data');
       this._db = json.db;
+      this._organization = json.organization || null;
       this._loaded = true;
     } catch (e) {
       console.error('Store load failed:', e);
       this._lastLoadError = e.message;
-      // Fallback: empty DB so app doesn't crash
-      this._db = { branches:[], floors:[], rooms:[], seats:[], students:[], membershipPlans:[], memberships:[], seatAssignments:[], reservations:[], payments:[], attendance:[], expenses:[], notifications:[], activityLog:[], waitlist:[], staff:[], seatTransfers:[], notificationMessages:[], documents:[], settings:{} };
+      this._db = { branches:[], floors:[], rooms:[], seats:[], students:[], membershipPlans:[], memberships:[], seatAssignments:[], payments:[], expenses:[], notifications:[], activityLog:[], waitlist:[], staff:[], seatTransfers:[], documents:[], settings:{} };
       this._loaded = true;
     }
     this._loading = false;
     this._notify();
+  }
+
+  // ── Multi-Tenant SaaS Auth Methods ──────────────────────────────
+  get authToken() {
+    return getAuthToken();
+  }
+
+  get currentUser() {
+    try {
+      const u = localStorage.getItem('studyflow_user');
+      return u ? JSON.parse(u) : { name: 'Admin', email: 'admin@studyflow.in', role: 'owner', avatarColor: '#6172f3' };
+    } catch (e) {
+      return { name: 'Admin', email: 'admin@studyflow.in', role: 'owner', avatarColor: '#6172f3' };
+    }
+  }
+
+  get organization() {
+    return this._organization || {
+      name: 'StudyFlow Library',
+      plan: 'trial',
+      seatLimit: 75,
+      subscriptionStatus: 'active',
+      currency: 'INR',
+      onboardingCompleted: true
+    };
+  }
+
+  isAuthenticated() {
+    return Boolean(this.authToken);
+  }
+
+  async login(email, password) {
+    const res = await fetch(`${API_BASE}/api/auth`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'login', email, password })
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || 'Login failed');
+
+    localStorage.setItem('studyflow_auth_token', json.token);
+    localStorage.setItem('studyflow_user', JSON.stringify(json.user));
+    localStorage.setItem('studyflow_org', JSON.stringify(json.organization));
+    this._organization = json.organization;
+
+    this._loaded = false;
+    await this.load();
+    return json;
+  }
+
+  async register(orgName, name, email, password, phone) {
+    const res = await fetch(`${API_BASE}/api/auth`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'register', orgName, name, email, password, phone })
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || 'Registration failed');
+
+    localStorage.setItem('studyflow_auth_token', json.token);
+    localStorage.setItem('studyflow_user', JSON.stringify(json.user));
+    localStorage.setItem('studyflow_org', JSON.stringify(json.organization));
+    this._organization = json.organization;
+
+    this._loaded = false;
+    await this.load();
+    return json;
+  }
+
+  async logout() {
+    localStorage.removeItem('studyflow_auth_token');
+    localStorage.removeItem('studyflow_user');
+    localStorage.removeItem('studyflow_org');
+    this._loaded = false;
+    await this.load();
+  }
+
+  async completeOnboarding(onboardingData) {
+    const token = this.authToken;
+    const res = await fetch(`${API_BASE}/api/auth`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ action: 'onboarding', ...onboardingData })
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || 'Onboarding failed');
+
+    if (this._organization) this._organization.onboardingCompleted = true;
+    this._loaded = false;
+    await this.load();
+    return json;
+  }
+
+  async upgradePlan(plan) {
+    const token = this.authToken;
+    const res = await fetch(`${API_BASE}/api/auth`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ action: 'upgrade_plan', plan })
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || 'Upgrade failed');
+
+    if (this._organization) {
+      this._organization.plan = json.plan;
+      this._organization.seatLimit = json.seatLimit;
+    }
+    this._notify();
+    return json;
   }
 
   isSeeded() {
@@ -7084,25 +7211,73 @@ window.Pages.renderActivity = function renderActivity(container) {
 window.Pages.renderSettings = function renderSettings(container) {
   const settings = store.getSettings();
   const branches = store.getBranches();
+  const org = store.organization || { name: 'StudyFlow Library', plan: 'trial', seatLimit: 75 };
+  const user = store.currentUser || { name: 'Admin', email: 'admin@studyflow.in', role: 'owner' };
+  const isAuth = store.isAuthenticated();
+  const seatsCount = store.getSeats().length;
+  const seatLimit = org.seatLimit || 75;
+  const seatUsagePct = Math.min(100, Math.round((seatsCount / seatLimit) * 100));
 
   container.innerHTML = `
     <div class="page-header">
       <div class="page-header-row">
         <div>
           <h1 class="page-title">Settings</h1>
-          <p class="page-subtitle">Organization, appearance, and configuration</p>
+          <p class="page-subtitle">Organization, subscription plans, and system configuration</p>
         </div>
       </div>
     </div>
 
     <div class="grid-2" style="gap:var(--space-5);align-items:start;">
-      <!-- Organization -->
+      <!-- SaaS Account & Subscription -->
+      <div class="card" style="border:1.5px solid rgba(97, 114, 243, 0.3);">
+        <div class="card-header" style="background:rgba(97, 114, 243, 0.04);">
+          <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;width:100%;">
+            <span>SaaS Plan & Subscription</span>
+            <span class="badge badge-indigo" style="font-size:11px;font-weight:700;text-transform:uppercase;padding:2px 8px;">${org.plan}</span>
+          </div>
+        </div>
+        <div class="card-body" style="display:flex;flex-direction:column;gap:var(--space-4);">
+          <div style="display:flex;align-items:center;gap:12px;padding-bottom:var(--space-3);border-bottom:1px solid var(--color-border-secondary);">
+            <div style="width:40px;height:40px;border-radius:50%;background:${user.avatarColor || 'var(--color-primary)'};color:white;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:14px;">
+              ${utils.initials(user.name || 'Admin')}
+            </div>
+            <div style="flex:1;overflow:hidden;">
+              <div style="font-weight:var(--fw-bold);font-size:var(--text-sm);color:var(--color-text-primary);" class="truncate">${org.name}</div>
+              <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);">${user.email} · ${(user.role || 'Owner').toUpperCase()}</div>
+            </div>
+          </div>
+
+          <!-- Seat Usage Bar -->
+          <div>
+            <div style="display:flex;justify-content:space-between;font-size:var(--text-xs);margin-bottom:6px;">
+              <span style="font-weight:600;color:var(--color-text-secondary);">Seat Allocation Capacity</span>
+              <span style="font-weight:700;color:var(--color-text-primary);">${seatsCount} / ${seatLimit} seats (${seatUsagePct}%)</span>
+            </div>
+            <div style="width:100%;height:8px;background:var(--color-bg-secondary);border-radius:4px;overflow:hidden;">
+              <div style="width:${seatUsagePct}%;height:100%;background:${seatUsagePct > 90 ? 'var(--sf-error-500)' : (seatUsagePct > 70 ? 'var(--sf-warning-500)' : 'var(--color-primary)')};border-radius:4px;transition:width 0.3s;"></div>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:var(--space-2);margin-top:var(--space-2);">
+            <button class="btn btn-primary flex-1" onclick="app.openUpgradeModal()">⚡ Upgrade Plan</button>
+            <button class="btn btn-secondary" onclick="app.openOnboardingModal()">Setup Wizard</button>
+            ${isAuth ? `
+              <button class="btn btn-secondary" onclick="app.handleLogout()">Sign Out</button>
+            ` : `
+              <button class="btn btn-secondary" onclick="app.openLoginModal()">Sign In</button>
+            `}
+          </div>
+        </div>
+      </div>
+
+      <!-- Organization Details -->
       <div class="card">
-        <div class="card-header"><div class="card-title">Organization</div></div>
+        <div class="card-header"><div class="card-title">Library Profile</div></div>
         <div class="card-body" style="display:flex;flex-direction:column;gap:var(--space-4);">
           <div class="form-group">
             <label class="form-label">Organization Name</label>
-            <input type="text" class="input" id="set-org-name" value="${settings.orgName || ''}">
+            <input type="text" class="input" id="set-org-name" value="${org.name || settings.orgName || ''}">
           </div>
           <div class="form-group">
             <label class="form-label">Address</label>
@@ -7772,6 +7947,12 @@ class App {
     if (typeof dismissAppLoader === 'function') {
       dismissAppLoader();
     }
+
+    // Automatically prompt onboarding if new organization has 0 branches or hasn't completed setup
+    const org = store.organization;
+    if (store.isAuthenticated() && org && (!org.onboardingCompleted || store.getBranches().length === 0)) {
+      setTimeout(() => this.openOnboardingModal(), 600);
+    }
   }
 
   _themeInit() {
@@ -7787,22 +7968,31 @@ class App {
   }
 
   _render() {
+    const user = store.currentUser || { name: 'Admin', email: 'admin@studyflow.in', role: 'owner', avatarColor: '#6172f3' };
+    const org = store.organization || { name: 'StudyFlow Library', plan: 'trial' };
+    const isAuth = store.isAuthenticated();
+    const initials = utils.initials(user.name || 'User');
+    const avatarColor = user.avatarColor || 'var(--color-primary)';
+
     document.getElementById('app').innerHTML = `
       <aside class="sidebar ${this.sidebarCollapsed ? 'collapsed' : ''}" id="sidebar">
-        <div class="sidebar-logo">
+        <div class="sidebar-logo" onclick="app.navigate('/dashboard')" style="cursor:pointer;" title="${org.name}">
           <div class="sidebar-logo-icon">SF</div>
-          <span class="sidebar-logo-text">StudyFlow</span>
+          <div style="display:flex;flex-direction:column;overflow:hidden;line-height:1.2;">
+            <span class="sidebar-logo-text truncate">${org.name || 'StudyFlow'}</span>
+            <span style="font-size:10px;font-weight:700;color:var(--color-primary);letter-spacing:0.5px;text-transform:uppercase;">${(org.plan || 'trial')} Plan</span>
+          </div>
         </div>
 
         <nav class="sidebar-nav" id="sidebar-nav">
           ${this._renderNav()}
         </nav>
 
-        <div class="sidebar-footer">
-          <div class="sidebar-user-avatar">AM</div>
+        <div class="sidebar-footer" onclick="app.openUserMenu(this)" style="cursor:pointer;" title="Click to manage account & subscription">
+          <div class="sidebar-user-avatar" style="background:${avatarColor};color:#ffffff;font-weight:700;">${initials}</div>
           <div class="sidebar-user-info">
-            <div class="sidebar-user-name truncate">Arjun Mehta</div>
-            <div class="sidebar-user-role">Owner</div>
+            <div class="sidebar-user-name truncate">${user.name || 'Admin'}</div>
+            <div class="sidebar-user-role">${(user.role || 'Owner').toUpperCase()} · ${isAuth ? 'Cloud' : 'Demo'}</div>
           </div>
         </div>
 
@@ -7852,7 +8042,7 @@ class App {
               <span>Add</span>
             </button>
 
-            <div class="topbar-avatar" title="Arjun Mehta · Owner" onclick="app.openUserMenu(this)">AM</div>
+            <div class="topbar-avatar" style="background:${avatarColor};color:#ffffff;font-weight:700;cursor:pointer;" title="${user.name} · ${org.name}" onclick="app.openUserMenu(this)">${initials}</div>
           </div>
         </header>
 
@@ -8125,29 +8315,497 @@ class App {
     const existing = document.getElementById('user-menu');
     if (existing) { existing.remove(); return; }
 
+    const user = store.currentUser || { name: 'Admin', email: 'admin@studyflow.in', role: 'owner' };
+    const org = store.organization || { name: 'StudyFlow Library', plan: 'trial', seatLimit: 75 };
+    const isAuth = store.isAuthenticated();
+    const currentSeats = store.getSeats().length;
+    const seatLimit = org.seatLimit || 75;
+
     const rect = btn.getBoundingClientRect();
     const menu = document.createElement('div');
     menu.id = 'user-menu';
     menu.className = 'dropdown-menu';
-    menu.style.cssText = `position:fixed;top:${rect.bottom + 8}px;right:${window.innerWidth - rect.right}px;z-index:300;min-width:200px;`;
+    menu.style.cssText = `position:fixed;top:${rect.bottom + 8}px;right:${Math.max(8, window.innerWidth - rect.right)}px;z-index:300;min-width:240px;box-shadow:var(--shadow-xl);`;
     menu.innerHTML = `
-      <div style="padding:var(--space-3);border-bottom:1px solid var(--color-border-secondary);margin-bottom:var(--space-2);">
-        <div style="font-weight:var(--fw-semibold);color:var(--color-text-primary);font-size:var(--text-sm);">Arjun Mehta</div>
-        <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);">arjun@studyflow.in</div>
+      <div style="padding:var(--space-3) var(--space-4);border-bottom:1px solid var(--color-border-secondary);margin-bottom:var(--space-2);">
+        <div style="font-weight:var(--fw-semibold);color:var(--color-text-primary);font-size:var(--text-sm);display:flex;align-items:center;justify-content:space-between;gap:6px;">
+          <span class="truncate">${user.name}</span>
+          <span class="badge badge-indigo" style="font-size:10px;padding:2px 6px;text-transform:uppercase;font-weight:700;">${org.plan}</span>
+        </div>
+        <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-top:2px;">${user.email}</div>
+        <div style="font-size:11px;color:var(--color-text-secondary);font-weight:500;margin-top:6px;display:flex;align-items:center;gap:4px;">
+          <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#10b981;"></span>
+          <span class="truncate">${org.name}</span>
+          <span style="color:var(--color-text-tertiary);margin-left:auto;">${currentSeats}/${seatLimit} seats</span>
+        </div>
       </div>
-      <button class="dropdown-item" onclick="app.navigate('/settings'); document.getElementById('user-menu')?.remove()">
-        ${icons.settings} Settings
+
+      <button class="dropdown-item" onclick="app.openUpgradeModal(); document.getElementById('user-menu')?.remove()">
+        <span style="color:#d97706;font-weight:600;display:flex;align-items:center;gap:6px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          Upgrade / Change Plan
+        </span>
       </button>
+
+      <button class="dropdown-item" onclick="app.openOnboardingModal(); document.getElementById('user-menu')?.remove()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> Setup Wizard / Add Halls
+      </button>
+
+      <button class="dropdown-item" onclick="app.navigate('/settings'); document.getElementById('user-menu')?.remove()">
+        ${icons.settings} Settings & Organization
+      </button>
+
       <button class="dropdown-item" onclick="app.toggleTheme(); document.getElementById('user-menu')?.remove()">
         ${icons.sun} Toggle Theme
       </button>
+
       <div class="dropdown-separator"></div>
-      <button class="dropdown-item danger" onclick="app.resetApp()">
-        ${icons.logOut} Reset Demo Data
-      </button>
+
+      ${isAuth ? `
+        <button class="dropdown-item" onclick="app.openLoginModal(); document.getElementById('user-menu')?.remove()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> Switch Account
+        </button>
+        <button class="dropdown-item danger" onclick="app.handleLogout(); document.getElementById('user-menu')?.remove()">
+          ${icons.logOut} Sign Out
+        </button>
+      ` : `
+        <button class="dropdown-item" onclick="app.openLoginModal(); document.getElementById('user-menu')?.remove()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg> Log In to Your Cloud Library
+        </button>
+        <button class="dropdown-item" style="color:var(--color-primary);font-weight:600;" onclick="app.openRegisterModal(); document.getElementById('user-menu')?.remove()">
+          ✨ Create New Library (Free Trial)
+        </button>
+      `}
     `;
     document.body.appendChild(menu);
-    setTimeout(() => document.addEventListener('click', (e) => { if (!menu.contains(e.target)) menu.remove(); }, { once: true }));
+    setTimeout(() => document.addEventListener('click', (e) => { if (!menu.contains(e.target) && e.target !== btn) menu.remove(); }, { once: true }));
+  }
+
+  // ── SaaS Auth Modals ──────────────────────────────────────────────
+  openLoginModal() {
+    const bodyHTML = `
+      <form id="login-form" onsubmit="event.preventDefault(); app.submitLogin();" style="display:flex;flex-direction:column;gap:var(--space-4);">
+        <div id="login-error-msg" style="display:none;padding:var(--space-3);background:rgba(239, 68, 68, 0.1);border:1px solid #ef4444;color:#ef4444;border-radius:var(--radius-md);font-size:var(--text-xs);font-weight:600;"></div>
+        
+        <div class="form-group">
+          <label class="form-label">Email Address *</label>
+          <input type="email" class="input" id="login-email" required placeholder="admin@yourlibrary.com" autofocus autocomplete="email">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Password *</label>
+          <input type="password" class="input" id="login-password" required placeholder="••••••••" autocomplete="current-password">
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;font-size:var(--text-xs);color:var(--color-text-tertiary);">
+          <span>Default Demo Account:</span>
+          <a href="javascript:void(0)" onclick="document.getElementById('login-email').value='admin@studyflow.in';document.getElementById('login-password').value='studyflow123';" style="color:var(--color-primary);font-weight:600;">Auto-fill Demo</a>
+        </div>
+      </form>
+    `;
+
+    const footerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
+        <span style="font-size:var(--text-xs);color:var(--color-text-secondary);">
+          Don't have an account? <a href="javascript:void(0)" onclick="modal.close(); app.openRegisterModal();" style="color:var(--color-primary);font-weight:600;">Create Library</a>
+        </span>
+        <div style="display:flex;gap:var(--space-2);">
+          <button type="button" class="btn btn-secondary" onclick="modal.close()">Cancel</button>
+          <button type="button" class="btn btn-primary" id="login-submit-btn" onclick="app.submitLogin()">Sign In</button>
+        </div>
+      </div>
+    `;
+
+    modal.open('Sign In to StudyFlow', bodyHTML, footerHTML, { size: 'sm' });
+  }
+
+  async submitLogin() {
+    const email = document.getElementById('login-email')?.value?.trim();
+    const password = document.getElementById('login-password')?.value;
+    const btn = document.getElementById('login-submit-btn');
+    const errBox = document.getElementById('login-error-msg');
+
+    if (!email || !password) {
+      if (errBox) { errBox.textContent = 'Please fill in both email and password'; errBox.style.display = 'block'; }
+      return;
+    }
+
+    if (btn) { btn.disabled = true; btn.textContent = 'Signing in...'; }
+    if (errBox) errBox.style.display = 'none';
+
+    try {
+      const res = await store.login(email, password);
+      modal.close();
+      toast.show(`Welcome back, ${res.user.name}!`, 'success');
+      this._render();
+      this._navigate();
+    } catch (e) {
+      if (errBox) {
+        errBox.textContent = e.message || 'Login failed';
+        errBox.style.display = 'block';
+      } else {
+        toast.show(e.message || 'Login failed', 'error');
+      }
+      if (btn) { btn.disabled = false; btn.textContent = 'Sign In'; }
+    }
+  }
+
+  openRegisterModal() {
+    const bodyHTML = `
+      <form id="register-form" onsubmit="event.preventDefault(); app.submitRegister();" style="display:flex;flex-direction:column;gap:var(--space-4);">
+        <div id="register-error-msg" style="display:none;padding:var(--space-3);background:rgba(239, 68, 68, 0.1);border:1px solid #ef4444;color:#ef4444;border-radius:var(--radius-md);font-size:var(--text-xs);font-weight:600;"></div>
+        
+        <div class="form-group">
+          <label class="form-label">Library / Reading Hall Name *</label>
+          <input type="text" class="input" id="reg-org-name" required placeholder="e.g. Apex Reading Lounge" autofocus>
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group">
+            <label class="form-label">Your Full Name *</label>
+            <input type="text" class="input" id="reg-name" required placeholder="e.g. Rahul Sharma">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Mobile Number</label>
+            <input type="tel" class="input" id="reg-phone" placeholder="e.g. +919876543210">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Email Address *</label>
+          <input type="email" class="input" id="reg-email" required placeholder="owner@yourlibrary.com">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Password *</label>
+          <input type="password" class="input" id="reg-password" required placeholder="At least 6 characters" minlength="6">
+        </div>
+      </form>
+    `;
+
+    const footerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
+        <span style="font-size:var(--text-xs);color:var(--color-text-secondary);">
+          Already have an account? <a href="javascript:void(0)" onclick="modal.close(); app.openLoginModal();" style="color:var(--color-primary);font-weight:600;">Sign In</a>
+        </span>
+        <div style="display:flex;gap:var(--space-2);">
+          <button type="button" class="btn btn-secondary" onclick="modal.close()">Cancel</button>
+          <button type="button" class="btn btn-primary" id="reg-submit-btn" onclick="app.submitRegister()">Create Free Library</button>
+        </div>
+      </div>
+    `;
+
+    modal.open('Create Your Library Account', bodyHTML, footerHTML, { size: 'md' });
+  }
+
+  async submitRegister() {
+    const orgName = document.getElementById('reg-org-name')?.value?.trim();
+    const name = document.getElementById('reg-name')?.value?.trim();
+    const email = document.getElementById('reg-email')?.value?.trim();
+    const password = document.getElementById('reg-password')?.value;
+    const phone = document.getElementById('reg-phone')?.value?.trim();
+    const btn = document.getElementById('reg-submit-btn');
+    const errBox = document.getElementById('register-error-msg');
+
+    if (!orgName || !name || !email || !password) {
+      if (errBox) { errBox.textContent = 'Please fill in all required fields'; errBox.style.display = 'block'; }
+      return;
+    }
+
+    if (btn) { btn.disabled = true; btn.textContent = 'Creating Library...'; }
+    if (errBox) errBox.style.display = 'none';
+
+    try {
+      const res = await store.register(orgName, name, email, password, phone);
+      modal.close();
+      toast.show(`Library created! Welcome ${res.user.name}.`, 'success');
+      this._render();
+      this._navigate();
+      // Prompt onboarding wizard immediately
+      setTimeout(() => this.openOnboardingModal(), 500);
+    } catch (e) {
+      if (errBox) {
+        errBox.textContent = e.message || 'Registration failed';
+        errBox.style.display = 'block';
+      } else {
+        toast.show(e.message || 'Registration failed', 'error');
+      }
+      if (btn) { btn.disabled = false; btn.textContent = 'Create Free Library'; }
+    }
+  }
+
+  // ── Onboarding Wizard ─────────────────────────────────────────────
+  openOnboardingModal() {
+    const org = store.organization || { name: 'My Library' };
+    const bodyHTML = `
+      <div style="display:flex;flex-direction:column;gap:var(--space-5);">
+        <div style="padding:var(--space-3) var(--space-4);background:rgba(97, 114, 243, 0.08);border:1px solid rgba(97, 114, 243, 0.2);border-radius:var(--radius-lg);display:flex;align-items:center;gap:12px;">
+          <div style="font-size:24px;">🚀</div>
+          <div>
+            <div style="font-weight:var(--fw-bold);color:var(--color-primary);font-size:var(--text-sm);">Welcome to StudyFlow SaaS!</div>
+            <div style="font-size:var(--text-xs);color:var(--color-text-secondary);">Let's quickly set up your first branch, study hall, and seats in 30 seconds.</div>
+          </div>
+        </div>
+
+        <!-- Section 1: Branch -->
+        <div class="card" style="margin:0;padding:var(--space-4);border-color:var(--color-border-secondary);">
+          <div style="font-size:var(--text-sm);font-weight:var(--fw-bold);margin-bottom:var(--space-3);display:flex;align-items:center;gap:6px;">
+            <span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;background:var(--color-primary);color:white;border-radius:50%;font-size:11px;">1</span>
+            First Branch Details
+          </div>
+          <div class="grid-2" style="gap:var(--space-3);">
+            <div class="form-group">
+              <label class="form-label">Branch Name</label>
+              <input type="text" class="input" id="ob-branch-name" value="${org.name} - Main Branch" placeholder="e.g. Main Branch / Kothrud">
+            </div>
+            <div class="grid-2" style="gap:var(--space-2);">
+              <div class="form-group">
+                <label class="form-label">City</label>
+                <input type="text" class="input" id="ob-city" value="Pune" placeholder="City">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Phone</label>
+                <input type="tel" class="input" id="ob-phone" value="+919876543210" placeholder="+91...">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 2: Hall & Seats -->
+        <div class="card" style="margin:0;padding:var(--space-4);border-color:var(--color-border-secondary);">
+          <div style="font-size:var(--text-sm);font-weight:var(--fw-bold);margin-bottom:var(--space-3);display:flex;align-items:center;gap:6px;">
+            <span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;background:var(--color-primary);color:white;border-radius:50%;font-size:11px;">2</span>
+            Study Room & Seat Generator
+          </div>
+          <div class="grid-3" style="gap:var(--space-3);">
+            <div class="form-group">
+              <label class="form-label">Floor</label>
+              <input type="text" class="input" id="ob-floor-name" value="Ground Floor">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Room / Hall Name</label>
+              <input type="text" class="input" id="ob-room-name" value="Quiet Study Hall">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Number of Seats</label>
+              <input type="number" class="input" id="ob-seat-count" value="30" min="5" max="100">
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 3: Starter Membership Plans -->
+        <div class="card" style="margin:0;padding:var(--space-4);border-color:var(--color-border-secondary);">
+          <div style="font-size:var(--text-sm);font-weight:var(--fw-bold);margin-bottom:var(--space-3);display:flex;align-items:center;gap:6px;">
+            <span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;background:var(--color-primary);color:white;border-radius:50%;font-size:11px;">3</span>
+            Starter Membership Plans
+          </div>
+          <div style="display:flex;flex-direction:column;gap:var(--space-2);font-size:var(--text-xs);">
+            <label style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--color-bg-secondary);border-radius:var(--radius-md);cursor:pointer;">
+              <input type="checkbox" id="ob-plan-std" checked style="accent-color:var(--color-primary);">
+              <span style="font-weight:600;flex:1;">Full Day Reserved (24 Hours)</span>
+              <span style="color:var(--color-text-tertiary);">₹1,800 / mo</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--color-bg-secondary);border-radius:var(--radius-md);cursor:pointer;">
+              <input type="checkbox" id="ob-plan-morn" checked style="accent-color:var(--color-primary);">
+              <span style="font-weight:600;flex:1;">Morning Shift (6 AM - 2 PM)</span>
+              <span style="color:var(--color-text-tertiary);">₹1,100 / mo</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--color-bg-secondary);border-radius:var(--radius-md);cursor:pointer;">
+              <input type="checkbox" id="ob-plan-eve" checked style="accent-color:var(--color-primary);">
+              <span style="font-weight:600;flex:1;">Evening Shift (2 PM - 10 PM)</span>
+              <span style="color:var(--color-text-tertiary);">₹1,100 / mo</span>
+            </label>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const footerHTML = `
+      <button type="button" class="btn btn-secondary" onclick="modal.close()">Skip for Now</button>
+      <button type="button" class="btn btn-primary" id="ob-submit-btn" onclick="app.submitOnboarding()">⚡ Generate Study Hall & Launch</button>
+    `;
+
+    modal.open('Quick Setup Wizard', bodyHTML, footerHTML, { size: 'lg' });
+  }
+
+  async submitOnboarding() {
+    const branchName = document.getElementById('ob-branch-name')?.value?.trim() || 'Main Branch';
+    const city = document.getElementById('ob-city')?.value?.trim() || 'Pune';
+    const phone = document.getElementById('ob-phone')?.value?.trim() || '+919876543210';
+    const floorName = document.getElementById('ob-floor-name')?.value?.trim() || 'Ground Floor';
+    const roomName = document.getElementById('ob-room-name')?.value?.trim() || 'Main Reading Hall';
+    const seatCount = parseInt(document.getElementById('ob-seat-count')?.value, 10) || 30;
+
+    const plans = [];
+    if (document.getElementById('ob-plan-std')?.checked) {
+      plans.push({ name: 'Full Day Reserved', shift: '24-hour', price: 1800, durationMonths: 1, deposit: 500 });
+    }
+    if (document.getElementById('ob-plan-morn')?.checked) {
+      plans.push({ name: 'Morning Shift', shift: 'morning', price: 1100, durationMonths: 1, deposit: 300 });
+    }
+    if (document.getElementById('ob-plan-eve')?.checked) {
+      plans.push({ name: 'Evening Shift', shift: 'evening', price: 1100, durationMonths: 1, deposit: 300 });
+    }
+
+    const btn = document.getElementById('ob-submit-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Generating Room & Seats...'; }
+
+    try {
+      await store.completeOnboarding({
+        branchName,
+        city,
+        phone,
+        floorName,
+        roomName,
+        seatCount,
+        plans
+      });
+
+      modal.close();
+      toast.show('🎉 Your study hall and seats are configured and ready!', 'success');
+      this._render();
+      this.navigate('/seat-map');
+    } catch (e) {
+      toast.show(e.message || 'Setup failed', 'error');
+      if (btn) { btn.disabled = false; btn.textContent = '⚡ Generate Study Hall & Launch'; }
+    }
+  }
+
+  // ── SaaS Plan Upgrade Modal ───────────────────────────────────────
+  openUpgradeModal() {
+    const org = store.organization || { plan: 'trial', seatLimit: 75 };
+    const currentPlan = org.plan || 'trial';
+
+    const tiers = [
+      {
+        id: 'starter',
+        name: 'Starter Plan',
+        price: '₹1,499',
+        period: '/ month',
+        seats: 'Up to 75 Seats',
+        branches: '1 Branch',
+        features: [
+          'Full Seat Map & Grid Visualizer',
+          'Student Profiles & Memberships',
+          'Payment Tracking & Receipts',
+          'Export CSV & Reports'
+        ],
+        highlight: false
+      },
+      {
+        id: 'pro',
+        name: 'Pro Plan',
+        badge: 'MOST POPULAR',
+        price: '₹3,499',
+        period: '/ month',
+        seats: 'Up to 250 Seats',
+        branches: 'Up to 3 Branches',
+        features: [
+          'Everything in Starter',
+          'WhatsApp Cloud Automation',
+          'Multi-Shift Seat Allocation',
+          'Expense Tracker & Profit Reports',
+          'Role-based Staff Management'
+        ],
+        highlight: true
+      },
+      {
+        id: 'enterprise',
+        name: 'Enterprise Plan',
+        price: '₹7,999',
+        period: '/ month',
+        seats: 'Up to 1,000 Seats',
+        branches: 'Unlimited Branches',
+        features: [
+          'Everything in Pro',
+          'Interactive Custom Room Designer',
+          'Dedicated Fast Database Node',
+          'Custom Invoicing & Branding',
+          '24/7 Priority Support & Onboarding'
+        ],
+        highlight: false
+      }
+    ];
+
+    const bodyHTML = `
+      <div style="display:flex;flex-direction:column;gap:var(--space-6);">
+        <div style="text-align:center;">
+          <h3 style="font-size:var(--text-xl);font-weight:var(--fw-bold);color:var(--color-text-primary);margin:0;">Choose the Perfect Plan for Your Library</h3>
+          <p style="font-size:var(--text-sm);color:var(--color-text-secondary);margin-top:var(--space-2);">Scale your study rooms, branches, and student admissions seamlessly.</p>
+        </div>
+
+        <div class="grid-3" style="gap:var(--space-4);align-items:stretch;">
+          ${tiers.map(t => {
+            const isCurrent = currentPlan.toLowerCase() === t.id;
+            return `
+              <div style="border-radius:var(--radius-xl);border:2px solid ${t.highlight ? 'var(--color-primary)' : 'var(--color-border-secondary)'};background:var(--color-bg-primary);padding:var(--space-5);display:flex;flex-direction:column;position:relative;box-shadow:${t.highlight ? 'var(--shadow-md)' : 'none'};">
+                ${t.badge ? `<div style="position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--color-primary);color:#fff;font-size:10px;font-weight:800;padding:2px 10px;border-radius:var(--radius-full);letter-spacing:0.5px;">${t.badge}</div>` : ''}
+                
+                <div style="font-size:var(--text-base);font-weight:var(--fw-bold);color:var(--color-text-primary);margin-top:${t.badge ? '4px' : '0'};">${t.name}</div>
+                <div style="display:flex;align-items:baseline;gap:4px;margin-top:var(--space-2);margin-bottom:var(--space-4);">
+                  <span style="font-size:var(--text-2xl);font-weight:800;color:var(--color-text-primary);">${t.price}</span>
+                  <span style="font-size:var(--text-xs);color:var(--color-text-tertiary);">${t.period}</span>
+                </div>
+
+                <div style="font-size:var(--text-xs);font-weight:700;color:var(--color-primary);margin-bottom:var(--space-3);padding-bottom:var(--space-2);border-bottom:1px solid var(--color-border-secondary);">
+                  ${t.seats} · ${t.branches}
+                </div>
+
+                <ul style="list-style:none;padding:0;margin:0 0 var(--space-5) 0;display:flex;flex-direction:column;gap:8px;flex:1;">
+                  ${t.features.map(f => `
+                    <li style="font-size:var(--text-xs);color:var(--color-text-secondary);display:flex;align-items:center;gap:6px;">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="color:var(--sf-success-600);flex-shrink:0;"><polyline points="20 6 9 17 4 12"/></svg>
+                      <span>${f}</span>
+                    </li>
+                  `).join('')}
+                </ul>
+
+                <button class="btn ${isCurrent ? 'btn-secondary' : (t.highlight ? 'btn-primary' : 'btn-secondary')} w-full"
+                  ${isCurrent ? 'disabled' : ''}
+                  onclick="app.selectPlan('${t.id}')">
+                  ${isCurrent ? '✓ Current Plan' : `Upgrade to ${t.name.split(' ')[0]}`}
+                </button>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
+
+    const footerHTML = `
+      <button type="button" class="btn btn-secondary" onclick="modal.close()">Close</button>
+    `;
+
+    modal.open('StudyFlow Subscription Plans', bodyHTML, footerHTML, { size: 'xl' });
+  }
+
+  async selectPlan(planId) {
+    try {
+      await store.upgradePlan(planId);
+      modal.close();
+      toast.show(`Successfully upgraded to the ${planId.toUpperCase()} Plan!`, 'success');
+      this._render();
+      this._navigate();
+    } catch (e) {
+      toast.show(e.message || 'Upgrade failed', 'error');
+    }
+  }
+
+  async handleLogout() {
+    const ok = await modal.confirm({
+      title: 'Sign Out',
+      message: 'Are you sure you want to sign out? You can sign back in anytime with your credentials.',
+      confirmText: 'Sign Out',
+      cancelText: 'Cancel',
+      type: 'warning'
+    });
+
+    if (ok) {
+      await store.logout();
+      toast.show('Signed out successfully. Switched to demo environment.', 'info');
+      this._render();
+      this._navigate();
+    }
   }
 
   async resetApp() {

@@ -2,25 +2,73 @@
 export function renderSettings(container) {
   const settings = store.getSettings();
   const branches = store.getBranches();
+  const org = store.organization || { name: 'StudyFlow Library', plan: 'trial', seatLimit: 75 };
+  const user = store.currentUser || { name: 'Admin', email: 'admin@studyflow.in', role: 'owner' };
+  const isAuth = store.isAuthenticated();
+  const seatsCount = store.getSeats().length;
+  const seatLimit = org.seatLimit || 75;
+  const seatUsagePct = Math.min(100, Math.round((seatsCount / seatLimit) * 100));
 
   container.innerHTML = `
     <div class="page-header">
       <div class="page-header-row">
         <div>
           <h1 class="page-title">Settings</h1>
-          <p class="page-subtitle">Organization, appearance, and configuration</p>
+          <p class="page-subtitle">Organization, subscription plans, and system configuration</p>
         </div>
       </div>
     </div>
 
     <div class="grid-2" style="gap:var(--space-5);align-items:start;">
-      <!-- Organization -->
+      <!-- SaaS Account & Subscription -->
+      <div class="card" style="border:1.5px solid rgba(97, 114, 243, 0.3);">
+        <div class="card-header" style="background:rgba(97, 114, 243, 0.04);">
+          <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;width:100%;">
+            <span>SaaS Plan & Subscription</span>
+            <span class="badge badge-indigo" style="font-size:11px;font-weight:700;text-transform:uppercase;padding:2px 8px;">${org.plan}</span>
+          </div>
+        </div>
+        <div class="card-body" style="display:flex;flex-direction:column;gap:var(--space-4);">
+          <div style="display:flex;align-items:center;gap:12px;padding-bottom:var(--space-3);border-bottom:1px solid var(--color-border-secondary);">
+            <div style="width:40px;height:40px;border-radius:50%;background:${user.avatarColor || 'var(--color-primary)'};color:white;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:14px;">
+              ${utils.initials(user.name || 'Admin')}
+            </div>
+            <div style="flex:1;overflow:hidden;">
+              <div style="font-weight:var(--fw-bold);font-size:var(--text-sm);color:var(--color-text-primary);" class="truncate">${org.name}</div>
+              <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);">${user.email} · ${(user.role || 'Owner').toUpperCase()}</div>
+            </div>
+          </div>
+
+          <!-- Seat Usage Bar -->
+          <div>
+            <div style="display:flex;justify-content:space-between;font-size:var(--text-xs);margin-bottom:6px;">
+              <span style="font-weight:600;color:var(--color-text-secondary);">Seat Allocation Capacity</span>
+              <span style="font-weight:700;color:var(--color-text-primary);">${seatsCount} / ${seatLimit} seats (${seatUsagePct}%)</span>
+            </div>
+            <div style="width:100%;height:8px;background:var(--color-bg-secondary);border-radius:4px;overflow:hidden;">
+              <div style="width:${seatUsagePct}%;height:100%;background:${seatUsagePct > 90 ? 'var(--sf-error-500)' : (seatUsagePct > 70 ? 'var(--sf-warning-500)' : 'var(--color-primary)')};border-radius:4px;transition:width 0.3s;"></div>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:var(--space-2);margin-top:var(--space-2);">
+            <button class="btn btn-primary flex-1" onclick="app.openUpgradeModal()">⚡ Upgrade Plan</button>
+            <button class="btn btn-secondary" onclick="app.openOnboardingModal()">Setup Wizard</button>
+            ${isAuth ? `
+              <button class="btn btn-secondary" onclick="app.handleLogout()">Sign Out</button>
+            ` : `
+              <button class="btn btn-secondary" onclick="app.openLoginModal()">Sign In</button>
+            `}
+          </div>
+        </div>
+      </div>
+
+      <!-- Organization Details -->
       <div class="card">
-        <div class="card-header"><div class="card-title">Organization</div></div>
+        <div class="card-header"><div class="card-title">Library Profile</div></div>
         <div class="card-body" style="display:flex;flex-direction:column;gap:var(--space-4);">
           <div class="form-group">
             <label class="form-label">Organization Name</label>
-            <input type="text" class="input" id="set-org-name" value="${settings.orgName || ''}">
+            <input type="text" class="input" id="set-org-name" value="${org.name || settings.orgName || ''}">
           </div>
           <div class="form-group">
             <label class="form-label">Address</label>
