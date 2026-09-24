@@ -406,6 +406,9 @@ window.resendPaymentReceiptWhatsApp = function(paymentId, studentId) {
   const payment = store.getPayments().find(p => p.id === paymentId);
   if (!student || !payment) { toast.show('Payment not found', 'error'); return; }
 
+  // 1-Click Free direct WhatsApp receipt option
+  const text = `Hello ${student.name},\n\nPayment Receipt Confirmation:\nReceipt No: ${payment.receiptNumber}\nAmount: ${utils.formatINR(payment.amount)}\nDate: ${utils.formatDate(payment.recordedAt || payment.createdAt)}\nMethod: ${payment.method || 'Cash'}\n\nThank you! — StudyFlow Library`;
+
   if (window.notificationService && window.NOTIFICATION_EVENTS) {
     const msg = window.notificationService.dispatchEvent(window.NOTIFICATION_EVENTS.PAYMENT_RECEIVED, {
       studentId: student.id,
@@ -416,17 +419,30 @@ window.resendPaymentReceiptWhatsApp = function(paymentId, studentId) {
     });
 
     if (msg?.status === 'skipped') {
-      toast.show(`WhatsApp skipped: Student ${student.name} opted out.`, 'warning');
+      toast.show(`WhatsApp skipped: Student opted out.`, 'warning');
     } else {
-      toast.show(`WhatsApp receipt queued for ${student.name} (${student.normalized_phone || student.phone})!`, 'success');
+      toast.show(`WhatsApp receipt dispatched for ${student.name}!`, 'success');
       app._navigate();
     }
+  } else {
+    utils.openWhatsApp(student.phone, text);
   }
+};
+
+window.sendDirectWhatsAppReceipt = function(paymentId, studentId) {
+  const student = store.getStudent(studentId);
+  const payment = store.getPayments().find(p => p.id === paymentId);
+  if (!student || !payment) return;
+  const text = `Hello ${student.name},\n\nPayment Receipt Confirmation:\nReceipt No: ${payment.receiptNumber}\nAmount: ${utils.formatINR(payment.amount)}\nDate: ${utils.formatDate(payment.recordedAt || payment.createdAt)}\nMethod: ${payment.method || 'Cash'}\n\nThank you! — StudyFlow Library`;
+  utils.openWhatsApp(student.phone, text);
+  toast.show('Opening WhatsApp Web...', 'info');
 };
 
 window.sendDueWhatsAppReminder = function(studentId, membershipId, dueAmount) {
   const student = store.getStudent(studentId);
   if (!student) return;
+
+  const text = `Hello ${student.name},\n\nThis is a friendly reminder from StudyFlow Library that your membership fee of ${utils.formatINR(dueAmount)} is pending.\nKindly clear your dues to ensure uninterrupted library access.\n\nThank you!`;
 
   if (window.notificationService && window.NOTIFICATION_EVENTS) {
     const msg = window.notificationService.dispatchEvent(window.NOTIFICATION_EVENTS.PAYMENT_REMINDER, {
@@ -436,11 +452,21 @@ window.sendDueWhatsAppReminder = function(studentId, membershipId, dueAmount) {
     });
 
     if (msg?.status === 'skipped') {
-      toast.show(`Reminder skipped: Student ${student.name} has opted out of fee alerts.`, 'warning');
+      toast.show(`Reminder skipped: Student opted out.`, 'warning');
     } else {
-      toast.show(`Fee reminder WhatsApp sent to ${student.name} (${student.normalized_phone || student.phone})!`, 'success');
+      toast.show(`Fee reminder dispatched to ${student.name}!`, 'success');
     }
+  } else {
+    utils.openWhatsApp(student.phone, text);
   }
+};
+
+window.sendDirectWhatsAppDueReminder = function(studentId, dueAmount) {
+  const student = store.getStudent(studentId);
+  if (!student) return;
+  const text = `Hello ${student.name},\n\nThis is a friendly reminder from StudyFlow Library that your membership fee of ${utils.formatINR(dueAmount)} is pending.\nKindly clear your dues to ensure uninterrupted library access.\n\nThank you!`;
+  utils.openWhatsApp(student.phone, text);
+  toast.show('Opening WhatsApp Web...', 'info');
 };
 
 window.sendBulkDueReminders = function() {

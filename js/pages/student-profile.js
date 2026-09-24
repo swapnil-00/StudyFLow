@@ -536,24 +536,40 @@ export function renderStudentProfile(container, params) {
         <div class="form-group">
           <label class="form-label">Message Content Preview</label>
           <textarea class="textarea" id="custom-wa-content" rows="4">Hello ${s.name}, this is an official update from your study library.</textarea>
-          <div class="form-hint">Variables and library contact details will be automatically included.</div>
+          <div class="form-hint">Tip: You can send for free via WhatsApp Web or via automated Meta Cloud API.</div>
         </div>
       </div>
     `, `
-      <button class="btn btn-secondary" onclick="modal.close()">Cancel</button>
-      <button class="btn btn-primary" onclick="confirmSendCustomWhatsApp('${studentId}')">
-        ${icons.bell} Send via WhatsApp
-      </button>
+      <div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:var(--space-2);">
+        <button class="btn btn-secondary" onclick="modal.close()">Cancel</button>
+        <div style="display:flex;gap:var(--space-2);">
+          <button class="btn btn-secondary" style="color:var(--sf-success-700);border-color:var(--sf-success-300);" onclick="openDirectFreeWhatsApp('${studentId}')">
+            📱 Open in WhatsApp (Free)
+          </button>
+          <button class="btn btn-primary" onclick="confirmSendCustomWhatsApp('${studentId}')">
+            ⚡ Send via Cloud API
+          </button>
+        </div>
+      </div>
     `);
+
+    window.openDirectFreeWhatsApp = (sId) => {
+      const stud = store.getStudent(sId);
+      const text = document.getElementById('custom-wa-content')?.value?.trim();
+      if (!stud || !text) return;
+      utils.openWhatsApp(stud.phone, text);
+      modal.close();
+      toast.show('Opened in WhatsApp!', 'success');
+    };
 
     window.updateCustomWaPreview = (sId, templateType) => {
       const stud = store.getStudent(sId);
       const ta = document.getElementById('custom-wa-content');
       if (!ta || !stud) return;
       if (templateType === 'PAYMENT_REMINDER') {
-        ta.value = `Hello ${stud.name}, this is a gentle reminder that your membership fee is pending. Kindly clear your dues to ensure uninterrupted access.`;
+        ta.value = `Hello ${stud.name}, this is a gentle reminder that your membership fee is pending. Kindly clear your dues to ensure uninterrupted access. Thank you!`;
       } else if (templateType === 'EXPIRY_REMINDER') {
-        ta.value = `Hello ${stud.name}, your study library membership will expire soon. Please renew your seat promptly.`;
+        ta.value = `Hello ${stud.name}, your study library membership will expire soon. Please renew your seat promptly. Thank you!`;
       } else if (templateType === 'HOLIDAY_ANNOUNCEMENT') {
         ta.value = `Dear ${stud.name}, please note that the study library will remain closed tomorrow for scheduled maintenance. Thank you.`;
       } else {
@@ -577,7 +593,7 @@ export function renderStudentProfile(container, params) {
         metadata: { custom: true }
       });
       modal.close();
-      toast.show(`WhatsApp notice queued for ${s.name}!`, 'success');
+      toast.show(`WhatsApp notice dispatched for ${s.name}!`, 'success');
       render();
     }
   };

@@ -1198,6 +1198,18 @@ function normalizePhone(phone, defaultCountry = '+91') {
   return `${defaultCountry}${cleaned}`;
 }
 
+function openWhatsApp(phone, text = '') {
+  if (!phone) {
+    if (typeof toast !== 'undefined') toast.show('No phone number provided', 'warning');
+    return;
+  }
+  let cleaned = String(phone).replace(/[^0-9]/g, '');
+  if (cleaned.length === 10) cleaned = '91' + cleaned;
+  const url = `https://wa.me/${cleaned}?text=${encodeURIComponent(text)}`;
+  window.open(url, '_blank');
+}
+
 window.Store = Store;
 window.store = new Store();
-window.utils = { uid, now, today, formatINR, getAvatarColor, initials, formatDate, formatTime, formatRelative, daysUntil, addDays, normalizePhone };
+window.utils = { uid, now, today, formatINR, getAvatarColor, initials, formatDate, formatTime, formatRelative, daysUntil, addDays, normalizePhone, openWhatsApp };
+
