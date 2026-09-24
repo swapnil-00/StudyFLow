@@ -67,7 +67,6 @@ export function renderSeatMap(container, params = {}) {
         ${renderSeatStat('Total', stats.totalSeats, 'neutral')}
         ${renderSeatStat('Occupied', stats.occupied, 'indigo')}
         ${renderSeatStat('Available', stats.available, 'success')}
-        ${renderSeatStat('Reserved', stats.reserved, 'warning')}
         ${renderSeatStat('Maintenance', stats.maintenance, 'neutral')}
       </div>
 
@@ -97,7 +96,7 @@ export function renderSeatMap(container, params = {}) {
 
           <!-- Filter -->
           <div class="filter-tabs" id="seat-filters">
-            ${['all','available','occupied','reserved','payment-due','expiring','maintenance','blocked'].map(f => `
+            ${['all','available','occupied','payment-due','expiring','maintenance','blocked'].map(f => `
               <button class="filter-tab ${state.filter === f ? 'active' : ''}"
                 onclick="handleFilterChange('${f}')">
                 ${f === 'all' ? 'All' : capitalizeFirst(f)}
@@ -111,7 +110,6 @@ export function renderSeatMap(container, params = {}) {
           ${[
             { status: 'available', label: 'Available', bg: 'var(--seat-available-dot)' },
             { status: 'occupied', label: 'Occupied', bg: 'var(--seat-occupied-dot)' },
-            { status: 'reserved', label: 'Reserved', bg: 'var(--seat-reserved-dot)' },
             { status: 'payment-due', label: 'Payment Due', bg: 'var(--seat-payment-due-dot)' },
             { status: 'expiring', label: 'Expiring Soon', bg: 'var(--seat-expiring-dot)' },
             { status: 'maintenance', label: 'Maintenance', bg: 'var(--seat-maintenance-dot)' },
@@ -379,8 +377,6 @@ window.openSeatDrawer = function(seatId) {
   const membership = assignment ? store.getMembership(assignment.membershipId) : null;
   const paymentStatus = membership ? store.getPaymentStatus(membership.id) : null;
   const paidAmount = membership ? store.getPaidAmount(membership.id) : 0;
-  const pendingAmount = membership ? store.getPendingAmount(membership.id) : 0;
-  const todayAtt = student ? store.getAttendance(student.id, new Date().toISOString().split('T')[0]) : null;
   const plan = membership ? store.getMembershipPlan(membership.planId) : null;
   const room = store.getRoom(seat.roomId);
   const floor = room ? store.getFloor(room.floorId) : null;
@@ -400,7 +396,7 @@ window.openSeatDrawer = function(seatId) {
       </div>
     </div>
 
-    ${student ? renderStudentSection(student, membership, plan, paymentStatus, paidAmount, pendingAmount, todayAtt) : renderAvailableSection(seat)}
+    ${student ? renderStudentSection(student, membership, plan, paymentStatus, paidAmount, pendingAmount) : renderAvailableSection(seat)}
   `;
 
   const footerHTML = renderSeatActions(status, seat, student, membership);
@@ -486,31 +482,6 @@ function renderStudentSection(student, membership, plan, paymentStatus, paidAmou
       </div>
     </div>
     ` : ''}
-
-    <!-- Attendance Today -->
-    <div class="drawer-section">
-      <div class="drawer-section-title">Today's Attendance</div>
-      <div class="drawer-row">
-        <span class="drawer-row-label">Status</span>
-        <span class="drawer-row-value">
-          ${todayAtt ? seatStatusBadge(todayAtt.status === 'checked-in' ? 'occupied' : 'available') : `<span class="badge badge-neutral"><span class="badge-dot"></span>Not arrived</span>`}
-        </span>
-      </div>
-      ${todayAtt?.checkIn ? `
-      <div class="drawer-row">
-        <span class="drawer-row-label">Check-in</span>
-        <span class="drawer-row-value">${utils.formatTime(todayAtt.checkIn)}</span>
-      </div>` : ''}
-      ${todayAtt?.checkOut ? `
-      <div class="drawer-row">
-        <span class="drawer-row-label">Check-out</span>
-        <span class="drawer-row-value">${utils.formatTime(todayAtt.checkOut)}</span>
-      </div>
-      <div class="drawer-row">
-        <span class="drawer-row-label">Duration</span>
-        <span class="drawer-row-value">${todayAtt.duration ? Math.floor(todayAtt.duration/60)+'h '+todayAtt.duration%60+'m' : '—'}</span>
-      </div>` : ''}
-    </div>
   `;
 }
 
@@ -531,11 +502,8 @@ function renderSeatActions(status, seat, student, membership) {
         ${icons['user-plus']} Assign Seat
       </button>
       <div style="display:flex;gap:var(--space-2);">
-        <button class="btn btn-secondary flex-1" onclick="openReservationModal('${seat.id}')">
-          ${icons.calendar} Reserve
-        </button>
-        <button class="btn btn-secondary flex-1" onclick="setSeatMaintenance('${seat.id}')">
-          ${icons.tool} Maintenance
+        <button class="btn btn-secondary w-full" onclick="setSeatMaintenance('${seat.id}')">
+          ${icons.tool} Set Maintenance
         </button>
       </div>
     `;
@@ -1399,74 +1367,4 @@ window.confirmRenew = function(studentId, seatId) {
   }
 };
 
-// ── Reservation Modal ─────────────────────────────────────────────
-window.openReservationModal = function(seatId) {
-  const branchId = store.getActiveBranchId();
-  const students = store.getStudents(branchId);
-  const seat = store.getSeat(seatId);
-  const today_ = new Date().toISOString().split('T')[0];
 
-  modal.open('Reserve Seat', `
-    <div style="display:flex;flex-direction:column;gap:var(--space-4);">
-      <div class="form-group">
-        <label class="form-label">Student <span class="required">*</span></label>
-        <select class="select" id="reserve-student">
-          <option value="">Select student...</option>
-          ${students.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}
-        </select>
-      </div>
-      <div class="grid-2">
-        <div class="form-group">
-          <label class="form-label">Start Date <span class="required">*</span></label>
-          <input type="date" class="input" id="reserve-start" value="${today_}">
-        </div>
-        <div class="form-group">
-          <label class="form-label">End Date <span class="required">*</span></label>
-          <input type="date" class="input" id="reserve-end" value="${utils.addDays(today_, 30)}">
-        </div>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Notes</label>
-        <textarea class="textarea" id="reserve-notes" rows="2" placeholder="Reason for reservation..."></textarea>
-      </div>
-    </div>
-  `, `
-    <button class="btn btn-secondary" onclick="modal.close()">Cancel</button>
-    <button class="btn btn-primary" onclick="confirmReservation('${seatId}')">
-      ${icons.calendar} Reserve Seat
-    </button>
-  `);
-};
-
-window.confirmReservation = function(seatId) {
-  const studentId = document.getElementById('reserve-student')?.value;
-  const startDate = document.getElementById('reserve-start')?.value;
-  const endDate = document.getElementById('reserve-end')?.value;
-  const notes = document.getElementById('reserve-notes')?.value;
-
-  if (!studentId) { toast.show('Please select a student', 'error'); return; }
-  if (!startDate || !endDate) { toast.show('Please enter dates', 'error'); return; }
-  if (new Date(endDate) <= new Date(startDate)) { toast.show('End date must be after start date', 'error'); return; }
-
-  try {
-    const reservation = store.addReservation({ studentId, seatId, startDate, endDate, notes });
-
-    // Dispatch RESERVATION_CONFIRMED event
-    if (window.notificationService && window.NOTIFICATION_EVENTS) {
-      window.notificationService.dispatchEvent(window.NOTIFICATION_EVENTS.RESERVATION_CONFIRMED, {
-        studentId,
-        seatId,
-        reservationId: reservation.id,
-        startDate,
-        endDate
-      });
-    }
-
-    modal.close();
-    drawer.close();
-    toast.show('Seat reserved & confirmation queued!', 'success');
-    app._navigate();
-  } catch (e) {
-    toast.show(e.message, 'error');
-  }
-};

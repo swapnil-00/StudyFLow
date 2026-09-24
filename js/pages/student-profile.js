@@ -21,14 +21,7 @@ export function renderStudentProfile(container, params) {
   const pendingAmount = membership ? store.getPendingAmount(membership.id) : 0;
   const payments = store.getPaymentsForStudent(studentId);
   const allAssignments = store.getAssignments(null).filter(a => a.studentId === studentId);
-  const transfers = (store.db.seatTransfers || []).filter(t => t.studentId === studentId);
-  const attendanceRecords = store.getAttendance(studentId);
   const recentActivity = store.getActivityLogs(100).filter(a => a.entityId === studentId || a.description?.includes(student.name)).slice(0, 10);
-
-  // Attendance stats
-  const totalDays = attendanceRecords.length;
-  const presentDays = attendanceRecords.filter(a => a.checkIn).length;
-  const avgDuration = attendanceRecords.filter(a => a.duration).reduce((sum, a) => sum + a.duration, 0) / Math.max(attendanceRecords.filter(a=>a.duration).length, 1);
 
   let activeTab = 'overview';
 
@@ -84,19 +77,19 @@ export function renderStudentProfile(container, params) {
           <div class="stat-card-value" style="font-size:var(--text-xl);color:${pendingAmount > 0 ? 'var(--sf-error-600)' : 'var(--color-text-primary)'};">${utils.formatINR(pendingAmount)}</div>
         </div>
         <div class="stat-card">
-          <div class="stat-card-top"><div class="stat-card-label">Attendance Days</div></div>
-          <div class="stat-card-value" style="font-size:var(--text-xl);">${presentDays}</div>
-          <div class="stat-card-change neutral">of ${totalDays} recorded</div>
+          <div class="stat-card-top"><div class="stat-card-label">Membership Plan</div></div>
+          <div class="stat-card-value" style="font-size:var(--text-lg);">${plan?.name || membership?.planName || 'No Plan'}</div>
+          <div class="stat-card-change neutral">${membership ? `${utils.daysUntil(membership.endDate)} days left` : 'Inactive'}</div>
         </div>
         <div class="stat-card">
-          <div class="stat-card-top"><div class="stat-card-label">Avg. Daily Hours</div></div>
-          <div class="stat-card-value" style="font-size:var(--text-xl);">${Math.floor(avgDuration / 60)}h ${Math.floor(avgDuration % 60)}m</div>
+          <div class="stat-card-top"><div class="stat-card-label">Joined Date</div></div>
+          <div class="stat-card-value" style="font-size:var(--text-lg);">${student.joinDate ? utils.formatDate(student.joinDate, {day:'numeric',month:'short',year:'numeric'}) : '—'}</div>
         </div>
       </div>
 
       <!-- Tabs -->
       <div class="tabs">
-        ${['overview','payments','attendance','history','communication'].map(t => `
+        ${['overview','payments','history','communication'].map(t => `
           <button class="tab-btn ${activeTab === t ? 'active' : ''}" onclick="switchProfileTab('${t}')">${capitalizeFirst(t)}</button>
         `).join('')}
       </div>
@@ -117,7 +110,6 @@ export function renderStudentProfile(container, params) {
     switch (tab) {
       case 'overview': return renderOverviewTab();
       case 'payments': return renderPaymentsTab();
-      case 'attendance': return renderAttendanceTab();
       case 'history': return renderHistoryTab();
       case 'communication': return renderCommunicationTab();
       default: return '';
@@ -236,43 +228,7 @@ export function renderStudentProfile(container, params) {
     `;
   }
 
-  function renderAttendanceTab() {
-    const recent = [...attendanceRecords].sort((a,b) => b.date.localeCompare(a.date)).slice(0, 30);
-    return `
-      <div class="table-container">
-        <div class="table-header">
-          <div class="table-title">Attendance Record (Last 30 days)</div>
-          <div style="display:flex;gap:var(--space-3);">
-            <button class="btn btn-success btn-sm" onclick="doCheckIn('${studentId}')">Check In</button>
-            <button class="btn btn-secondary btn-sm" onclick="doCheckOut('${studentId}')">Check Out</button>
-          </div>
-        </div>
-        <div class="table-scroll">
-          <table>
-            <thead>
-              <tr><th>Date</th><th>Check In</th><th>Check Out</th><th>Duration</th><th>Status</th></tr>
-            </thead>
-            <tbody>
-              ${recent.length ? recent.map(a => `
-                <tr>
-                  <td style="color:var(--color-text-secondary);">${utils.formatDate(a.date)}</td>
-                  <td>${a.checkIn ? utils.formatTime(a.checkIn) : '—'}</td>
-                  <td>${a.checkOut ? utils.formatTime(a.checkOut) : '—'}</td>
-                  <td>${a.duration ? Math.floor(a.duration/60)+'h '+a.duration%60+'m' : '—'}</td>
-                  <td>${a.status === 'checked-out' ? `<span class="badge badge-success"><span class="badge-dot"></span>Checked Out</span>` : `<span class="badge badge-indigo"><span class="badge-dot"></span>Checked In</span>`}</td>
-                </tr>
-              `).join('') : `
-                <tr><td colspan="5"><div class="empty-state" style="padding:var(--space-8);">
-                  <div class="empty-icon">${icons.clock}</div>
-                  <div class="empty-title">No attendance records</div>
-                </div></td></tr>
-              `}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    `;
-  }
+
 
   function renderHistoryTab() {
     return `
@@ -475,21 +431,7 @@ export function renderStudentProfile(container, params) {
     `;
   }
 
-  window.doCheckIn = function(studentId) {
-    try {
-      store.checkIn(studentId);
-      toast.show('Student checked in!', 'success');
-      switchProfileTab('attendance');
-    } catch (e) { toast.show(e.message, 'error'); }
-  };
 
-  window.doCheckOut = function(studentId) {
-    try {
-      store.checkOut(studentId);
-      toast.show('Student checked out!', 'success');
-      switchProfileTab('attendance');
-    } catch (e) { toast.show(e.message, 'error'); }
-  };
 
   window.openEditStudentModal = function(studentId) {
     const s = store.getStudent(studentId);

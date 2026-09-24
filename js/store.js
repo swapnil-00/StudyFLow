@@ -203,9 +203,6 @@ class Store {
     const assignment = this.getActiveAssignment(seatId);
     if (!assignment) return 'available';
 
-    const reservation = this.getActiveReservation(seatId);
-    if (reservation && !assignment) return 'reserved';
-
     const membership = this.getMembership(assignment.membershipId || assignment.membership_id);
     if (!membership) return 'occupied';
 
@@ -385,6 +382,13 @@ class Store {
     return this._db.membershipPlans[idx];
   }
 
+  async deleteMembershipPlan(id) {
+    await apiWrite('membership_plans', 'delete', {}, id);
+    this._db.membershipPlans = (this._db.membershipPlans || []).filter(p => p.id !== id);
+    this.addActivity({ action: 'plan_deleted', entity: 'membership_plan', entityId: id, description: 'Membership plan deleted' });
+    this._notify();
+  }
+
   // ── Memberships ───────────────────────────────────────────────────
   getMemberships(studentId) {
     const memberships = this._db?.memberships || [];
@@ -415,6 +419,25 @@ class Store {
     await apiWrite('memberships', 'update', updates, id);
     this._notify();
     return this._db.memberships[idx];
+  }
+
+  async deleteMembership(id) {
+    const mem = this.getMembership(id);
+    await apiWrite('memberships', 'delete', {}, id);
+    if (this._db.seatAssignments) {
+      const relatedAssignments = this._db.seatAssignments.filter(a => a.membershipId === id || a.membership_id === id);
+      relatedAssignments.forEach(a => {
+        const seat = this.getSeat(a.seatId || a.seat_id);
+        if (seat && (seat.currentStudentId === a.studentId || seat.currentStudentId === a.student_id)) {
+          seat.status = 'available';
+          seat.currentStudentId = null;
+        }
+      });
+      this._db.seatAssignments = this._db.seatAssignments.filter(a => a.membershipId !== id && a.membership_id !== id);
+    }
+    this._db.memberships = (this._db.memberships || []).filter(m => m.id !== id);
+    this.addActivity({ action: 'membership_deleted', entity: 'membership', entityId: id, description: `Membership deleted for student ${mem?.studentId || ''}` });
+    this._notify();
   }
 
   // ── Seat Assignments ──────────────────────────────────────────────
@@ -832,7 +855,8 @@ class Store {
 
   async deleteStaff(id) {
     await apiWrite('staff', 'delete', {}, id);
-    this._db.staff = this._db.staff.filter(s => s.id !== id);
+    this._db.staff = (this._db.staff || []).filter(s => s.id !== id);
+    this.addActivity({ action: 'staff_deleted', entity: 'staff', entityId: id, description: 'Staff member removed' });
     this._notify();
   }
 
@@ -847,7 +871,6 @@ class Store {
       const status = this.getSeatStatus(seat.id);
       if (status === 'occupied' || status === 'payment-due' || status === 'expiring') occupied++;
       else if (status === 'available') available++;
-      else if (status === 'reserved') reserved++;
       else if (status === 'maintenance' || status === 'blocked') maintenance++;
     });
 
@@ -877,11 +900,9 @@ class Store {
       return exp >= today_ && exp <= nextWeek;
     }).length;
 
-    const todayAtt = this.getTodayAttendance();
-    const branchStudentIds = this.getStudents(branchId).map(s => s.id);
-    const presentToday = todayAtt.filter(a => branchStudentIds.includes(a.studentId)).length;
+    const activeMembershipsCount = activeMemberships.length;
 
-    return { totalSeats, occupied, available, reserved, maintenance, todayRevenue, monthRevenue, totalPending, expiringCount, presentToday };
+    return { totalSeats, occupied, available, reserved: 0, maintenance, todayRevenue, monthRevenue, totalPending, expiringCount, activeMembershipsCount, presentToday: 0 };
   }
 
   getExpiringMemberships(branchId, days = 7) {

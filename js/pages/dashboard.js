@@ -38,14 +38,14 @@ export function renderDashboard(container) {
     <div class="grid-4" style="margin-bottom:var(--space-6);">
       ${renderStatCard('Total Seats', stats.totalSeats, '', 'seat-count', '#eef4ff', '#6172f3', icons.map)}
       ${renderStatCard('Occupied', stats.occupied, `${Math.round((stats.occupied/Math.max(stats.totalSeats,1))*100)}% occupancy`, 'occupied', '#eef4ff', '#444ce7', icons.users)}
-      ${renderStatCard('Available', stats.available, `${stats.reserved} reserved`, 'available', '#ecfdf3', '#17b26a', icons.checkCircle)}
+      ${renderStatCard('Available', stats.available, `${stats.available} unassigned`, 'available', '#ecfdf3', '#17b26a', icons.checkCircle)}
       ${renderStatCard("Today's Revenue", utils.formatINR(stats.todayRevenue), `${utils.formatINR(stats.monthRevenue)} this month`, 'revenue', '#fef0c7', '#f79009', icons['dollar-sign'])}
     </div>
 
     <div class="grid-4" style="margin-bottom:var(--space-6);">
       ${renderStatCard('Pending Dues', utils.formatINR(stats.totalPending), 'Total outstanding', 'dues', '#fee4e2', '#f04438', icons['alert-circle'])}
       ${renderStatCard('Expiring Soon', stats.expiringCount, 'Within 14 days', 'expiring', '#fef0c7', '#dc6803', icons.clock)}
-      ${renderStatCard("Today's Attendance", stats.presentToday, `of ${store.getStudents(branchId).length} students`, 'attendance', '#ecfdf3', '#079455', icons.checkCircle)}
+      ${renderStatCard('Active Memberships', stats.activeMembershipsCount ?? store.getMemberships().filter(m => m.status === 'active').length, 'Currently active', 'memberships', '#ecfdf3', '#079455', icons['credit-card'])}
       ${renderStatCard('Under Maintenance', stats.maintenance, 'Seats blocked', 'maintenance', '#f3f4f6', '#6c737f', icons.tool)}
     </div>
 

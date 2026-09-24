@@ -247,6 +247,13 @@ module.exports = async function handler(req, res) {
         );
         return res.json({ ok: true });
       }
+      if (action === 'delete') {
+        await withTransaction(async (client) => {
+          await client.query('UPDATE memberships SET plan_id=NULL WHERE plan_id=$1', [id]);
+          await client.query('DELETE FROM membership_plans WHERE id=$1', [id]);
+        });
+        return res.json({ ok: true });
+      }
     }
 
     // ── Memberships ───────────────────────────────────────────────
@@ -273,6 +280,21 @@ module.exports = async function handler(req, res) {
         if (fields.length === 0) return res.json({ ok: true });
         vals.push(id);
         await query(`UPDATE memberships SET ${fields.join(',')} WHERE id=$${vals.length}`, vals);
+        return res.json({ ok: true });
+      }
+      if (action === 'delete') {
+        await withTransaction(async (client) => {
+          const seatRes = await client.query('SELECT seat_id FROM seat_assignments WHERE membership_id=$1 AND status=$2', [id, 'active']);
+          for (const row of seatRes.rows) {
+            if (row.seat_id) {
+              await client.query("UPDATE seats SET status='available', current_student_id=NULL WHERE id=$1", [row.seat_id]);
+            }
+          }
+          await client.query('UPDATE payments SET membership_id=NULL WHERE membership_id=$1', [id]);
+          await client.query('UPDATE documents SET membership_id=NULL WHERE membership_id=$1', [id]);
+          await client.query('DELETE FROM seat_assignments WHERE membership_id=$1', [id]);
+          await client.query('DELETE FROM memberships WHERE id=$1', [id]);
+        });
         return res.json({ ok: true });
       }
     }

@@ -10,7 +10,7 @@
   },
   "rewrites": [
     {
-      "source": "/(dashboard|seat-map|students|student|memberships|payments|attendance|floors|expenses|reports|staff|notifications|activity|settings|reservations)",
+      "source": "/(dashboard|seat-map|students|student|memberships|payments|floors|expenses|reports|staff|notifications|activity|settings)",
       "destination": "/index.html"
     }
   ],

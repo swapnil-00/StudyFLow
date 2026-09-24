@@ -8,7 +8,6 @@ const routes = {
   '/student': () => import('./pages/student-profile.js').then(m => m.renderStudentProfile),
   '/memberships': () => import('./pages/memberships.js').then(m => m.renderMemberships),
   '/payments': () => import('./pages/payments.js').then(m => m.renderPayments),
-  '/attendance': () => import('./pages/attendance.js').then(m => m.renderAttendance),
   '/floors': () => import('./pages/floors.js').then(m => m.renderFloors),
   '/expenses': () => import('./pages/expenses.js').then(m => m.renderExpenses),
   '/reports': () => import('./pages/reports.js').then(m => m.renderReports),
@@ -16,7 +15,6 @@ const routes = {
   '/notifications': () => import('./pages/notifications.js').then(m => m.renderNotifications),
   '/activity': () => import('./pages/activity.js').then(m => m.renderActivity),
   '/settings': () => import('./pages/settings.js').then(m => m.renderSettings),
-  '/reservations': () => import('./pages/reservations.js').then(m => m.renderReservations),
   '/layout-editor': () => import('./pages/layout-editor.js').then(m => m.renderLayoutEditor),
 };
 
@@ -174,8 +172,6 @@ class App {
         { route: '/seat-map', label: 'Seat Map', icon: 'map' },
         { route: '/students', label: 'Students', icon: 'users' },
         { route: '/memberships', label: 'Memberships', icon: 'credit-card' },
-        { route: '/attendance', label: 'Attendance', icon: 'clock' },
-        { route: '/reservations', label: 'Reservations', icon: 'calendar' },
       ]},
       { label: 'FINANCE', items: [
         { route: '/payments', label: 'Payments', icon: 'dollar-sign' },
@@ -391,7 +387,6 @@ class App {
       { label: 'Add Student', icon: 'user-plus', action: `app.navigate('/students'); setTimeout(()=>document.getElementById('add-student-btn')?.click(),300)` },
       { label: 'Assign Seat', icon: 'map-pin', action: `app.navigate('/seat-map')` },
       { label: 'Record Payment', icon: 'dollar-sign', action: `app.navigate('/payments')` },
-      { label: 'Add Reservation', icon: 'calendar', action: `app.navigate('/reservations')` },
       { label: 'Add Expense', icon: 'trending-down', action: `app.navigate('/expenses')` },
       { label: 'Add Staff', icon: 'user-check', action: `app.navigate('/staff')` },
     ];

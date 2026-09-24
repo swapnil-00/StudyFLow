@@ -23,7 +23,6 @@ const pageFiles = [
   'student-profile.js',
   'memberships.js',
   'payments.js',
-  'attendance.js',
   'floors.js',
   'expenses.js',
   'reports.js',
@@ -31,7 +30,6 @@ const pageFiles = [
   'notifications.js',
   'activity.js',
   'settings.js',
-  'reservations.js',
   'layout-editor.js'
 ];
 
@@ -87,7 +85,6 @@ const routeReplacements = {
   "'/student': () => import('./pages/student-profile.js').then(m => m.renderStudentProfile)": "'/student': () => Promise.resolve(window.Pages.renderStudentProfile)",
   "'/memberships': () => import('./pages/memberships.js').then(m => m.renderMemberships)": "'/memberships': () => Promise.resolve(window.Pages.renderMemberships)",
   "'/payments': () => import('./pages/payments.js').then(m => m.renderPayments)": "'/payments': () => Promise.resolve(window.Pages.renderPayments)",
-  "'/attendance': () => import('./pages/attendance.js').then(m => m.renderAttendance)": "'/attendance': () => Promise.resolve(window.Pages.renderAttendance)",
   "'/floors': () => import('./pages/floors.js').then(m => m.renderFloors)": "'/floors': () => Promise.resolve(window.Pages.renderFloors)",
   "'/expenses': () => import('./pages/expenses.js').then(m => m.renderExpenses)": "'/expenses': () => Promise.resolve(window.Pages.renderExpenses)",
   "'/reports': () => import('./pages/reports.js').then(m => m.renderReports)": "'/reports': () => Promise.resolve(window.Pages.renderReports)",
@@ -95,7 +92,6 @@ const routeReplacements = {
   "'/notifications': () => import('./pages/notifications.js').then(m => m.renderNotifications)": "'/notifications': () => Promise.resolve(window.Pages.renderNotifications)",
   "'/activity': () => import('./pages/activity.js').then(m => m.renderActivity)": "'/activity': () => Promise.resolve(window.Pages.renderActivity)",
   "'/settings': () => import('./pages/settings.js').then(m => m.renderSettings)": "'/settings': () => Promise.resolve(window.Pages.renderSettings)",
-  "'/reservations': () => import('./pages/reservations.js').then(m => m.renderReservations)": "'/reservations': () => Promise.resolve(window.Pages.renderReservations)",
   "'/layout-editor': () => import('./pages/layout-editor.js').then(m => m.renderLayoutEditor)": "'/layout-editor': () => Promise.resolve(window.Pages.renderLayoutEditor)"
 };
 

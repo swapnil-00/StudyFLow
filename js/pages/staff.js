@@ -20,7 +20,7 @@ export function renderStaff(container) {
       <div class="table-scroll">
         <table>
           <thead>
-            <tr><th>Staff Member</th><th>Role</th><th>Phone</th><th>Email</th><th>Status</th></tr>
+            <tr><th>Staff Member</th><th>Role</th><th>Phone</th><th>Email</th><th>Status</th><th>Actions</th></tr>
           </thead>
           <tbody>
             ${staff.map(s => `
@@ -38,9 +38,14 @@ export function renderStaff(container) {
                 <td style="color:var(--color-text-secondary);">${s.phone || '—'}</td>
                 <td style="color:var(--color-text-secondary);font-size:var(--text-xs);">${s.email || '—'}</td>
                 <td><span class="badge badge-success"><span class="badge-dot"></span>Active</span></td>
+                <td>
+                  <button class="btn btn-ghost btn-sm" style="color:var(--sf-error-600);padding:4px 8px;" title="Delete Staff" onclick="deleteStaffAction('${s.id}', '${(s.name || '').replace(/'/g, "\\'")}')">
+                    ${icons.trash} Delete
+                  </button>
+                </td>
               </tr>
             `).join('') || `
-              <tr><td colspan="5"><div class="empty-state" style="padding:var(--space-8);">
+              <tr><td colspan="6"><div class="empty-state" style="padding:var(--space-8);">
                 <div class="empty-icon">${icons['user-check']}</div>
                 <div class="empty-title">No staff added</div>
                 <button class="btn btn-primary" onclick="openAddStaffModal()">Add First Staff</button>
@@ -74,15 +79,37 @@ export function renderStaff(container) {
     `);
   };
 
-  window.confirmAddStaff = function(branchId) {
+  window.confirmAddStaff = async function(branchId) {
     const name = document.getElementById('staff-name')?.value?.trim();
     const role = document.getElementById('staff-role')?.value;
     const phone = document.getElementById('staff-phone')?.value?.trim();
     const email = document.getElementById('staff-email')?.value?.trim();
     if (!name) { toast.show('Name is required', 'error'); return; }
-    store.addStaff({ name, role, phone, email, branchId });
-    modal.close();
-    toast.show('Staff member added!', 'success');
-    app._navigate();
+    try {
+      await store.addStaff({ name, role, phone, email, branchId });
+      modal.close();
+      toast.show('Staff member added!', 'success');
+      app._navigate();
+    } catch (e) {
+      toast.show(e.message || 'Failed to add staff', 'error');
+    }
+  };
+
+  window.deleteStaffAction = async function(staffId, staffName) {
+    const confirmed = await modal.confirm({
+      title: 'Delete Staff Member',
+      message: `Are you sure you want to remove ${staffName || 'this staff member'}?`,
+      confirmText: 'Delete',
+      type: 'danger'
+    });
+    if (!confirmed) return;
+
+    try {
+      await store.deleteStaff(staffId);
+      toast.show('Staff member removed successfully', 'success');
+      app._navigate();
+    } catch (e) {
+      toast.show(e.message || 'Failed to remove staff', 'error');
+    }
   };
 }

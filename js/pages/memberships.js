@@ -41,7 +41,7 @@ export function renderMemberships(container) {
       <div class="table-scroll">
         <table>
           <thead>
-            <tr><th>Student</th><th>Plan</th><th>Start</th><th>Expiry</th><th>Days Left</th><th>Payment</th><th>Status</th></tr>
+            <tr><th>Student</th><th>Plan</th><th>Start</th><th>Expiry</th><th>Days Left</th><th>Payment</th><th>Status</th><th>Actions</th></tr>
           </thead>
           <tbody>
             ${activeMemberships.map(m => {
@@ -65,10 +65,15 @@ export function renderMemberships(container) {
                   </td>
                   <td>${paymentStatusBadge(payStatus)}</td>
                   <td>${membershipStatusBadge(m.endDate, m.status)}</td>
+                  <td>
+                    <button class="btn btn-ghost btn-sm" style="color:var(--sf-error-600);padding:4px 8px;" title="Delete Membership" onclick="event.stopPropagation(); deleteMembershipAction('${m.id}', '${(m.student?.name || '').replace(/'/g, "\\'")}')">
+                      ${icons.trash} Delete
+                    </button>
+                  </td>
                 </tr>
               `;
             }).join('') || `
-              <tr><td colspan="7"><div class="empty-state" style="padding:var(--space-8);">
+              <tr><td colspan="8"><div class="empty-state" style="padding:var(--space-8);">
                 <div class="empty-icon">${icons['credit-card']}</div>
                 <div class="empty-title">No active memberships</div>
               </div></td></tr>
@@ -111,7 +116,7 @@ export function renderMemberships(container) {
     `);
   };
 
-  window.confirmAddPlan = function() {
+  window.confirmAddPlan = async function() {
     const name = document.getElementById('plan-name')?.value?.trim();
     const duration = parseInt(document.getElementById('plan-duration')?.value);
     const price = parseFloat(document.getElementById('plan-price')?.value);
@@ -122,20 +127,68 @@ export function renderMemberships(container) {
     if (!duration || duration < 1) { toast.show('Please enter a valid duration', 'error'); return; }
     if (!price || price < 0) { toast.show('Please enter a valid price', 'error'); return; }
 
-    store.addMembershipPlan({ name, duration, durationUnit: 'days', price, accessHours: hours, description: desc });
-    modal.close();
-    toast.show('Membership plan created!', 'success');
-    app._navigate();
+    try {
+      await store.addMembershipPlan({ name, duration, durationUnit: 'days', price, accessHours: hours, description: desc });
+      modal.close();
+      toast.show('Membership plan created!', 'success');
+      app._navigate();
+    } catch (e) {
+      toast.show(e.message || 'Failed to create plan', 'error');
+    }
+  };
+
+  window.deleteMembershipAction = async function(membershipId, studentName) {
+    const confirmed = await modal.confirm({
+      title: 'Delete Membership',
+      message: `Are you sure you want to delete the membership for ${studentName || 'this student'}? This will also release any assigned seat.`,
+      confirmText: 'Delete',
+      type: 'danger'
+    });
+    if (!confirmed) return;
+
+    try {
+      await store.deleteMembership(membershipId);
+      toast.show('Membership deleted successfully', 'success');
+      app._navigate();
+    } catch (e) {
+      toast.show(e.message || 'Failed to delete membership', 'error');
+    }
+  };
+
+  window.deletePlanAction = async function(planId, planName) {
+    const confirmed = await modal.confirm({
+      title: 'Delete Plan',
+      message: `Are you sure you want to delete the plan "${planName}"?`,
+      confirmText: 'Delete Plan',
+      type: 'danger'
+    });
+    if (!confirmed) return;
+
+    try {
+      await store.deleteMembershipPlan(planId);
+      toast.show('Membership plan deleted successfully', 'success');
+      app._navigate();
+    } catch (e) {
+      toast.show(e.message || 'Failed to delete plan', 'error');
+    }
   };
 }
 
 function renderPlanCard(plan) {
-  const studentCount = store.db.memberships.filter(m => m.planId === plan.id && m.status === 'active').length;
+  const studentCount = (store.db.memberships || []).filter(m => m.planId === plan.id && m.status === 'active').length;
   return `
-    <div class="card" style="text-align:center;padding:var(--space-5);cursor:pointer;transition:all var(--transition-fast);"
+    <div class="card" style="position:relative;text-align:center;padding:var(--space-5);transition:all var(--transition-fast);"
       onmouseenter="this.style.boxShadow='var(--shadow-md)';this.style.transform='translateY(-2px)'"
       onmouseleave="this.style.boxShadow='';this.style.transform=''"
     >
+      <button class="btn btn-ghost btn-sm" style="position:absolute;top:8px;right:8px;padding:4px;color:var(--color-text-tertiary);border-radius:var(--radius-full);"
+        title="Delete Plan"
+        onclick="event.stopPropagation(); deletePlanAction('${plan.id}', '${(plan.name || '').replace(/'/g, "\\'")}')"
+        onmouseenter="this.style.color='var(--sf-error-600)'"
+        onmouseleave="this.style.color='var(--color-text-tertiary)'"
+      >
+        ${icons.trash}
+      </button>
       <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:var(--space-2);">${plan.duration} DAYS</div>
       <div style="font-size:var(--text-lg);font-weight:var(--fw-bold);color:var(--color-text-primary);margin-bottom:var(--space-2);">${plan.name}</div>
       <div style="font-size:var(--text-2xl);font-weight:var(--fw-bold);color:var(--sf-indigo-600);margin-bottom:var(--space-3);">${utils.formatINR(plan.price)}</div>

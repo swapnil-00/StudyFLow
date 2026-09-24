@@ -268,9 +268,6 @@ class Store {
     const assignment = this.getActiveAssignment(seatId);
     if (!assignment) return 'available';
 
-    const reservation = this.getActiveReservation(seatId);
-    if (reservation && !assignment) return 'reserved';
-
     const membership = this.getMembership(assignment.membershipId || assignment.membership_id);
     if (!membership) return 'occupied';
 
@@ -450,6 +447,13 @@ class Store {
     return this._db.membershipPlans[idx];
   }
 
+  async deleteMembershipPlan(id) {
+    await apiWrite('membership_plans', 'delete', {}, id);
+    this._db.membershipPlans = (this._db.membershipPlans || []).filter(p => p.id !== id);
+    this.addActivity({ action: 'plan_deleted', entity: 'membership_plan', entityId: id, description: 'Membership plan deleted' });
+    this._notify();
+  }
+
   // ── Memberships ───────────────────────────────────────────────────
   getMemberships(studentId) {
     const memberships = this._db?.memberships || [];
@@ -480,6 +484,25 @@ class Store {
     await apiWrite('memberships', 'update', updates, id);
     this._notify();
     return this._db.memberships[idx];
+  }
+
+  async deleteMembership(id) {
+    const mem = this.getMembership(id);
+    await apiWrite('memberships', 'delete', {}, id);
+    if (this._db.seatAssignments) {
+      const relatedAssignments = this._db.seatAssignments.filter(a => a.membershipId === id || a.membership_id === id);
+      relatedAssignments.forEach(a => {
+        const seat = this.getSeat(a.seatId || a.seat_id);
+        if (seat && (seat.currentStudentId === a.studentId || seat.currentStudentId === a.student_id)) {
+          seat.status = 'available';
+          seat.currentStudentId = null;
+        }
+      });
+      this._db.seatAssignments = this._db.seatAssignments.filter(a => a.membershipId !== id && a.membership_id !== id);
+    }
+    this._db.memberships = (this._db.memberships || []).filter(m => m.id !== id);
+    this.addActivity({ action: 'membership_deleted', entity: 'membership', entityId: id, description: `Membership deleted for student ${mem?.studentId || ''}` });
+    this._notify();
   }
 
   // ── Seat Assignments ──────────────────────────────────────────────
@@ -897,7 +920,8 @@ class Store {
 
   async deleteStaff(id) {
     await apiWrite('staff', 'delete', {}, id);
-    this._db.staff = this._db.staff.filter(s => s.id !== id);
+    this._db.staff = (this._db.staff || []).filter(s => s.id !== id);
+    this.addActivity({ action: 'staff_deleted', entity: 'staff', entityId: id, description: 'Staff member removed' });
     this._notify();
   }
 
@@ -912,7 +936,6 @@ class Store {
       const status = this.getSeatStatus(seat.id);
       if (status === 'occupied' || status === 'payment-due' || status === 'expiring') occupied++;
       else if (status === 'available') available++;
-      else if (status === 'reserved') reserved++;
       else if (status === 'maintenance' || status === 'blocked') maintenance++;
     });
 
@@ -942,11 +965,9 @@ class Store {
       return exp >= today_ && exp <= nextWeek;
     }).length;
 
-    const todayAtt = this.getTodayAttendance();
-    const branchStudentIds = this.getStudents(branchId).map(s => s.id);
-    const presentToday = todayAtt.filter(a => branchStudentIds.includes(a.studentId)).length;
+    const activeMembershipsCount = activeMemberships.length;
 
-    return { totalSeats, occupied, available, reserved, maintenance, todayRevenue, monthRevenue, totalPending, expiringCount, presentToday };
+    return { totalSeats, occupied, available, reserved: 0, maintenance, todayRevenue, monthRevenue, totalPending, expiringCount, activeMembershipsCount, presentToday: 0 };
   }
 
   getExpiringMemberships(branchId, days = 7) {
@@ -2457,14 +2478,14 @@ window.Pages.renderDashboard = function renderDashboard(container) {
     <div class="grid-4" style="margin-bottom:var(--space-6);">
       ${renderStatCard('Total Seats', stats.totalSeats, '', 'seat-count', '#eef4ff', '#6172f3', icons.map)}
       ${renderStatCard('Occupied', stats.occupied, `${Math.round((stats.occupied/Math.max(stats.totalSeats,1))*100)}% occupancy`, 'occupied', '#eef4ff', '#444ce7', icons.users)}
-      ${renderStatCard('Available', stats.available, `${stats.reserved} reserved`, 'available', '#ecfdf3', '#17b26a', icons.checkCircle)}
+      ${renderStatCard('Available', stats.available, `${stats.available} unassigned`, 'available', '#ecfdf3', '#17b26a', icons.checkCircle)}
       ${renderStatCard("Today's Revenue", utils.formatINR(stats.todayRevenue), `${utils.formatINR(stats.monthRevenue)} this month`, 'revenue', '#fef0c7', '#f79009', icons['dollar-sign'])}
     </div>
 
     <div class="grid-4" style="margin-bottom:var(--space-6);">
       ${renderStatCard('Pending Dues', utils.formatINR(stats.totalPending), 'Total outstanding', 'dues', '#fee4e2', '#f04438', icons['alert-circle'])}
       ${renderStatCard('Expiring Soon', stats.expiringCount, 'Within 14 days', 'expiring', '#fef0c7', '#dc6803', icons.clock)}
-      ${renderStatCard("Today's Attendance", stats.presentToday, `of ${store.getStudents(branchId).length} students`, 'attendance', '#ecfdf3', '#079455', icons.checkCircle)}
+      ${renderStatCard('Active Memberships', stats.activeMembershipsCount ?? store.getMemberships().filter(m => m.status === 'active').length, 'Currently active', 'memberships', '#ecfdf3', '#079455', icons['credit-card'])}
       ${renderStatCard('Under Maintenance', stats.maintenance, 'Seats blocked', 'maintenance', '#f3f4f6', '#6c737f', icons.tool)}
     </div>
 
@@ -2832,7 +2853,6 @@ window.Pages.renderSeatMap = function renderSeatMap(container, params = {}) {
         ${renderSeatStat('Total', stats.totalSeats, 'neutral')}
         ${renderSeatStat('Occupied', stats.occupied, 'indigo')}
         ${renderSeatStat('Available', stats.available, 'success')}
-        ${renderSeatStat('Reserved', stats.reserved, 'warning')}
         ${renderSeatStat('Maintenance', stats.maintenance, 'neutral')}
       </div>
 
@@ -2862,7 +2882,7 @@ window.Pages.renderSeatMap = function renderSeatMap(container, params = {}) {
 
           <!-- Filter -->
           <div class="filter-tabs" id="seat-filters">
-            ${['all','available','occupied','reserved','payment-due','expiring','maintenance','blocked'].map(f => `
+            ${['all','available','occupied','payment-due','expiring','maintenance','blocked'].map(f => `
               <button class="filter-tab ${state.filter === f ? 'active' : ''}"
                 onclick="handleFilterChange('${f}')">
                 ${f === 'all' ? 'All' : capitalizeFirst(f)}
@@ -2876,7 +2896,6 @@ window.Pages.renderSeatMap = function renderSeatMap(container, params = {}) {
           ${[
             { status: 'available', label: 'Available', bg: 'var(--seat-available-dot)' },
             { status: 'occupied', label: 'Occupied', bg: 'var(--seat-occupied-dot)' },
-            { status: 'reserved', label: 'Reserved', bg: 'var(--seat-reserved-dot)' },
             { status: 'payment-due', label: 'Payment Due', bg: 'var(--seat-payment-due-dot)' },
             { status: 'expiring', label: 'Expiring Soon', bg: 'var(--seat-expiring-dot)' },
             { status: 'maintenance', label: 'Maintenance', bg: 'var(--seat-maintenance-dot)' },
@@ -3144,8 +3163,6 @@ window.openSeatDrawer = function(seatId) {
   const membership = assignment ? store.getMembership(assignment.membershipId) : null;
   const paymentStatus = membership ? store.getPaymentStatus(membership.id) : null;
   const paidAmount = membership ? store.getPaidAmount(membership.id) : 0;
-  const pendingAmount = membership ? store.getPendingAmount(membership.id) : 0;
-  const todayAtt = student ? store.getAttendance(student.id, new Date().toISOString().split('T')[0]) : null;
   const plan = membership ? store.getMembershipPlan(membership.planId) : null;
   const room = store.getRoom(seat.roomId);
   const floor = room ? store.getFloor(room.floorId) : null;
@@ -3165,7 +3182,7 @@ window.openSeatDrawer = function(seatId) {
       </div>
     </div>
 
-    ${student ? renderStudentSection(student, membership, plan, paymentStatus, paidAmount, pendingAmount, todayAtt) : renderAvailableSection(seat)}
+    ${student ? renderStudentSection(student, membership, plan, paymentStatus, paidAmount, pendingAmount) : renderAvailableSection(seat)}
   `;
 
   const footerHTML = renderSeatActions(status, seat, student, membership);
@@ -3251,31 +3268,6 @@ function renderStudentSection(student, membership, plan, paymentStatus, paidAmou
       </div>
     </div>
     ` : ''}
-
-    <!-- Attendance Today -->
-    <div class="drawer-section">
-      <div class="drawer-section-title">Today's Attendance</div>
-      <div class="drawer-row">
-        <span class="drawer-row-label">Status</span>
-        <span class="drawer-row-value">
-          ${todayAtt ? seatStatusBadge(todayAtt.status === 'checked-in' ? 'occupied' : 'available') : `<span class="badge badge-neutral"><span class="badge-dot"></span>Not arrived</span>`}
-        </span>
-      </div>
-      ${todayAtt?.checkIn ? `
-      <div class="drawer-row">
-        <span class="drawer-row-label">Check-in</span>
-        <span class="drawer-row-value">${utils.formatTime(todayAtt.checkIn)}</span>
-      </div>` : ''}
-      ${todayAtt?.checkOut ? `
-      <div class="drawer-row">
-        <span class="drawer-row-label">Check-out</span>
-        <span class="drawer-row-value">${utils.formatTime(todayAtt.checkOut)}</span>
-      </div>
-      <div class="drawer-row">
-        <span class="drawer-row-label">Duration</span>
-        <span class="drawer-row-value">${todayAtt.duration ? Math.floor(todayAtt.duration/60)+'h '+todayAtt.duration%60+'m' : '—'}</span>
-      </div>` : ''}
-    </div>
   `;
 }
 
@@ -3296,11 +3288,8 @@ function renderSeatActions(status, seat, student, membership) {
         ${icons['user-plus']} Assign Seat
       </button>
       <div style="display:flex;gap:var(--space-2);">
-        <button class="btn btn-secondary flex-1" onclick="openReservationModal('${seat.id}')">
-          ${icons.calendar} Reserve
-        </button>
-        <button class="btn btn-secondary flex-1" onclick="setSeatMaintenance('${seat.id}')">
-          ${icons.tool} Maintenance
+        <button class="btn btn-secondary w-full" onclick="setSeatMaintenance('${seat.id}')">
+          ${icons.tool} Set Maintenance
         </button>
       </div>
     `;
@@ -4164,77 +4153,7 @@ window.confirmRenew = function(studentId, seatId) {
   }
 };
 
-// ── Reservation Modal ─────────────────────────────────────────────
-window.openReservationModal = function(seatId) {
-  const branchId = store.getActiveBranchId();
-  const students = store.getStudents(branchId);
-  const seat = store.getSeat(seatId);
-  const today_ = new Date().toISOString().split('T')[0];
 
-  modal.open('Reserve Seat', `
-    <div style="display:flex;flex-direction:column;gap:var(--space-4);">
-      <div class="form-group">
-        <label class="form-label">Student <span class="required">*</span></label>
-        <select class="select" id="reserve-student">
-          <option value="">Select student...</option>
-          ${students.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}
-        </select>
-      </div>
-      <div class="grid-2">
-        <div class="form-group">
-          <label class="form-label">Start Date <span class="required">*</span></label>
-          <input type="date" class="input" id="reserve-start" value="${today_}">
-        </div>
-        <div class="form-group">
-          <label class="form-label">End Date <span class="required">*</span></label>
-          <input type="date" class="input" id="reserve-end" value="${utils.addDays(today_, 30)}">
-        </div>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Notes</label>
-        <textarea class="textarea" id="reserve-notes" rows="2" placeholder="Reason for reservation..."></textarea>
-      </div>
-    </div>
-  `, `
-    <button class="btn btn-secondary" onclick="modal.close()">Cancel</button>
-    <button class="btn btn-primary" onclick="confirmReservation('${seatId}')">
-      ${icons.calendar} Reserve Seat
-    </button>
-  `);
-};
-
-window.confirmReservation = function(seatId) {
-  const studentId = document.getElementById('reserve-student')?.value;
-  const startDate = document.getElementById('reserve-start')?.value;
-  const endDate = document.getElementById('reserve-end')?.value;
-  const notes = document.getElementById('reserve-notes')?.value;
-
-  if (!studentId) { toast.show('Please select a student', 'error'); return; }
-  if (!startDate || !endDate) { toast.show('Please enter dates', 'error'); return; }
-  if (new Date(endDate) <= new Date(startDate)) { toast.show('End date must be after start date', 'error'); return; }
-
-  try {
-    const reservation = store.addReservation({ studentId, seatId, startDate, endDate, notes });
-
-    // Dispatch RESERVATION_CONFIRMED event
-    if (window.notificationService && window.NOTIFICATION_EVENTS) {
-      window.notificationService.dispatchEvent(window.NOTIFICATION_EVENTS.RESERVATION_CONFIRMED, {
-        studentId,
-        seatId,
-        reservationId: reservation.id,
-        startDate,
-        endDate
-      });
-    }
-
-    modal.close();
-    drawer.close();
-    toast.show('Seat reserved & confirmation queued!', 'success');
-    app._navigate();
-  } catch (e) {
-    toast.show(e.message, 'error');
-  }
-};
 
 })();
 
@@ -4654,14 +4573,7 @@ window.Pages.renderStudentProfile = function renderStudentProfile(container, par
   const pendingAmount = membership ? store.getPendingAmount(membership.id) : 0;
   const payments = store.getPaymentsForStudent(studentId);
   const allAssignments = store.getAssignments(null).filter(a => a.studentId === studentId);
-  const transfers = (store.db.seatTransfers || []).filter(t => t.studentId === studentId);
-  const attendanceRecords = store.getAttendance(studentId);
   const recentActivity = store.getActivityLogs(100).filter(a => a.entityId === studentId || a.description?.includes(student.name)).slice(0, 10);
-
-  // Attendance stats
-  const totalDays = attendanceRecords.length;
-  const presentDays = attendanceRecords.filter(a => a.checkIn).length;
-  const avgDuration = attendanceRecords.filter(a => a.duration).reduce((sum, a) => sum + a.duration, 0) / Math.max(attendanceRecords.filter(a=>a.duration).length, 1);
 
   let activeTab = 'overview';
 
@@ -4717,19 +4629,19 @@ window.Pages.renderStudentProfile = function renderStudentProfile(container, par
           <div class="stat-card-value" style="font-size:var(--text-xl);color:${pendingAmount > 0 ? 'var(--sf-error-600)' : 'var(--color-text-primary)'};">${utils.formatINR(pendingAmount)}</div>
         </div>
         <div class="stat-card">
-          <div class="stat-card-top"><div class="stat-card-label">Attendance Days</div></div>
-          <div class="stat-card-value" style="font-size:var(--text-xl);">${presentDays}</div>
-          <div class="stat-card-change neutral">of ${totalDays} recorded</div>
+          <div class="stat-card-top"><div class="stat-card-label">Membership Plan</div></div>
+          <div class="stat-card-value" style="font-size:var(--text-lg);">${plan?.name || membership?.planName || 'No Plan'}</div>
+          <div class="stat-card-change neutral">${membership ? `${utils.daysUntil(membership.endDate)} days left` : 'Inactive'}</div>
         </div>
         <div class="stat-card">
-          <div class="stat-card-top"><div class="stat-card-label">Avg. Daily Hours</div></div>
-          <div class="stat-card-value" style="font-size:var(--text-xl);">${Math.floor(avgDuration / 60)}h ${Math.floor(avgDuration % 60)}m</div>
+          <div class="stat-card-top"><div class="stat-card-label">Joined Date</div></div>
+          <div class="stat-card-value" style="font-size:var(--text-lg);">${student.joinDate ? utils.formatDate(student.joinDate, {day:'numeric',month:'short',year:'numeric'}) : '—'}</div>
         </div>
       </div>
 
       <!-- Tabs -->
       <div class="tabs">
-        ${['overview','payments','attendance','history','communication'].map(t => `
+        ${['overview','payments','history','communication'].map(t => `
           <button class="tab-btn ${activeTab === t ? 'active' : ''}" onclick="switchProfileTab('${t}')">${capitalizeFirst(t)}</button>
         `).join('')}
       </div>
@@ -4750,7 +4662,6 @@ window.Pages.renderStudentProfile = function renderStudentProfile(container, par
     switch (tab) {
       case 'overview': return renderOverviewTab();
       case 'payments': return renderPaymentsTab();
-      case 'attendance': return renderAttendanceTab();
       case 'history': return renderHistoryTab();
       case 'communication': return renderCommunicationTab();
       default: return '';
@@ -4869,43 +4780,7 @@ window.Pages.renderStudentProfile = function renderStudentProfile(container, par
     `;
   }
 
-  function renderAttendanceTab() {
-    const recent = [...attendanceRecords].sort((a,b) => b.date.localeCompare(a.date)).slice(0, 30);
-    return `
-      <div class="table-container">
-        <div class="table-header">
-          <div class="table-title">Attendance Record (Last 30 days)</div>
-          <div style="display:flex;gap:var(--space-3);">
-            <button class="btn btn-success btn-sm" onclick="doCheckIn('${studentId}')">Check In</button>
-            <button class="btn btn-secondary btn-sm" onclick="doCheckOut('${studentId}')">Check Out</button>
-          </div>
-        </div>
-        <div class="table-scroll">
-          <table>
-            <thead>
-              <tr><th>Date</th><th>Check In</th><th>Check Out</th><th>Duration</th><th>Status</th></tr>
-            </thead>
-            <tbody>
-              ${recent.length ? recent.map(a => `
-                <tr>
-                  <td style="color:var(--color-text-secondary);">${utils.formatDate(a.date)}</td>
-                  <td>${a.checkIn ? utils.formatTime(a.checkIn) : '—'}</td>
-                  <td>${a.checkOut ? utils.formatTime(a.checkOut) : '—'}</td>
-                  <td>${a.duration ? Math.floor(a.duration/60)+'h '+a.duration%60+'m' : '—'}</td>
-                  <td>${a.status === 'checked-out' ? `<span class="badge badge-success"><span class="badge-dot"></span>Checked Out</span>` : `<span class="badge badge-indigo"><span class="badge-dot"></span>Checked In</span>`}</td>
-                </tr>
-              `).join('') : `
-                <tr><td colspan="5"><div class="empty-state" style="padding:var(--space-8);">
-                  <div class="empty-icon">${icons.clock}</div>
-                  <div class="empty-title">No attendance records</div>
-                </div></td></tr>
-              `}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    `;
-  }
+
 
   function renderHistoryTab() {
     return `
@@ -5108,21 +4983,7 @@ window.Pages.renderStudentProfile = function renderStudentProfile(container, par
     `;
   }
 
-  window.doCheckIn = function(studentId) {
-    try {
-      store.checkIn(studentId);
-      toast.show('Student checked in!', 'success');
-      switchProfileTab('attendance');
-    } catch (e) { toast.show(e.message, 'error'); }
-  };
 
-  window.doCheckOut = function(studentId) {
-    try {
-      store.checkOut(studentId);
-      toast.show('Student checked out!', 'success');
-      switchProfileTab('attendance');
-    } catch (e) { toast.show(e.message, 'error'); }
-  };
 
   window.openEditStudentModal = function(studentId) {
     const s = store.getStudent(studentId);
@@ -5323,7 +5184,7 @@ window.Pages.renderMemberships = function renderMemberships(container) {
       <div class="table-scroll">
         <table>
           <thead>
-            <tr><th>Student</th><th>Plan</th><th>Start</th><th>Expiry</th><th>Days Left</th><th>Payment</th><th>Status</th></tr>
+            <tr><th>Student</th><th>Plan</th><th>Start</th><th>Expiry</th><th>Days Left</th><th>Payment</th><th>Status</th><th>Actions</th></tr>
           </thead>
           <tbody>
             ${activeMemberships.map(m => {
@@ -5347,10 +5208,15 @@ window.Pages.renderMemberships = function renderMemberships(container) {
                   </td>
                   <td>${paymentStatusBadge(payStatus)}</td>
                   <td>${membershipStatusBadge(m.endDate, m.status)}</td>
+                  <td>
+                    <button class="btn btn-ghost btn-sm" style="color:var(--sf-error-600);padding:4px 8px;" title="Delete Membership" onclick="event.stopPropagation(); deleteMembershipAction('${m.id}', '${(m.student?.name || '').replace(/'/g, "\\'")}')">
+                      ${icons.trash} Delete
+                    </button>
+                  </td>
                 </tr>
               `;
             }).join('') || `
-              <tr><td colspan="7"><div class="empty-state" style="padding:var(--space-8);">
+              <tr><td colspan="8"><div class="empty-state" style="padding:var(--space-8);">
                 <div class="empty-icon">${icons['credit-card']}</div>
                 <div class="empty-title">No active memberships</div>
               </div></td></tr>
@@ -5393,7 +5259,7 @@ window.Pages.renderMemberships = function renderMemberships(container) {
     `);
   };
 
-  window.confirmAddPlan = function() {
+  window.confirmAddPlan = async function() {
     const name = document.getElementById('plan-name')?.value?.trim();
     const duration = parseInt(document.getElementById('plan-duration')?.value);
     const price = parseFloat(document.getElementById('plan-price')?.value);
@@ -5404,20 +5270,68 @@ window.Pages.renderMemberships = function renderMemberships(container) {
     if (!duration || duration < 1) { toast.show('Please enter a valid duration', 'error'); return; }
     if (!price || price < 0) { toast.show('Please enter a valid price', 'error'); return; }
 
-    store.addMembershipPlan({ name, duration, durationUnit: 'days', price, accessHours: hours, description: desc });
-    modal.close();
-    toast.show('Membership plan created!', 'success');
-    app._navigate();
+    try {
+      await store.addMembershipPlan({ name, duration, durationUnit: 'days', price, accessHours: hours, description: desc });
+      modal.close();
+      toast.show('Membership plan created!', 'success');
+      app._navigate();
+    } catch (e) {
+      toast.show(e.message || 'Failed to create plan', 'error');
+    }
+  };
+
+  window.deleteMembershipAction = async function(membershipId, studentName) {
+    const confirmed = await modal.confirm({
+      title: 'Delete Membership',
+      message: `Are you sure you want to delete the membership for ${studentName || 'this student'}? This will also release any assigned seat.`,
+      confirmText: 'Delete',
+      type: 'danger'
+    });
+    if (!confirmed) return;
+
+    try {
+      await store.deleteMembership(membershipId);
+      toast.show('Membership deleted successfully', 'success');
+      app._navigate();
+    } catch (e) {
+      toast.show(e.message || 'Failed to delete membership', 'error');
+    }
+  };
+
+  window.deletePlanAction = async function(planId, planName) {
+    const confirmed = await modal.confirm({
+      title: 'Delete Plan',
+      message: `Are you sure you want to delete the plan "${planName}"?`,
+      confirmText: 'Delete Plan',
+      type: 'danger'
+    });
+    if (!confirmed) return;
+
+    try {
+      await store.deleteMembershipPlan(planId);
+      toast.show('Membership plan deleted successfully', 'success');
+      app._navigate();
+    } catch (e) {
+      toast.show(e.message || 'Failed to delete plan', 'error');
+    }
   };
 }
 
 function renderPlanCard(plan) {
-  const studentCount = store.db.memberships.filter(m => m.planId === plan.id && m.status === 'active').length;
+  const studentCount = (store.db.memberships || []).filter(m => m.planId === plan.id && m.status === 'active').length;
   return `
-    <div class="card" style="text-align:center;padding:var(--space-5);cursor:pointer;transition:all var(--transition-fast);"
+    <div class="card" style="position:relative;text-align:center;padding:var(--space-5);transition:all var(--transition-fast);"
       onmouseenter="this.style.boxShadow='var(--shadow-md)';this.style.transform='translateY(-2px)'"
       onmouseleave="this.style.boxShadow='';this.style.transform=''"
     >
+      <button class="btn btn-ghost btn-sm" style="position:absolute;top:8px;right:8px;padding:4px;color:var(--color-text-tertiary);border-radius:var(--radius-full);"
+        title="Delete Plan"
+        onclick="event.stopPropagation(); deletePlanAction('${plan.id}', '${(plan.name || '').replace(/'/g, "\\'")}')"
+        onmouseenter="this.style.color='var(--sf-error-600)'"
+        onmouseleave="this.style.color='var(--color-text-tertiary)'"
+      >
+        ${icons.trash}
+      </button>
       <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:var(--space-2);">${plan.duration} DAYS</div>
       <div style="font-size:var(--text-lg);font-weight:var(--fw-bold);color:var(--color-text-primary);margin-bottom:var(--space-2);">${plan.name}</div>
       <div style="font-size:var(--text-2xl);font-weight:var(--fw-bold);color:var(--sf-indigo-600);margin-bottom:var(--space-3);">${utils.formatINR(plan.price)}</div>
@@ -5904,140 +5818,6 @@ window.filterPaymentsSearch = function(q) {
     row.style.display = q ? (text.includes(q.toLowerCase()) ? '' : 'none') : '';
   });
 };
-
-})();
-
-// ─── PAGE: attendance.js ───
-(function() {
-// Attendance Page
-window.Pages.renderAttendance = function renderAttendance(container) {
-  const branchId = store.getActiveBranchId();
-  const students = store.getStudents(branchId);
-  const todayISO = new Date().toISOString().split('T')[0];
-  const todayAttendance = store.getTodayAttendance();
-
-  const branchStudentIds = students.map(s => s.id);
-  const todayBranchAtt = todayAttendance.filter(a => branchStudentIds.includes(a.studentId));
-
-  const presentCount = todayBranchAtt.filter(a => a.checkIn).length;
-  const checkedInCount = todayBranchAtt.filter(a => a.checkIn && !a.checkOut).length;
-  const checkedOutCount = todayBranchAtt.filter(a => a.checkOut).length;
-  const absentCount = students.length - presentCount;
-
-  let searchQ = '';
-
-  function render() {
-    const filtered = students.filter(s => {
-      if (!searchQ) return true;
-      const q = searchQ.toLowerCase();
-      return s.name.toLowerCase().includes(q) || s.phone.includes(q);
-    });
-
-    container.innerHTML = `
-      <div class="page-header">
-        <div class="page-header-row">
-          <div>
-            <h1 class="page-title">Attendance</h1>
-            <p class="page-subtitle">${new Date().toLocaleDateString('en-IN', {weekday:'long',day:'numeric',month:'long',year:'numeric'})}</p>
-          </div>
-          <div style="display:flex;gap:var(--space-2);">
-            <button class="btn btn-secondary" onclick="app.navigate('/reports')">View Reports</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Stats -->
-      <div class="grid-4" style="margin-bottom:var(--space-6);">
-        ${renderAttStat('Present', presentCount, 'success')}
-        ${renderAttStat('Checked In', checkedInCount, 'indigo')}
-        ${renderAttStat('Checked Out', checkedOutCount, 'neutral')}
-        ${renderAttStat('Absent / Not Arrived', absentCount, 'warning')}
-      </div>
-
-      <div class="table-container">
-        <div class="table-header">
-          <div class="table-title">Today's Attendance</div>
-          <div class="input-group" style="width:240px;">
-            <div class="input-group-prefix">${icons.search}</div>
-            <input class="input" type="text" placeholder="Search student..." oninput="handleAttSearch(this.value)">
-          </div>
-        </div>
-        <div class="table-scroll">
-          <table>
-            <thead>
-              <tr><th>Student</th><th>Seat</th><th>Check-in</th><th>Check-out</th><th>Duration</th><th>Status</th><th>Action</th></tr>
-            </thead>
-            <tbody>
-              ${filtered.map(s => {
-                const att = todayBranchAtt.find(a => a.studentId === s.id);
-                const assignment = store.getStudentAssignment(s.id);
-                const seat = assignment ? store.getSeat(assignment.seatId) : null;
-
-                let statusBadge, actionBtn;
-                if (!att || !att.checkIn) {
-                  statusBadge = `<span class="badge badge-neutral"><span class="badge-dot"></span>Not Arrived</span>`;
-                  actionBtn = `<button class="btn btn-success btn-sm" onclick="doManualCheckIn('${s.id}')">Check In</button>`;
-                } else if (att.checkIn && !att.checkOut) {
-                  statusBadge = `<span class="badge badge-indigo"><span class="badge-dot"></span>Checked In</span>`;
-                  actionBtn = `<button class="btn btn-secondary btn-sm" onclick="doManualCheckOut('${s.id}')">Check Out</button>`;
-                } else {
-                  statusBadge = `<span class="badge badge-success"><span class="badge-dot"></span>Checked Out</span>`;
-                  actionBtn = `<span style="color:var(--color-text-quaternary);font-size:var(--text-xs);">Done</span>`;
-                }
-
-                return `
-                  <tr>
-                    <td>
-                      <div class="student-cell">
-                        <div class="avatar avatar-sm" style="background:${s.avatar};">${utils.initials(s.name)}</div>
-                        <div>
-                          <div class="student-name">${s.name}</div>
-                          <div class="student-id">${s.course || s.id}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td>${seat ? `<span class="badge badge-indigo">${seat.label}</span>` : '—'}</td>
-                    <td>${att?.checkIn ? utils.formatTime(att.checkIn) : '—'}</td>
-                    <td>${att?.checkOut ? utils.formatTime(att.checkOut) : '—'}</td>
-                    <td>${att?.duration ? Math.floor(att.duration/60)+'h '+att.duration%60+'m' : '—'}</td>
-                    <td>${statusBadge}</td>
-                    <td>${actionBtn}</td>
-                  </tr>
-                `;
-              }).join('')}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    `;
-
-    window.handleAttSearch = (q) => { searchQ = q; render(); };
-    window.doManualCheckIn = (studentId) => {
-      try { store.checkIn(studentId); toast.show('Checked in!', 'success'); render(); } catch (e) { toast.show(e.message, 'error'); }
-    };
-    window.doManualCheckOut = (studentId) => {
-      try { store.checkOut(studentId); toast.show('Checked out!', 'success'); render(); } catch (e) { toast.show(e.message, 'error'); }
-    };
-  }
-
-  render();
-}
-
-function renderAttStat(label, count, color) {
-  const colorMap = {
-    success: { bg: 'var(--sf-success-50)', text: 'var(--sf-success-700)' },
-    indigo: { bg: 'var(--sf-indigo-50)', text: 'var(--sf-indigo-700)' },
-    warning: { bg: 'var(--sf-warning-50)', text: 'var(--sf-warning-700)' },
-    neutral: { bg: 'var(--color-bg-secondary)', text: 'var(--color-text-secondary)' },
-  };
-  const c = colorMap[color] || colorMap.neutral;
-  return `
-    <div class="stat-card">
-      <div class="stat-card-top"><div class="stat-card-label">${label}</div></div>
-      <div class="stat-card-value" style="font-size:var(--text-3xl);color:${c.text};">${count}</div>
-    </div>
-  `;
-}
 
 })();
 
@@ -6758,7 +6538,7 @@ window.Pages.renderStaff = function renderStaff(container) {
       <div class="table-scroll">
         <table>
           <thead>
-            <tr><th>Staff Member</th><th>Role</th><th>Phone</th><th>Email</th><th>Status</th></tr>
+            <tr><th>Staff Member</th><th>Role</th><th>Phone</th><th>Email</th><th>Status</th><th>Actions</th></tr>
           </thead>
           <tbody>
             ${staff.map(s => `
@@ -6776,9 +6556,14 @@ window.Pages.renderStaff = function renderStaff(container) {
                 <td style="color:var(--color-text-secondary);">${s.phone || '—'}</td>
                 <td style="color:var(--color-text-secondary);font-size:var(--text-xs);">${s.email || '—'}</td>
                 <td><span class="badge badge-success"><span class="badge-dot"></span>Active</span></td>
+                <td>
+                  <button class="btn btn-ghost btn-sm" style="color:var(--sf-error-600);padding:4px 8px;" title="Delete Staff" onclick="deleteStaffAction('${s.id}', '${(s.name || '').replace(/'/g, "\\'")}')">
+                    ${icons.trash} Delete
+                  </button>
+                </td>
               </tr>
             `).join('') || `
-              <tr><td colspan="5"><div class="empty-state" style="padding:var(--space-8);">
+              <tr><td colspan="6"><div class="empty-state" style="padding:var(--space-8);">
                 <div class="empty-icon">${icons['user-check']}</div>
                 <div class="empty-title">No staff added</div>
                 <button class="btn btn-primary" onclick="openAddStaffModal()">Add First Staff</button>
@@ -6812,16 +6597,38 @@ window.Pages.renderStaff = function renderStaff(container) {
     `);
   };
 
-  window.confirmAddStaff = function(branchId) {
+  window.confirmAddStaff = async function(branchId) {
     const name = document.getElementById('staff-name')?.value?.trim();
     const role = document.getElementById('staff-role')?.value;
     const phone = document.getElementById('staff-phone')?.value?.trim();
     const email = document.getElementById('staff-email')?.value?.trim();
     if (!name) { toast.show('Name is required', 'error'); return; }
-    store.addStaff({ name, role, phone, email, branchId });
-    modal.close();
-    toast.show('Staff member added!', 'success');
-    app._navigate();
+    try {
+      await store.addStaff({ name, role, phone, email, branchId });
+      modal.close();
+      toast.show('Staff member added!', 'success');
+      app._navigate();
+    } catch (e) {
+      toast.show(e.message || 'Failed to add staff', 'error');
+    }
+  };
+
+  window.deleteStaffAction = async function(staffId, staffName) {
+    const confirmed = await modal.confirm({
+      title: 'Delete Staff Member',
+      message: `Are you sure you want to remove ${staffName || 'this staff member'}?`,
+      confirmText: 'Delete',
+      type: 'danger'
+    });
+    if (!confirmed) return;
+
+    try {
+      await store.deleteStaff(staffId);
+      toast.show('Staff member removed successfully', 'success');
+      app._navigate();
+    } catch (e) {
+      toast.show(e.message || 'Failed to remove staff', 'error');
+    }
   };
 }
 
@@ -7500,77 +7307,6 @@ window.Pages.renderSettings = function renderSettings(container) {
 
 })();
 
-// ─── PAGE: reservations.js ───
-(function() {
-// Reservations Page
-window.Pages.renderReservations = function renderReservations(container) {
-  const branchId = store.getActiveBranchId();
-  const reservations = store.getReservations().filter(r => {
-    const seats = store.getSeatsForBranch(branchId).map(s => s.id);
-    return seats.includes(r.seatId);
-  }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-  container.innerHTML = `
-    <div class="page-header">
-      <div class="page-header-row">
-        <div>
-          <h1 class="page-title">Reservations</h1>
-          <p class="page-subtitle">Manage seat reservations and waitlist</p>
-        </div>
-        <button class="btn btn-primary" onclick="openReservationModal()">
-          ${icons.calendar} New Reservation
-        </button>
-      </div>
-    </div>
-
-    <div class="table-container">
-      <div class="table-header"><div class="table-title">All Reservations</div></div>
-      <div class="table-scroll">
-        <table>
-          <thead>
-            <tr><th>Student</th><th>Seat</th><th>From</th><th>To</th><th>Status</th><th>Notes</th></tr>
-          </thead>
-          <tbody>
-            ${reservations.map(r => {
-              const student = store.getStudent(r.studentId);
-              const seat = store.getSeat(r.seatId);
-              const today_ = new Date();
-              const start = new Date(r.startDate);
-              const end = new Date(r.endDate);
-              const isActive = start <= today_ && end >= today_;
-              const isFuture = start > today_;
-              const status = r.status === 'cancelled' ? 'cancelled' : end < today_ ? 'expired' : isFuture ? 'upcoming' : 'active';
-              const badgeClass = { upcoming: 'badge-indigo', active: 'badge-success', expired: 'badge-neutral', cancelled: 'badge-error' }[status];
-              return `
-                <tr>
-                  <td>
-                    <div class="student-cell">
-                      <div class="avatar avatar-sm" style="background:${student?.avatar};">${utils.initials(student?.name || '')}</div>
-                      <div class="student-name">${student?.name || '—'}</div>
-                    </div>
-                  </td>
-                  <td>${seat ? `<span class="badge badge-indigo">${seat.label}</span>` : '—'}</td>
-                  <td style="color:var(--color-text-secondary);">${utils.formatDate(r.startDate, {day:'numeric',month:'short'})}</td>
-                  <td style="color:var(--color-text-secondary);">${utils.formatDate(r.endDate, {day:'numeric',month:'short'})}</td>
-                  <td><span class="badge ${badgeClass}"><span class="badge-dot"></span>${capitalizeFirst(status)}</span></td>
-                  <td style="color:var(--color-text-secondary);font-size:var(--text-xs);">${r.notes || '—'}</td>
-                </tr>
-              `;
-            }).join('') || `
-              <tr><td colspan="6"><div class="empty-state" style="padding:var(--space-8);">
-                <div class="empty-icon">${icons.calendar}</div>
-                <div class="empty-title">No reservations</div>
-              </div></td></tr>
-            `}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  `;
-}
-
-})();
-
 // ─── PAGE: layout-editor.js ───
 (function() {
 // StudyFlow — Full-Window Draw.io Seat Layout Designer Page
@@ -7990,7 +7726,6 @@ const routes = {
   '/student': () => Promise.resolve(window.Pages.renderStudentProfile),
   '/memberships': () => Promise.resolve(window.Pages.renderMemberships),
   '/payments': () => Promise.resolve(window.Pages.renderPayments),
-  '/attendance': () => Promise.resolve(window.Pages.renderAttendance),
   '/floors': () => Promise.resolve(window.Pages.renderFloors),
   '/expenses': () => Promise.resolve(window.Pages.renderExpenses),
   '/reports': () => Promise.resolve(window.Pages.renderReports),
@@ -7998,7 +7733,6 @@ const routes = {
   '/notifications': () => Promise.resolve(window.Pages.renderNotifications),
   '/activity': () => Promise.resolve(window.Pages.renderActivity),
   '/settings': () => Promise.resolve(window.Pages.renderSettings),
-  '/reservations': () => Promise.resolve(window.Pages.renderReservations),
   '/layout-editor': () => Promise.resolve(window.Pages.renderLayoutEditor),
 };
 
@@ -8156,8 +7890,6 @@ class App {
         { route: '/seat-map', label: 'Seat Map', icon: 'map' },
         { route: '/students', label: 'Students', icon: 'users' },
         { route: '/memberships', label: 'Memberships', icon: 'credit-card' },
-        { route: '/attendance', label: 'Attendance', icon: 'clock' },
-        { route: '/reservations', label: 'Reservations', icon: 'calendar' },
       ]},
       { label: 'FINANCE', items: [
         { route: '/payments', label: 'Payments', icon: 'dollar-sign' },
@@ -8373,7 +8105,6 @@ class App {
       { label: 'Add Student', icon: 'user-plus', action: `app.navigate('/students'); setTimeout(()=>document.getElementById('add-student-btn')?.click(),300)` },
       { label: 'Assign Seat', icon: 'map-pin', action: `app.navigate('/seat-map')` },
       { label: 'Record Payment', icon: 'dollar-sign', action: `app.navigate('/payments')` },
-      { label: 'Add Reservation', icon: 'calendar', action: `app.navigate('/reservations')` },
       { label: 'Add Expense', icon: 'trending-down', action: `app.navigate('/expenses')` },
       { label: 'Add Staff', icon: 'user-check', action: `app.navigate('/staff')` },
     ];
