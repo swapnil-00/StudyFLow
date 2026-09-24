@@ -7584,13 +7584,16 @@ window.Pages.renderLayoutEditor = function renderLayoutEditor(container, params 
           </div>
         </div>
 
-        <!-- Right: Actions (Add Seat, Add Row, Save) -->
+        <!-- Right: Actions (Add Seat, Add Row, Delete Seat, Save) -->
         <div style="display:flex;align-items:center;gap:8px;">
           <button type="button" class="btn btn-secondary btn-sm" onclick="drawioPageAddSeat('${room.id}')" title="Add New Seat with Custom Number">
             ${icons.plus || '+'} Add Seat
           </button>
           <button type="button" class="btn btn-secondary btn-sm" onclick="drawioPageAddRow('${room.id}')" title="Add Row of Seats">
             ${icons.plus || '+'} Add Row
+          </button>
+          <button type="button" class="btn btn-ghost btn-sm" style="color:#ef4444;" onclick="drawioPageDeleteSeatPrompt('${room.id}')" title="Delete a seat by number">
+            ${icons.trash || '🗑️'} Delete Seat
           </button>
           <button type="button" class="btn btn-primary btn-sm" id="full-editor-save-btn" onclick="drawioPageSave('${room.id}')" style="background:#007acc;border-color:#0098ff;padding:6px 14px;font-weight:700;">
             ${icons.checkCircle || '✓'} Save & Lock Layout
@@ -7601,7 +7604,7 @@ window.Pages.renderLayoutEditor = function renderLayoutEditor(container, params 
       <!-- Draw.io Iframe Canvas (100% Remaining Screen) -->
       <main style="flex:1;position:relative;overflow:hidden;background:#1e2022;">
         <iframe id="drawio-page-frame"
-          src="drawio/index.html?embed=1&ui=atlas&spin=1&proto=json&configure=1&noExitBtn=1&saveAndExit=0"
+          src="https://embed.diagrams.net/?embed=1&ui=atlas&spin=1&proto=json&configure=1&noExitBtn=1&saveAndExit=0"
           style="width:100%;height:100%;border:none;display:block;"
           allow="fullscreen"
         ></iframe>
@@ -7610,15 +7613,6 @@ window.Pages.renderLayoutEditor = function renderLayoutEditor(container, params 
   `;
 
   const iframe = document.getElementById('drawio-page-frame');
-
-  // Fallback to CDN embed.diagrams.net if local drawio isn't hosted
-  let loaded = false;
-  const loadTimeout = setTimeout(() => {
-    if (!loaded && iframe) {
-      console.log('Falling back to embed.diagrams.net CDN...');
-      iframe.src = `https://embed.diagrams.net/?embed=1&ui=atlas&spin=1&proto=json&configure=1&noExitBtn=1&saveAndExit=0`;
-    }
-  }, 3000);
 
   // ── Draw.io postMessage Protocol Listener ──
   async function onDrawioPageMessage(evt) {
@@ -7635,8 +7629,6 @@ window.Pages.renderLayoutEditor = function renderLayoutEditor(container, params 
 
     // 1. Draw.io Init event -> Load diagram XML
     if (msg.event === 'init') {
-      loaded = true;
-      clearTimeout(loadTimeout);
       iframe.contentWindow.postMessage(JSON.stringify({
         action: 'load',
         autosave: 1,
@@ -7659,7 +7651,7 @@ window.Pages.renderLayoutEditor = function renderLayoutEditor(container, params 
       }), '*');
     }
 
-    // 3. Draw.io Export / Save event -> Parse XML and save coordinates to store
+    // 3. Draw.io Export / Save event -> Parse XML, delete removed seats, update moved seats, add new seats
     else if (msg.event === 'export' || msg.event === 'save') {
       const xmlString = msg.data || msg.xml;
       if (!xmlString) return;
@@ -7678,6 +7670,8 @@ window.Pages.renderLayoutEditor = function renderLayoutEditor(container, params 
 
         const updates = [];
         const addedSeats = [];
+        const presentSeatIds = new Set();
+        const presentSeatLabels = new Set();
 
         cells.forEach(cell => {
           const rawId = cell.getAttribute('id') || '';
@@ -7694,21 +7688,35 @@ window.Pages.renderLayoutEditor = function renderLayoutEditor(container, params 
 
           if (seatMapById.has(realId)) {
             updates.push({ id: realId, x, y });
+            presentSeatIds.add(realId);
+            if (label) presentSeatLabels.add(label);
           } else if (label && seatMapByLabel.has(label)) {
             const existingSeat = seatMapByLabel.get(label);
             updates.push({ id: existingSeat.id, x, y });
+            presentSeatIds.add(existingSeat.id);
+            presentSeatLabels.add(label);
           } else if (label) {
             // User created a new seat inside Draw.io
             addedSeats.push({ label, x, y });
           }
         });
 
-        // 1. Batch update all existing seat coordinates
+        // 1. Delete seats that were deleted in Draw.io
+        const deletedSeats = currentSeats.filter(s => !presentSeatIds.has(s.id) && !presentSeatLabels.has(s.label));
+        for (const delSeat of deletedSeats) {
+          try {
+            await store.deleteSeat(delSeat.id);
+          } catch (delErr) {
+            console.error('Error deleting seat from database:', delSeat.id, delErr);
+          }
+        }
+
+        // 2. Batch update all remaining seat coordinates
         if (updates.length > 0) {
           await store.batchUpdateSeatPositions(updates);
         }
 
-        // 2. Add any newly drawn seats
+        // 3. Add any newly drawn seats
         for (const newS of addedSeats) {
           try {
             await store.addSeat({
@@ -7726,7 +7734,16 @@ window.Pages.renderLayoutEditor = function renderLayoutEditor(container, params 
           }
         }
 
-        toast.show(`🎉 Layout saved successfully! Updated ${updates.length} seats.`, 'success');
+        const finalSeats = store.getSeats(room.id);
+        const countEl = document.getElementById('full-editor-seat-count');
+        if (countEl) countEl.textContent = `${finalSeats.length} seats`;
+
+        let msgText = `🎉 Layout saved!`;
+        if (updates.length > 0) msgText += ` Updated ${updates.length} seats.`;
+        if (deletedSeats.length > 0) msgText += ` Deleted ${deletedSeats.length} seat${deletedSeats.length > 1 ? 's' : ''}.`;
+        if (addedSeats.length > 0) msgText += ` Added ${addedSeats.length} new seat${addedSeats.length > 1 ? 's' : ''}.`;
+
+        toast.show(msgText, 'success');
         if (saveBtn) saveBtn.textContent = '✓ Saved!';
         setTimeout(() => {
           if (saveBtn) saveBtn.textContent = 'Save & Lock Layout';
@@ -7745,6 +7762,41 @@ window.Pages.renderLayoutEditor = function renderLayoutEditor(container, params 
   window.drawioPageSave = function(rId) {
     if (!iframe || !iframe.contentWindow) return;
     iframe.contentWindow.postMessage(JSON.stringify({ action: 'export', format: 'xml' }), '*');
+  };
+
+  // Delete Seat Prompt helper
+  window.drawioPageDeleteSeatPrompt = async function(rId) {
+    const currentSeats = store.getSeats(rId);
+    if (currentSeats.length === 0) {
+      toast.show('No seats to delete', 'info');
+      return;
+    }
+
+    const labelInput = prompt(`Enter seat number to delete:\n(Existing: ${currentSeats.map(s => s.label).join(', ')})`);
+    if (!labelInput) return;
+    const label = labelInput.trim();
+
+    const targetSeat = currentSeats.find(s => s.label === label || s.number === label);
+    if (!targetSeat) {
+      toast.show(`Seat "${label}" not found`, 'error');
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to delete seat "${label}"?`)) return;
+
+    try {
+      await store.deleteSeat(targetSeat.id);
+      const updatedSeats = store.getSeats(rId);
+      currentXml = generateDrawioXml(updatedSeats);
+      if (iframe && iframe.contentWindow) {
+        iframe.contentWindow.postMessage(JSON.stringify({ action: 'load', autosave: 1, xml: currentXml }), '*');
+      }
+      const countEl = document.getElementById('full-editor-seat-count');
+      if (countEl) countEl.textContent = `${updatedSeats.length} seats`;
+      toast.show(`Seat "${label}" deleted successfully!`, 'success');
+    } catch (e) {
+      toast.show('Failed to delete seat: ' + e.message, 'error');
+    }
   };
 
   // Add Seat helper
