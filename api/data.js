@@ -1,4 +1,4 @@
-// api/data.js — Main data API: returns ALL app data in one call (for initial load)
+// api/data.js — Main data API: returns app data from Neon DB
 const { cors, query } = require('./db');
 
 module.exports = async function handler(req, res) {
@@ -6,12 +6,14 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') { res.status(204).end(); return; }
 
   try {
+    const branchFilter = req.query.branchId;
+
     const [
       branches, floors, rooms, seats, students,
       membershipPlans, memberships, seatAssignments,
       reservations, payments, attendance, expenses,
       notifications, activityLogs, waitlist, staff,
-      seatTransfers, settingsRes
+      seatTransfers, settingsRes, documentsRes, commLogsRes
     ] = await Promise.all([
       query('SELECT * FROM branches ORDER BY created_at'),
       query('SELECT * FROM floors ORDER BY created_at'),
@@ -31,6 +33,8 @@ module.exports = async function handler(req, res) {
       query('SELECT * FROM staff ORDER BY created_at'),
       query('SELECT * FROM seat_transfers ORDER BY created_at DESC'),
       query('SELECT * FROM settings WHERE id=$1', ['default']),
+      query('SELECT * FROM documents ORDER BY created_at DESC LIMIT 100').catch(() => ({ rows: [] })),
+      query('SELECT * FROM communication_logs ORDER BY created_at DESC LIMIT 200').catch(() => ({ rows: [] })),
     ]);
 
     // Map snake_case DB columns → camelCase for frontend compatibility
@@ -85,8 +89,48 @@ module.exports = async function handler(req, res) {
     function mapTransfer(t) {
       return { id: t.id, studentId: t.student_id, fromSeatId: t.from_seat_id, toSeatId: t.to_seat_id, date: t.date, reason: t.reason, approvedBy: t.approved_by, createdAt: t.created_at };
     }
+    function mapDocument(d) {
+      return {
+        id: d.id,
+        documentType: d.document_type,
+        documentNumber: d.document_number,
+        studentId: d.student_id,
+        branchId: d.branch_id,
+        membershipId: d.membership_id,
+        ...(d.document_data || {}),
+        createdAt: d.created_at
+      };
+    }
+    function mapCommLog(c) {
+      return {
+        id: c.id,
+        studentId: c.student_id,
+        eventType: c.event_type,
+        phoneNumber: c.phone_number,
+        templateName: c.template_name,
+        language: c.language,
+        bodyText: c.body_text,
+        idempotencyKey: c.idempotency_key,
+        status: c.status,
+        provider: c.provider,
+        providerMessageId: c.provider_message_id,
+        documentId: c.document_id,
+        retryCount: c.retry_count,
+        errorMessage: c.error_message,
+        sentAt: c.sent_at,
+        deliveredAt: c.delivered_at,
+        createdAt: c.created_at
+      };
+    }
 
     const rawSettings = settingsRes.rows[0] || {};
+    const sanitizedData = { ...(rawSettings.data || {}) };
+    // Security: never leak sensitive credentials to client
+    delete sanitizedData.waToken;
+    delete sanitizedData.accessToken;
+    delete sanitizedData.apiKey;
+    delete sanitizedData.secretKey;
+
     const settings = {
       currency: rawSettings.currency || 'INR',
       timezone: rawSettings.timezone || 'Asia/Kolkata',
@@ -95,7 +139,8 @@ module.exports = async function handler(req, res) {
       phone: rawSettings.phone || '',
       email: rawSettings.email || '',
       theme: rawSettings.theme || 'light',
-      ...(rawSettings.data || {}),
+      ...sanitizedData,
+      waConfigured: Boolean(rawSettings.data?.waToken || process.env.WHATSAPP_TOKEN),
     };
 
     const db = {
@@ -116,8 +161,8 @@ module.exports = async function handler(req, res) {
       waitlist: waitlist.rows.map(mapWaitlist),
       staff: staff.rows.map(mapStaff),
       seatTransfers: seatTransfers.rows.map(mapTransfer),
-      notificationMessages: [],
-      documents: [],
+      documents: documentsRes.rows.map(mapDocument),
+      notificationMessages: commLogsRes.rows.map(mapCommLog),
       settings,
     };
 

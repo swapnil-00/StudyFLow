@@ -254,6 +254,39 @@ CREATE TABLE IF NOT EXISTS settings (
   updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 20. Documents Table (Tax Invoices and Payment Receipts)
+CREATE TABLE IF NOT EXISTS documents (
+  id VARCHAR(64) PRIMARY KEY,
+  document_type VARCHAR(50) NOT NULL,
+  document_number VARCHAR(100) NOT NULL,
+  student_id VARCHAR(64) REFERENCES students(id) ON DELETE CASCADE,
+  branch_id VARCHAR(64) REFERENCES branches(id) ON DELETE SET NULL,
+  membership_id VARCHAR(64) REFERENCES memberships(id) ON DELETE SET NULL,
+  document_data JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 21. Communication Logs Table (WhatsApp Outbound Notifications)
+CREATE TABLE IF NOT EXISTS communication_logs (
+  id VARCHAR(64) PRIMARY KEY,
+  student_id VARCHAR(64) REFERENCES students(id) ON DELETE CASCADE,
+  event_type VARCHAR(100),
+  phone_number VARCHAR(50),
+  template_name VARCHAR(100),
+  language VARCHAR(10) DEFAULT 'en',
+  body_text TEXT,
+  idempotency_key VARCHAR(255) UNIQUE,
+  status VARCHAR(50) DEFAULT 'QUEUED',
+  provider VARCHAR(50) DEFAULT 'mock',
+  provider_message_id VARCHAR(100),
+  document_id VARCHAR(64),
+  retry_count INT DEFAULT 0,
+  error_message TEXT,
+  sent_at TIMESTAMPTZ,
+  delivered_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Indexes for lightning fast queries
 CREATE INDEX IF NOT EXISTS idx_seats_branch ON seats(branch_id);
 CREATE INDEX IF NOT EXISTS idx_seats_room ON seats(room_id);
@@ -265,3 +298,7 @@ CREATE INDEX IF NOT EXISTS idx_payments_branch ON payments(branch_id);
 CREATE INDEX IF NOT EXISTS idx_attendance_student ON attendance(student_id);
 CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(date);
 CREATE INDEX IF NOT EXISTS idx_activity_timestamp ON activity_logs(timestamp);
+CREATE INDEX IF NOT EXISTS idx_documents_student ON documents(student_id);
+CREATE INDEX IF NOT EXISTS idx_communication_student ON communication_logs(student_id);
+CREATE INDEX IF NOT EXISTS idx_communication_idempotency ON communication_logs(idempotency_key);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_active_seat ON seat_assignments (seat_id) WHERE status = 'active';

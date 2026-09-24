@@ -369,9 +369,15 @@ class Store {
     if (existing) throw new Error('Seat is already occupied. Please choose a different seat.');
 
     const assignment = { id: uid('ASN'), status: 'active', createdAt: now(), ...data };
-    await apiWrite('seat_assignments', 'insert', assignment);
+    const res = await apiWrite('seat_assignments', 'insert', assignment);
+    if (res && res.id) assignment.id = res.id;
     this._db.seatAssignments.push(assignment);
-    this.addActivity({ action: 'seat_assigned', entity: 'seat', entityId: data.seatId, description: `Seat assigned to student`, meta: data });
+    const seat = this.getSeat(data.seatId);
+    if (seat) {
+      seat.status = 'occupied';
+      seat.currentStudentId = data.studentId;
+    }
+    this.addActivity({ action: 'seat_assigned', entity: 'seat', entityId: data.seatId, description: `Seat ${seat?.label || data.seatId} assigned to student`, meta: data });
     this._notify();
     return assignment;
   }
@@ -379,9 +385,19 @@ class Store {
   async releaseSeat(seatId, reason, userId) {
     const idx = this._db.seatAssignments.findIndex(a => a.seatId === seatId && a.status === 'active');
     if (idx === -1) throw new Error('No active assignment found');
-    const updates = { status: 'released', releasedAt: now(), releaseReason: reason, releasedBy: userId };
-    this._db.seatAssignments[idx] = { ...this._db.seatAssignments[idx], ...updates };
-    await apiWrite('seat_assignments', 'update', updates, this._db.seatAssignments[idx].id);
+    await apiWrite('seat_assignments', 'release', { seatId, reason, userId });
+    this._db.seatAssignments[idx] = {
+      ...this._db.seatAssignments[idx],
+      status: 'released',
+      releasedAt: now(),
+      releaseReason: reason,
+      releasedBy: userId
+    };
+    const seat = this.getSeat(seatId);
+    if (seat) {
+      seat.status = 'available';
+      seat.currentStudentId = null;
+    }
     this.addActivity({ action: 'seat_released', entity: 'seat', entityId: seatId, description: `Seat released. Reason: ${reason}` });
     this._notify();
     return this._db.seatAssignments[idx];
@@ -395,22 +411,54 @@ class Store {
     if (fromIdx === -1) throw new Error('Source seat has no active assignment.');
 
     const oldAssignment = this._db.seatAssignments[fromIdx];
-    const transferUpdates = { status: 'transferred', transferredAt: now(), transferReason: reason };
-    this._db.seatAssignments[fromIdx] = { ...oldAssignment, ...transferUpdates };
-    await apiWrite('seat_assignments', 'update', transferUpdates, oldAssignment.id);
-
-    const newAssignment = { id: uid('ASN'), status: 'active', seatId: toSeatId, studentId: oldAssignment.studentId, membershipId: oldAssignment.membershipId, startDate: now(), endDate: oldAssignment.endDate, createdAt: now(), transferredFrom: fromSeatId };
-    await apiWrite('seat_assignments', 'insert', newAssignment);
-    this._db.seatAssignments.push(newAssignment);
-
     const fromSeat = this.getSeat(fromSeatId);
     const toSeat = this.getSeat(toSeatId);
-    const transfer = { id: uid('TRF'), studentId, fromSeatId, toSeatId, reason, date: now(), fromSeatLabel: fromSeat?.label, toSeatLabel: toSeat?.label };
-    await apiWrite('seat_transfers', 'insert', transfer);
+
+    // Atomic transfer execution in backend
+    const res = await apiWrite('seat_assignments', 'transfer', { fromSeatId, toSeatId, studentId, reason });
+
+    this._db.seatAssignments[fromIdx] = {
+      ...oldAssignment,
+      status: 'transferred',
+      transferredAt: now(),
+      transferReason: reason
+    };
+
+    const newAssignment = {
+      id: res.id || uid('ASN'),
+      status: 'active',
+      seatId: toSeatId,
+      studentId: oldAssignment.studentId,
+      membershipId: oldAssignment.membershipId,
+      startDate: now(),
+      endDate: oldAssignment.endDate,
+      createdAt: now(),
+      transferredFrom: fromSeatId
+    };
+    this._db.seatAssignments.push(newAssignment);
+
+    if (fromSeat) { fromSeat.status = 'available'; fromSeat.currentStudentId = null; }
+    if (toSeat) { toSeat.status = 'occupied'; toSeat.currentStudentId = oldAssignment.studentId; }
+
+    const transfer = {
+      id: res.transferId || uid('TRF'),
+      studentId,
+      fromSeatId,
+      toSeatId,
+      reason,
+      date: now(),
+      fromSeatLabel: fromSeat?.label,
+      toSeatLabel: toSeat?.label
+    };
     this._db.seatTransfers = this._db.seatTransfers || [];
     this._db.seatTransfers.push(transfer);
 
-    this.addActivity({ action: 'seat_transferred', entity: 'seat', entityId: fromSeatId, description: `Seat transferred from ${fromSeat?.label} to ${toSeat?.label}. Reason: ${reason}` });
+    this.addActivity({
+      action: 'seat_transferred',
+      entity: 'seat',
+      entityId: fromSeatId,
+      description: `Seat transferred from ${fromSeat?.label || fromSeatId} to ${toSeat?.label || toSeatId}. Reason: ${reason}`
+    });
     this._notify();
     return newAssignment;
   }
@@ -493,12 +541,20 @@ class Store {
     const payment = {
       id: uid('PAY'),
       status: 'recorded',
-      receiptNumber: `REC-${Date.now().toString().slice(-6)}`,
+      receiptNumber: data.receiptNumber || `REC-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
       recordedAt: now(),
       ...data
     };
     await apiWrite('payments', 'insert', payment);
     this._db.payments.push(payment);
+
+    // Update membership payment status
+    const newStatus = this.getPaymentStatus(data.membershipId);
+    if (membership.paymentStatus !== newStatus) {
+      membership.paymentStatus = newStatus;
+      apiWrite('memberships', 'update', { paymentStatus: newStatus }, membership.id).catch(e => console.warn('Membership status sync error:', e));
+    }
+
     this.addActivity({ action: 'payment_recorded', entity: 'payment', entityId: payment.id, description: `Payment of ${formatINR(payment.amount)} recorded` });
     this._notify();
     return payment;
@@ -587,15 +643,16 @@ class Store {
     this._db.documents = this._db.documents || [];
     const idx = this._db.documents.findIndex(d => d.id === doc.id);
     if (idx !== -1) this._db.documents[idx] = { ...this._db.documents[idx], ...doc };
-    else this._db.documents.push(doc);
-    // Optionally persist: apiWrite('documents', 'insert', doc)
+    else this._db.documents.unshift(doc);
+    // Persist document to Neon DB asynchronously
+    apiWrite('documents', 'save', doc).catch(e => console.warn('Document DB persistence failed:', e.message));
     this._notify();
     return doc;
   }
 
   getDocumentsForStudent(studentId) { return (this._db?.documents || []).filter(d => d.studentId === studentId); }
 
-  // ── WhatsApp notification messages (in-memory) ────────────────────
+  // ── WhatsApp notification messages (Persisted) ───────────────────
   getNotificationMessages() { return this._db?.notificationMessages || []; }
   getNotificationMessage(id) { return (this._db?.notificationMessages || []).find(m => m.id === id); }
   getNotificationMessageByIdempotency(key) { return (this._db?.notificationMessages || []).find(m => m.idempotencyKey === key); }
@@ -605,6 +662,8 @@ class Store {
     const idx = this._db.notificationMessages.findIndex(m => m.id === msg.id);
     if (idx !== -1) this._db.notificationMessages[idx] = { ...this._db.notificationMessages[idx], ...msg };
     else this._db.notificationMessages.unshift(msg);
+    // Persist log to Neon DB asynchronously
+    apiWrite('communication_logs', 'save', msg).catch(e => console.warn('Comm log DB persistence failed:', e.message));
     this._notify();
     return msg;
   }

@@ -5,14 +5,19 @@ let pool;
 
 function getPool() {
   if (!pool) {
-    let connStr = (process.env.DATABASE_URL || '')
+    const rawUrl = process.env.DATABASE_URL;
+    if (!rawUrl || rawUrl.trim() === '') {
+      throw new Error('DATABASE_URL environment variable is not configured. Please set DATABASE_URL in Vercel Project Settings.');
+    }
+
+    const connStr = rawUrl
       .replace('&channel_binding=require', '')
       .replace('channel_binding=require', '');
 
     pool = new Pool({
       connectionString: connStr,
       ssl: { rejectUnauthorized: false },
-      max: 5,
+      max: 10,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 10000,
     });
@@ -36,4 +41,19 @@ async function query(sql, params) {
   }
 }
 
-module.exports = { getPool, cors, query };
+async function withTransaction(callback) {
+  const client = await getPool().connect();
+  try {
+    await client.query('BEGIN');
+    const result = await callback(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+module.exports = { getPool, cors, query, withTransaction };

@@ -155,70 +155,18 @@ class MetaWhatsAppProvider extends BaseWhatsAppProvider {
   }
 
   async sendTemplateMessage({ to, templateName, language = 'en', variables = {}, document = null }) {
-    if (!this.phoneNumberId || !this.accessToken) {
-      return {
-        success: false,
-        error: 'Meta WhatsApp credentials missing (WHATSAPP_PHONE_NUMBER_ID / WHATSAPP_API_KEY)',
-        status: 'FAILED'
-      };
-    }
-
-    // Format body parameters for Meta template
-    const parameters = Object.entries(variables).map(([key, value]) => ({
-      type: 'text',
-      text: String(value)
-    }));
-
-    const components = [
-      {
-        type: 'body',
-        parameters
-      }
-    ];
-
-    // Optional document header if template supports media header
-    if (document && document.url) {
-      components.unshift({
-        type: 'header',
-        parameters: [
-          {
-            type: 'document',
-            document: {
-              link: document.url,
-              filename: document.filename || 'Document.pdf'
-            }
-          }
-        ]
-      });
-    }
-
-    const payload = {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to: to.replace(/[^0-9]/g, ''),
-      type: 'template',
-      template: {
-        name: templateName,
-        language: { code: language },
-        components
-      }
-    };
-
     try {
-      const response = await fetch(`${this.apiUrl}/${this.phoneNumberId}/messages`, {
+      const response = await fetch('/api/notify', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.accessToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to, templateName, language, variables, document })
       });
 
       const data = await response.json();
-      if (!response.ok) {
+      if (!response.ok || !data.ok) {
         return {
           success: false,
-          error: data.error?.message || 'Meta API error',
+          error: data.error || 'WhatsApp delivery failed',
           status: 'FAILED',
           details: data
         };
@@ -226,8 +174,18 @@ class MetaWhatsAppProvider extends BaseWhatsAppProvider {
 
       return {
         success: true,
-        providerMessageId: data.messages?.[0]?.id || `meta_${Date.now()}`,
-        status: 'SENT',
+        providerMessageId: data.providerMessageId || `meta_${Date.now()}`,
+        status: data.status || 'SENT',
+        timestamp: new Date().toISOString()
+      };
+    } catch (err) {
+      return {
+        success: false,
+        error: err.message,
+        status: 'FAILED'
+      };
+    }
+  }
         data
       };
     } catch (e) {
@@ -240,33 +198,18 @@ class MetaWhatsAppProvider extends BaseWhatsAppProvider {
   }
 
   async sendTextMessage({ to, text }) {
-    if (!this.phoneNumberId || !this.accessToken) {
-      return { success: false, error: 'Credentials missing', status: 'FAILED' };
-    }
-
-    const payload = {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to: to.replace(/[^0-9]/g, ''),
-      type: 'text',
-      text: { body: text }
-    };
-
     try {
-      const response = await fetch(`${this.apiUrl}/${this.phoneNumberId}/messages`, {
+      const response = await fetch('/api/notify', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.accessToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to, customText: text })
       });
       const data = await response.json();
       return {
-        success: response.ok,
-        providerMessageId: data.messages?.[0]?.id,
-        status: response.ok ? 'SENT' : 'FAILED',
-        error: data.error?.message
+        success: response.ok && data.ok,
+        providerMessageId: data.providerMessageId,
+        status: data.status || 'SENT',
+        error: data.error
       };
     } catch (e) {
       return { success: false, error: e.message, status: 'FAILED' };
@@ -274,37 +217,21 @@ class MetaWhatsAppProvider extends BaseWhatsAppProvider {
   }
 
   async sendDocument({ to, documentUrl, filename, caption = '' }) {
-    if (!this.phoneNumberId || !this.accessToken) {
-      return { success: false, error: 'Credentials missing', status: 'FAILED' };
-    }
-
-    const payload = {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to: to.replace(/[^0-9]/g, ''),
-      type: 'document',
-      document: {
-        link: documentUrl,
-        filename: filename || 'Invoice.pdf',
-        caption: caption
-      }
-    };
-
     try {
-      const response = await fetch(`${this.apiUrl}/${this.phoneNumberId}/messages`, {
+      const response = await fetch('/api/notify', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.accessToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to,
+          document: { url: documentUrl, filename: filename || 'Invoice.pdf', caption }
+        })
       });
       const data = await response.json();
       return {
-        success: response.ok,
-        providerMessageId: data.messages?.[0]?.id,
-        status: response.ok ? 'SENT' : 'FAILED',
-        error: data.error?.message
+        success: response.ok && data.ok,
+        providerMessageId: data.providerMessageId,
+        status: data.status || 'SENT',
+        error: data.error
       };
     } catch (e) {
       return { success: false, error: e.message, status: 'FAILED' };

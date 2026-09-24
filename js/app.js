@@ -50,6 +50,10 @@ class App {
         this.closeAllOverlays();
       }
     });
+
+    if (typeof dismissAppLoader === 'function') {
+      dismissAppLoader();
+    }
   }
 
   _themeInit() {
