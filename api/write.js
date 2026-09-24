@@ -54,7 +54,26 @@ module.exports = async function handler(req, res) {
         return res.json({ ok: true });
       }
       if (action === 'delete') {
-        await query('DELETE FROM floors WHERE id=$1', [id]);
+        await withTransaction(async (client) => {
+          const roomRes = await client.query('SELECT id FROM rooms WHERE floor_id=$1', [id]);
+          const roomIds = roomRes.rows.map(r => r.id);
+
+          if (roomIds.length > 0) {
+            const seatRes = await client.query('SELECT id FROM seats WHERE room_id = ANY($1)', [roomIds]);
+            const seatIds = seatRes.rows.map(s => s.id);
+
+            if (seatIds.length > 0) {
+              await client.query('UPDATE memberships SET seat_id=NULL WHERE seat_id = ANY($1)', [seatIds]);
+              await client.query('DELETE FROM seat_assignments WHERE seat_id = ANY($1)', [seatIds]);
+              await client.query('DELETE FROM reservations WHERE seat_id = ANY($1)', [seatIds]);
+              await client.query('DELETE FROM seats WHERE id = ANY($1)', [seatIds]);
+            }
+
+            await client.query('DELETE FROM rooms WHERE id = ANY($1)', [roomIds]);
+          }
+
+          await client.query('DELETE FROM floors WHERE id=$1', [id]);
+        });
         return res.json({ ok: true });
       }
     }
@@ -76,7 +95,19 @@ module.exports = async function handler(req, res) {
         return res.json({ ok: true });
       }
       if (action === 'delete') {
-        await query('DELETE FROM rooms WHERE id=$1', [id]);
+        await withTransaction(async (client) => {
+          const seatRes = await client.query('SELECT id FROM seats WHERE room_id=$1', [id]);
+          const seatIds = seatRes.rows.map(s => s.id);
+
+          if (seatIds.length > 0) {
+            await client.query('UPDATE memberships SET seat_id=NULL WHERE seat_id = ANY($1)', [seatIds]);
+            await client.query('DELETE FROM seat_assignments WHERE seat_id = ANY($1)', [seatIds]);
+            await client.query('DELETE FROM reservations WHERE seat_id = ANY($1)', [seatIds]);
+            await client.query('DELETE FROM seats WHERE id = ANY($1)', [seatIds]);
+          }
+
+          await client.query('DELETE FROM rooms WHERE id=$1', [id]);
+        });
         return res.json({ ok: true });
       }
     }

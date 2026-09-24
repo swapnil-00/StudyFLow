@@ -123,9 +123,17 @@ class Store {
     await apiWrite('floors', 'delete', {}, id);
     const deletedRooms = (this._db?.rooms || []).filter(r => r.floorId === id);
     const roomIds = deletedRooms.map(r => r.id);
+    const deletedSeats = (this._db?.seats || []).filter(s => roomIds.includes(s.roomId));
+    const seatIds = deletedSeats.map(s => s.id);
+
     this._db.floors = (this._db?.floors || []).filter(f => f.id !== id);
     this._db.rooms = (this._db?.rooms || []).filter(r => r.floorId !== id);
     this._db.seats = (this._db?.seats || []).filter(s => !roomIds.includes(s.roomId));
+    this._db.seatAssignments = (this._db?.seatAssignments || []).filter(a => !seatIds.includes(a.seatId));
+    this._db.reservations = (this._db?.reservations || []).filter(res => !seatIds.includes(res.seatId));
+    (this._db?.memberships || []).forEach(m => {
+      if (seatIds.includes(m.seatId)) m.seatId = null;
+    });
     this._notify();
   }
 
@@ -160,7 +168,16 @@ class Store {
 
   async deleteRoom(id) {
     await apiWrite('rooms', 'delete', {}, id);
-    this._db.rooms = this._db.rooms.filter(r => r.id !== id);
+    const deletedSeats = (this._db?.seats || []).filter(s => s.roomId === id);
+    const seatIds = deletedSeats.map(s => s.id);
+
+    this._db.rooms = (this._db?.rooms || []).filter(r => r.id !== id);
+    this._db.seats = (this._db?.seats || []).filter(s => s.roomId !== id);
+    this._db.seatAssignments = (this._db?.seatAssignments || []).filter(a => !seatIds.includes(a.seatId));
+    this._db.reservations = (this._db?.reservations || []).filter(res => !seatIds.includes(res.seatId));
+    (this._db?.memberships || []).forEach(m => {
+      if (seatIds.includes(m.seatId)) m.seatId = null;
+    });
     this._notify();
   }
 
