@@ -186,16 +186,6 @@ class MetaWhatsAppProvider extends BaseWhatsAppProvider {
       };
     }
   }
-        data
-      };
-    } catch (e) {
-      return {
-        success: false,
-        error: e.message,
-        status: 'FAILED'
-      };
-    }
-  }
 
   async sendTextMessage({ to, text }) {
     try {

@@ -74,6 +74,7 @@ async function apiWrite(table, action, data, id) {
   const res = await fetch(`${API_BASE}/api/write`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
     body: JSON.stringify({ table, action, data, id }),
   });
   const json = await res.json();
@@ -87,6 +88,7 @@ class Store {
     this._subscribers = [];
     this._loading = false;
     this._loaded = false;
+    this._lastLoadError = null;
     this._activeBranchId = null; // in-memory branch selection (no sessionStorage)
   }
 
@@ -102,13 +104,14 @@ class Store {
     }
     this._loading = true;
     try {
-      const res = await fetch(`${API_BASE}/api/data`);
+      const res = await fetch(`${API_BASE}/api/data`, { credentials: 'same-origin' });
       const json = await res.json();
       if (!json.ok) throw new Error(json.error || 'Failed to load data');
       this._db = json.db;
       this._loaded = true;
     } catch (e) {
       console.error('Store load failed:', e);
+      this._lastLoadError = e.message;
       // Fallback: empty DB so app doesn't crash
       this._db = { branches:[], floors:[], rooms:[], seats:[], students:[], membershipPlans:[], memberships:[], seatAssignments:[], reservations:[], payments:[], attendance:[], expenses:[], notifications:[], activityLog:[], waitlist:[], staff:[], seatTransfers:[], notificationMessages:[], documents:[], settings:{} };
       this._loaded = true;
@@ -1194,16 +1197,6 @@ class MetaWhatsAppProvider extends BaseWhatsAppProvider {
       return {
         success: false,
         error: err.message,
-        status: 'FAILED'
-      };
-    }
-  }
-        data
-      };
-    } catch (e) {
-      return {
-        success: false,
-        error: e.message,
         status: 'FAILED'
       };
     }

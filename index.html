@@ -83,12 +83,12 @@
       }
     });
 
-    // Boot timeout safeguard (10 seconds)
+    // Boot timeout safeguard (15 seconds)
     setTimeout(function() {
       if (!window.__appLoaded && document.getElementById('app-loader')) {
         showAppError('Connection timed out. Verify your Neon database connection and Vercel environment configuration.');
       }
-    }, 10000);
+    }, 15000);
 
     // Dismiss loader function
     function dismissAppLoader() {
@@ -103,6 +103,6 @@
   </script>
 
   <!-- Single self-contained production bundle -->
-  <script src="/js/bundle.js" defer></script>
+  <script src="/js/bundle.js" onerror="showAppError('Failed to load application script (/js/bundle.js)')" defer></script>
 </body>
 </html>

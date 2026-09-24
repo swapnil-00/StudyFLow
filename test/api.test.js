@@ -1,5 +1,5 @@
 // test/api.test.js — Production Readiness Test Suite
-const test = require('node:test');
+const { test, after } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
@@ -164,3 +164,8 @@ test('6. API /notify: Serverless WhatsApp Mock Dispatcher', async () => {
   assert.ok(res._json.ok, 'Notification ok flag must be true');
   assert.ok(res._json.providerMessageId, 'Provider message ID must be returned');
 });
+
+after(async () => {
+  await getPool().end();
+});
+

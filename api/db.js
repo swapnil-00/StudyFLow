@@ -32,13 +32,7 @@ function cors(res) {
 }
 
 async function query(sql, params) {
-  const client = await getPool().connect();
-  try {
-    const result = await client.query(sql, params);
-    return result;
-  } finally {
-    client.release();
-  }
+  return getPool().query(sql, params);
 }
 
 async function withTransaction(callback) {
