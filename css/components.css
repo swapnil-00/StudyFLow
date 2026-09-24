@@ -517,6 +517,40 @@ tbody td {
   flex-shrink: 0;
 }
 
+.confirm-icon-box {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.confirm-icon-box.danger {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--sf-error-500);
+}
+.confirm-icon-box.warning {
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--sf-warning-500);
+}
+.confirm-icon-box.info {
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--sf-indigo-500);
+}
+[data-theme="dark"] .confirm-icon-box.danger {
+  background: rgba(239, 68, 68, 0.22);
+  color: #f87171;
+}
+[data-theme="dark"] .confirm-icon-box.warning {
+  background: rgba(245, 158, 11, 0.22);
+  color: #fbbf24;
+}
+[data-theme="dark"] .confirm-icon-box.info {
+  background: rgba(99, 102, 241, 0.22);
+  color: #818cf8;
+}
+
 /* ── Drawer ─────────────────────────────────────────────────────── */
 .drawer-backdrop {
   position: fixed;

@@ -2730,17 +2730,32 @@ function renderActivityItem(a) {
 // ─── PAGE: seat-map.js ───
 (function() {
 // Seat Map Page — Visual seat management
-window.Pages.renderSeatMap = function renderSeatMap(container) {
+window.Pages.renderSeatMap = function renderSeatMap(container, params = {}) {
   const branchId = store.getActiveBranchId();
   const branch = store.getBranch(branchId);
   const floors = store.getFloors(branchId);
 
+  let initialFloorId = floors[0]?.id || null;
+  let initialRoomId = null;
+
+  if (params && params.roomId) {
+    const r = store.getRoom(params.roomId);
+    if (r) {
+      initialRoomId = r.id;
+      initialFloorId = r.floorId || initialFloorId;
+    }
+  } else if (params && params.floorId) {
+    initialFloorId = params.floorId;
+    const rms = store.getRooms(initialFloorId);
+    initialRoomId = rms[0]?.id || null;
+  }
+
   const state = {
-    floorId: floors[0]?.id || null,
-    roomId: null,
+    floorId: initialFloorId,
+    roomId: initialRoomId,
     filter: 'all',
     zoom: 1,
-    selectedSeatId: null,
+    selectedSeatId: params?.seatId || null,
     searchQuery: ''
   };
 
@@ -2877,6 +2892,11 @@ window.Pages.renderSeatMap = function renderSeatMap(container) {
   });
 
   render();
+  if (params && params.seatId) {
+    setTimeout(() => {
+      if (window.openSeatDrawer) window.openSeatDrawer(params.seatId);
+    }, 150);
+  }
 }
 
 function renderSeatStat(label, count, color) {
@@ -4731,7 +4751,7 @@ window.Pages.renderStudentProfile = function renderStudentProfile(container, par
           <div class="card">
             <div class="card-header">
               <div class="card-title">Current Seat</div>
-              ${seat ? `<button class="btn btn-secondary btn-sm" onclick="app.navigate('/seat-map')">View on Map</button>` : ''}
+              ${seat ? `<button class="btn btn-secondary btn-sm" onclick="app.navigate('/seat-map?roomId=${seat.roomId}&seatId=${seat.id}')">View on Map</button>` : ''}
             </div>
             <div class="card-body">
               ${seat ? `
@@ -6077,10 +6097,16 @@ window.Pages.renderFloors = function renderFloors(container) {
 
     let msg = `Are you sure you want to delete floor "${floor.name}"?`;
     if (rooms.length > 0) {
-      msg += `\n\nThis will also delete ${rooms.length} room(s) and ${totalSeats} seat(s) on this floor.`;
+      msg += `\n\nThis will permanently delete ${rooms.length} room(s) and ${totalSeats} seat(s) on this floor.`;
     }
 
-    if (!confirm(msg)) return;
+    const ok = await modal.confirm({
+      title: 'Delete Floor',
+      message: msg,
+      confirmText: 'Delete Floor',
+      type: 'danger'
+    });
+    if (!ok) return;
 
     try {
       await store.deleteFloor(floorId);
@@ -6191,7 +6217,20 @@ window.Pages.renderFloors = function renderFloors(container) {
 
   window.confirmDeleteRoom = async function(roomId) {
     const room = store.getRoom(roomId);
-    if (!confirm(`Are you sure you want to delete room "${room?.name || roomId}" and all its seats?`)) return;
+    const seats = store.getSeats(roomId);
+    let msg = `Are you sure you want to delete room "${room?.name || roomId}"?`;
+    if (seats.length > 0) {
+      msg += `\n\nThis will permanently delete ${seats.length} seat(s) configured in this room.`;
+    }
+
+    const ok = await modal.confirm({
+      title: 'Delete Room',
+      message: msg,
+      confirmText: 'Delete Room',
+      type: 'danger'
+    });
+    if (!ok) return;
+
     try {
       await store.deleteRoom(roomId);
       toast.show('Room deleted', 'success');
@@ -6360,7 +6399,7 @@ function renderRoomCard(room) {
           <button class="btn btn-secondary btn-sm" style="flex:1;" onclick="openSeatLayoutEditor('${room.id}')" title="Drag and drop seat arrangement">
             ${icons.map} Arrange Layout
           </button>
-          <button class="btn btn-ghost btn-sm" onclick="app.navigate('/seat-map')" title="View on Live Seat Map">
+          <button class="btn btn-ghost btn-sm" onclick="app.navigate('/seat-map?roomId=${room.id}')" title="View on Live Seat Map">
             ${icons.grid} View Map
           </button>
           <button class="btn btn-ghost btn-sm" style="color:var(--sf-error-600);" onclick="confirmDeleteRoom('${room.id}')" title="Delete Room">
@@ -7791,7 +7830,13 @@ window.Pages.renderLayoutEditor = function renderLayoutEditor(container, params 
       return;
     }
 
-    if (!confirm(`Are you sure you want to delete seat "${label}"?`)) return;
+    const ok = await modal.confirm({
+      title: 'Delete Seat',
+      message: `Are you sure you want to delete seat "${label}"?`,
+      confirmText: 'Delete Seat',
+      type: 'danger'
+    });
+    if (!ok) return;
 
     try {
       await store.deleteSeat(targetSeat.id);
@@ -8333,8 +8378,14 @@ class App {
     setTimeout(() => document.addEventListener('click', (e) => { if (!menu.contains(e.target)) menu.remove(); }, { once: true }));
   }
 
-  resetApp() {
-    if (confirm('Reload app and refresh data from database?')) {
+  async resetApp() {
+    const ok = await modal.confirm({
+      title: 'Refresh Data',
+      message: 'Reload app and refresh data from database?',
+      confirmText: 'Reload',
+      type: 'warning'
+    });
+    if (ok) {
       location.reload();
     }
   }
@@ -8538,6 +8589,43 @@ const modal = {
     return backdrop;
   },
 
+  confirm({ title = 'Confirm Action', message = 'Are you sure?', confirmText = 'Confirm', cancelText = 'Cancel', type = 'danger' } = {}) {
+    return new Promise((resolve) => {
+      const isDanger = type === 'danger' || type === 'error';
+      const btnClass = isDanger ? 'btn btn-danger' : (type === 'warning' ? 'btn btn-warning' : 'btn btn-primary');
+      const iconClass = isDanger ? 'danger' : (type === 'warning' ? 'warning' : 'info');
+      const iconSvg = isDanger ? (icons.trash || icons['alert-triangle']) : (type === 'warning' ? icons['alert-triangle'] : icons.info);
+
+      const bodyHTML = `
+        <div style="display:flex;gap:var(--space-4);align-items:flex-start;">
+          <div class="confirm-icon-box ${iconClass}">
+            ${iconSvg}
+          </div>
+          <div style="flex:1;">
+            <p style="margin:0;font-size:var(--text-sm);line-height:1.6;color:var(--color-text-secondary);white-space:pre-line;">${message}</p>
+          </div>
+        </div>
+      `;
+
+      const footerHTML = `
+        <button type="button" class="btn btn-secondary" id="modal-confirm-cancel">${cancelText}</button>
+        <button type="button" class="${btnClass}" id="modal-confirm-ok">${confirmText}</button>
+      `;
+
+      modal.open(title, bodyHTML, footerHTML, { size: 'sm' });
+
+      document.getElementById('modal-confirm-cancel')?.addEventListener('click', () => {
+        modal.close();
+        resolve(false);
+      });
+
+      document.getElementById('modal-confirm-ok')?.addEventListener('click', () => {
+        modal.close();
+        resolve(true);
+      });
+    });
+  },
+
   close() {
     document.getElementById('modal-backdrop')?.remove();
   }
@@ -8579,18 +8667,11 @@ const drawer = {
 };
 
 // ── Confirm Dialog ─────────────────────────────────────────────────
-function confirmDialog(title, message, onConfirm, type = 'danger') {
-  modal.open(title, `
-    <div style="text-align:center;">
-      <div class="confirm-dialog-icon ${type}" style="margin:0 auto var(--space-4);">
-        ${type === 'danger' ? icons['alert-triangle'] : icons['alert-circle']}
-      </div>
-      <p style="color:var(--color-text-secondary);font-size:var(--text-sm);">${message}</p>
-    </div>
-  `, `
-    <button class="btn btn-secondary" onclick="modal.close()">Cancel</button>
-    <button class="btn btn-danger" onclick="modal.close(); (${onConfirm})()">Confirm</button>
-  `, { size: 'sm', noBackdropClose: false });
+async function confirmDialog(title, message, onConfirm, type = 'danger', confirmText = 'Confirm') {
+  const confirmed = await modal.confirm({ title, message, type, confirmText });
+  if (confirmed && typeof onConfirm === 'function') {
+    onConfirm();
+  }
 }
 
 // ── Utility ────────────────────────────────────────────────────────

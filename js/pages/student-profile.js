@@ -151,7 +151,7 @@ export function renderStudentProfile(container, params) {
           <div class="card">
             <div class="card-header">
               <div class="card-title">Current Seat</div>
-              ${seat ? `<button class="btn btn-secondary btn-sm" onclick="app.navigate('/seat-map')">View on Map</button>` : ''}
+              ${seat ? `<button class="btn btn-secondary btn-sm" onclick="app.navigate('/seat-map?roomId=${seat.roomId}&seatId=${seat.id}')">View on Map</button>` : ''}
             </div>
             <div class="card-body">
               ${seat ? `

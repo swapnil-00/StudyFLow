@@ -1,15 +1,30 @@
 // Seat Map Page — Visual seat management
-export function renderSeatMap(container) {
+export function renderSeatMap(container, params = {}) {
   const branchId = store.getActiveBranchId();
   const branch = store.getBranch(branchId);
   const floors = store.getFloors(branchId);
 
+  let initialFloorId = floors[0]?.id || null;
+  let initialRoomId = null;
+
+  if (params && params.roomId) {
+    const r = store.getRoom(params.roomId);
+    if (r) {
+      initialRoomId = r.id;
+      initialFloorId = r.floorId || initialFloorId;
+    }
+  } else if (params && params.floorId) {
+    initialFloorId = params.floorId;
+    const rms = store.getRooms(initialFloorId);
+    initialRoomId = rms[0]?.id || null;
+  }
+
   const state = {
-    floorId: floors[0]?.id || null,
-    roomId: null,
+    floorId: initialFloorId,
+    roomId: initialRoomId,
     filter: 'all',
     zoom: 1,
-    selectedSeatId: null,
+    selectedSeatId: params?.seatId || null,
     searchQuery: ''
   };
 
@@ -146,6 +161,11 @@ export function renderSeatMap(container) {
   });
 
   render();
+  if (params && params.seatId) {
+    setTimeout(() => {
+      if (window.openSeatDrawer) window.openSeatDrawer(params.seatId);
+    }, 150);
+  }
 }
 
 function renderSeatStat(label, count, color) {

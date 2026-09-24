@@ -85,10 +85,16 @@ export function renderFloors(container) {
 
     let msg = `Are you sure you want to delete floor "${floor.name}"?`;
     if (rooms.length > 0) {
-      msg += `\n\nThis will also delete ${rooms.length} room(s) and ${totalSeats} seat(s) on this floor.`;
+      msg += `\n\nThis will permanently delete ${rooms.length} room(s) and ${totalSeats} seat(s) on this floor.`;
     }
 
-    if (!confirm(msg)) return;
+    const ok = await modal.confirm({
+      title: 'Delete Floor',
+      message: msg,
+      confirmText: 'Delete Floor',
+      type: 'danger'
+    });
+    if (!ok) return;
 
     try {
       await store.deleteFloor(floorId);
@@ -199,7 +205,20 @@ export function renderFloors(container) {
 
   window.confirmDeleteRoom = async function(roomId) {
     const room = store.getRoom(roomId);
-    if (!confirm(`Are you sure you want to delete room "${room?.name || roomId}" and all its seats?`)) return;
+    const seats = store.getSeats(roomId);
+    let msg = `Are you sure you want to delete room "${room?.name || roomId}"?`;
+    if (seats.length > 0) {
+      msg += `\n\nThis will permanently delete ${seats.length} seat(s) configured in this room.`;
+    }
+
+    const ok = await modal.confirm({
+      title: 'Delete Room',
+      message: msg,
+      confirmText: 'Delete Room',
+      type: 'danger'
+    });
+    if (!ok) return;
+
     try {
       await store.deleteRoom(roomId);
       toast.show('Room deleted', 'success');
@@ -368,7 +387,7 @@ function renderRoomCard(room) {
           <button class="btn btn-secondary btn-sm" style="flex:1;" onclick="openSeatLayoutEditor('${room.id}')" title="Drag and drop seat arrangement">
             ${icons.map} Arrange Layout
           </button>
-          <button class="btn btn-ghost btn-sm" onclick="app.navigate('/seat-map')" title="View on Live Seat Map">
+          <button class="btn btn-ghost btn-sm" onclick="app.navigate('/seat-map?roomId=${room.id}')" title="View on Live Seat Map">
             ${icons.grid} View Map
           </button>
           <button class="btn btn-ghost btn-sm" style="color:var(--sf-error-600);" onclick="confirmDeleteRoom('${room.id}')" title="Delete Room">

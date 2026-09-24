@@ -288,7 +288,13 @@ export function renderLayoutEditor(container, params = {}) {
       return;
     }
 
-    if (!confirm(`Are you sure you want to delete seat "${label}"?`)) return;
+    const ok = await modal.confirm({
+      title: 'Delete Seat',
+      message: `Are you sure you want to delete seat "${label}"?`,
+      confirmText: 'Delete Seat',
+      type: 'danger'
+    });
+    if (!ok) return;
 
     try {
       await store.deleteSeat(targetSeat.id);
