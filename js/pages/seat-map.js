@@ -187,33 +187,40 @@ function renderRoom(room, seats, state) {
 function renderBlueprintRoom(room, seats, state) {
   const q = state.searchQuery?.toLowerCase();
   
-  let maxX = 880;
-  let maxY = 620;
+  let minX = Infinity, minY = Infinity;
+  let maxX = 0, maxY = 0;
   seats.forEach(s => {
-    if (s.position) {
-      if (s.position.x + 90 > maxX) maxX = Math.ceil(s.position.x + 90);
-      if (s.position.y + 90 > maxY) maxY = Math.ceil(s.position.y + 90);
-    }
+    const x = s.position?.x ?? s.position_x ?? 50;
+    const y = s.position?.y ?? s.position_y ?? 50;
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x + 70 > maxX) maxX = x + 70;
+    if (y + 50 > maxY) maxY = y + 50;
   });
+
+  if (minX === Infinity) minX = 0;
+  if (minY === Infinity) minY = 0;
+
+  // Normalize offset so layout is perfectly centered without dead margin
+  const offsetX = minX > 40 ? (minX - 30) : 0;
+  const offsetY = minY > 40 ? (minY - 30) : 0;
+
+  const canvasWidth = Math.max(640, (maxX - offsetX) + 40);
+  const canvasHeight = Math.max(440, (maxY - offsetY) + 40);
 
   let html = `
     <div class="room-section" style="padding:var(--space-4);">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-4);flex-wrap:wrap;gap:8px;">
         <div class="room-label" style="margin-bottom:0;">
-          ${room.name} · ${seats.length} seats (Visual Blueprint)
+          ${room.name} · ${seats.length} seats (Visual Layout)
         </div>
-        <button class="btn btn-secondary btn-sm" onclick="if(window.openSeatLayoutEditor){window.openSeatLayoutEditor('${room.id}');}else{app.navigate('/floors');}">
+        <button class="btn btn-secondary btn-sm" onclick="app.navigate('/layout-editor?roomId=${room.id}')">
           📐 Drag & Rearrange
         </button>
       </div>
 
-      <div class="floor-plan-canvas-wrap" style="min-height:560px;background:var(--color-bg-secondary);border:1px solid var(--color-border-secondary);border-radius:var(--radius-xl);overflow:auto;padding:24px;position:relative;">
-        <div class="floor-plan-canvas" style="position:relative;width:${maxX}px;height:${maxY}px;min-height:520px;">
-          <!-- Cluster outlines if matching layout -->
-          <div class="floor-plan-cluster" style="left:20px;top:20px;width:340px;height:240px;" data-label="Cluster A (Top Left · 4x9)"></div>
-          <div class="floor-plan-cluster" style="left:390px;top:20px;width:290px;height:240px;" data-label="Cluster B (Top Right · 2x8)"></div>
-          <div class="floor-plan-cluster" style="left:20px;top:290px;width:260px;height:260px;" data-label="Cluster C (Bottom Left · 8 Pods)"></div>
-          <div class="floor-plan-cluster" style="left:390px;top:290px;width:360px;height:260px;" data-label="Cluster D (Bottom Right · 8 Booths)"></div>
+      <div class="floor-plan-canvas-wrap" style="min-height:560px;background:#0d1117;border:1px solid #23272d;border-radius:var(--radius-xl);overflow:auto;padding:36px;display:flex;justify-content:center;align-items:center;position:relative;">
+        <div class="floor-plan-canvas" style="position:relative;width:${canvasWidth}px;height:${canvasHeight}px;margin:0 auto;flex-shrink:0;">
   `;
 
   seats.forEach(seat => {
@@ -237,8 +244,10 @@ function renderBlueprintRoom(room, seats, state) {
       }
     }
 
-    const posX = seat.position?.x ?? 20;
-    const posY = seat.position?.y ?? 20;
+    const rawX = seat.position?.x ?? seat.position_x ?? 50;
+    const rawY = seat.position?.y ?? seat.position_y ?? 50;
+    const posX = Math.max(10, rawX - offsetX);
+    const posY = Math.max(10, rawY - offsetY);
     const statusClass = status;
     const selected = state.selectedSeatId === seat.id;
 
