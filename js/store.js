@@ -1,35 +1,63 @@
-// StudyFlow Data Store — localStorage-based relational data store
-// Abstracted for easy migration to a real backend
+// StudyFlow Data Store — Neon PostgreSQL backend via REST API
+// Replaces localStorage store with server-backed persistence
+// All reads are from in-memory cache (loaded once on boot).
+// All writes go to /api/write immediately, then update the cache.
 
-const DB_KEY = 'studyflow_db';
-const DB_VERSION = 1;
+const API_BASE = '';  // Same origin — works on Vercel and local
+
+async function apiWrite(table, action, data, id) {
+  const res = await fetch(`${API_BASE}/api/write`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ table, action, data, id }),
+  });
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error || 'Write failed');
+  return json;
+}
 
 class Store {
   constructor() {
-    this._cache = null;
+    this._db = null;
     this._subscribers = [];
+    this._loading = false;
+    this._loaded = false;
+    this._activeBranchId = null; // in-memory branch selection (no sessionStorage)
   }
 
-  // ── Core ────────────────────────────────────────────────────────
-  _load() {
-    if (this._cache) return this._cache;
-    try {
-      const raw = localStorage.getItem(DB_KEY);
-      this._cache = raw ? JSON.parse(raw) : null;
-    } catch (e) {
-      this._cache = null;
+  // ── Bootstrap ────────────────────────────────────────────────────
+  async load() {
+    if (this._loaded) return;
+    if (this._loading) {
+      // Wait for in-flight load
+      await new Promise(resolve => {
+        const unsub = this.subscribe(() => { if (this._loaded) { unsub(); resolve(); } });
+      });
+      return;
     }
-    return this._cache;
-  }
-
-  _save(db) {
-    this._cache = db;
+    this._loading = true;
     try {
-      localStorage.setItem(DB_KEY, JSON.stringify(db));
+      const res = await fetch(`${API_BASE}/api/data`);
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'Failed to load data');
+      this._db = json.db;
+      this._loaded = true;
     } catch (e) {
-      console.error('Storage error:', e);
+      console.error('Store load failed:', e);
+      // Fallback: empty DB so app doesn't crash
+      this._db = { branches:[], floors:[], rooms:[], seats:[], students:[], membershipPlans:[], memberships:[], seatAssignments:[], reservations:[], payments:[], attendance:[], expenses:[], notifications:[], activityLog:[], waitlist:[], staff:[], seatTransfers:[], notificationMessages:[], documents:[], settings:{} };
+      this._loaded = true;
     }
+    this._loading = false;
     this._notify();
+  }
+
+  isSeeded() {
+    return this._loaded && (this._db?.branches?.length > 0);
+  }
+
+  get db() {
+    return this._db || {};
   }
 
   _notify() {
@@ -41,67 +69,100 @@ class Store {
     return () => { this._subscribers = this._subscribers.filter(s => s !== fn); };
   }
 
-  get db() {
-    return this._load();
+  // Keep _save for compatibility: it only updates the in-memory cache
+  _save(db) {
+    this._db = db;
+    this._notify();
   }
 
-  isSeeded() {
-    return !!this._load();
+  getActiveBranchId() {
+    return this._activeBranchId || (this._db?.branches?.[0]?.id);
   }
+  setActiveBranch(id) { this._activeBranchId = id; this._notify(); }
 
-  // ── Branches ────────────────────────────────────────────────────
-  getBranches() { return this.db.branches || []; }
+  // ── Branches ──────────────────────────────────────────────────────
+  getBranches() { return this._db?.branches || []; }
   getBranch(id) { return this.getBranches().find(b => b.id === id); }
-  getActiveBranchId() { return localStorage.getItem('sf_active_branch') || this.getBranches()[0]?.id; }
-  setActiveBranch(id) { localStorage.setItem('sf_active_branch', id); this._notify(); }
 
-  // ── Floors ──────────────────────────────────────────────────────
+  async addBranch(data) {
+    const branch = { id: uid('BR'), createdAt: now(), ...data };
+    await apiWrite('branches', 'insert', branch);
+    this._db.branches.push(branch);
+    this._notify();
+    return branch;
+  }
+
+  async updateBranch(id, updates) {
+    const idx = this._db.branches.findIndex(b => b.id === id);
+    if (idx === -1) throw new Error('Branch not found');
+    this._db.branches[idx] = { ...this._db.branches[idx], ...updates };
+    await apiWrite('branches', 'update', this._db.branches[idx], id);
+    this._notify();
+    return this._db.branches[idx];
+  }
+
+  // ── Floors ────────────────────────────────────────────────────────
   getFloors(branchId) {
-    const floors = this.db.floors || [];
+    const floors = this._db?.floors || [];
     return branchId ? floors.filter(f => f.branchId === branchId) : floors;
   }
-  getFloor(id) { return (this.db.floors || []).find(f => f.id === id); }
+  getFloor(id) { return (this._db?.floors || []).find(f => f.id === id); }
 
-  addFloor(data) {
-    const db = this.db;
+  async addFloor(data) {
     const floor = { id: uid('FLR'), createdAt: now(), ...data };
-    db.floors.push(floor);
-    this._save(db);
+    await apiWrite('floors', 'insert', floor);
+    this._db.floors.push(floor);
+    this._notify();
     return floor;
   }
 
-  // ── Rooms ───────────────────────────────────────────────────────
+  // ── Rooms ─────────────────────────────────────────────────────────
   getRooms(floorId) {
-    const rooms = this.db.rooms || [];
+    const rooms = this._db?.rooms || [];
     return floorId ? rooms.filter(r => r.floorId === floorId) : rooms;
   }
-  getRoom(id) { return (this.db.rooms || []).find(r => r.id === id); }
+  getRoom(id) { return (this._db?.rooms || []).find(r => r.id === id); }
 
   getRoomsForBranch(branchId) {
     const floorIds = this.getFloors(branchId).map(f => f.id);
-    return (this.db.rooms || []).filter(r => floorIds.includes(r.floorId));
+    return (this._db?.rooms || []).filter(r => floorIds.includes(r.floorId));
   }
 
-  addRoom(data) {
-    const db = this.db;
+  async addRoom(data) {
     const room = { id: uid('RM'), createdAt: now(), ...data };
-    db.rooms.push(room);
-    this._save(db);
+    await apiWrite('rooms', 'insert', room);
+    this._db.rooms.push(room);
+    this._notify();
     return room;
   }
 
-  // ── Seats ───────────────────────────────────────────────────────
+  async updateRoom(id, updates) {
+    const idx = this._db.rooms.findIndex(r => r.id === id);
+    if (idx === -1) throw new Error('Room not found');
+    this._db.rooms[idx] = { ...this._db.rooms[idx], ...updates };
+    await apiWrite('rooms', 'update', this._db.rooms[idx], id);
+    this._notify();
+    return this._db.rooms[idx];
+  }
+
+  async deleteRoom(id) {
+    await apiWrite('rooms', 'delete', {}, id);
+    this._db.rooms = this._db.rooms.filter(r => r.id !== id);
+    this._notify();
+  }
+
+  // ── Seats ─────────────────────────────────────────────────────────
   getSeats(roomId) {
-    const seats = this.db.seats || [];
+    const seats = this._db?.seats || [];
     return roomId ? seats.filter(s => s.roomId === roomId) : seats;
   }
 
   getSeatsForBranch(branchId) {
     const roomIds = this.getRoomsForBranch(branchId).map(r => r.id);
-    return (this.db.seats || []).filter(s => roomIds.includes(s.roomId));
+    return (this._db?.seats || []).filter(s => roomIds.includes(s.roomId));
   }
 
-  getSeat(id) { return (this.db.seats || []).find(s => s.id === id); }
+  getSeat(id) { return (this._db?.seats || []).find(s => s.id === id); }
 
   getSeatStatus(seatId) {
     const seat = this.getSeat(seatId);
@@ -109,113 +170,151 @@ class Store {
     if (seat.status === 'maintenance') return 'maintenance';
     if (seat.status === 'blocked') return 'blocked';
 
-    // Check active assignment
     const assignment = this.getActiveAssignment(seatId);
     if (!assignment) return 'available';
 
-    // Check reservation
     const reservation = this.getActiveReservation(seatId);
     if (reservation && !assignment) return 'reserved';
 
-    // Check membership payment
     const membership = this.getMembership(assignment.membershipId);
     if (!membership) return 'available';
 
     const today = new Date();
     const expiry = new Date(membership.endDate);
 
-    // Payment due?
     const payment = this.getPaymentStatus(membership.id);
     if (payment === 'overdue' || payment === 'pending') return 'payment-due';
 
-    // Expiring soon (within 7 days)?
     const daysLeft = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
     if (daysLeft <= 7 && daysLeft > 0) return 'expiring';
-
-    // Expired?
     if (expiry < today) return 'available';
 
     return 'occupied';
   }
 
-  addSeat(data) {
-    const db = this.db;
+  async addSeat(data) {
     const seat = { id: uid('SEAT'), status: 'available', type: 'standard', createdAt: now(), ...data };
-    db.seats.push(seat);
-    this._save(db);
+    await apiWrite('seats', 'insert', seat);
+    this._db.seats.push(seat);
+    this._notify();
     return seat;
   }
 
-  updateSeat(id, updates) {
-    const db = this.db;
-    const idx = db.seats.findIndex(s => s.id === id);
+  async updateSeat(id, updates) {
+    const idx = this._db.seats.findIndex(s => s.id === id);
     if (idx === -1) throw new Error('Seat not found');
-    db.seats[idx] = { ...db.seats[idx], ...updates, updatedAt: now() };
-    this._save(db);
-    return db.seats[idx];
+    this._db.seats[idx] = { ...this._db.seats[idx], ...updates, updatedAt: now() };
+    await apiWrite('seats', 'update', updates, id);
+    this._notify();
+    return this._db.seats[idx];
   }
 
-  // ── Students ────────────────────────────────────────────────────
+  async deleteSeat(id) {
+    await apiWrite('seats', 'delete', {}, id);
+    this._db.seats = this._db.seats.filter(s => s.id !== id);
+    this._notify();
+  }
+
+  // ── Students ──────────────────────────────────────────────────────
   getStudents(branchId) {
-    const students = this.db.students || [];
+    const students = this._db?.students || [];
     return branchId ? students.filter(s => s.branchId === branchId) : students;
   }
 
-  getStudent(id) { return (this.db.students || []).find(s => s.id === id); }
+  getStudent(id) { return (this._db?.students || []).find(s => s.id === id); }
 
   searchStudents(query, branchId) {
     const q = query.toLowerCase();
     return this.getStudents(branchId).filter(s =>
       s.name.toLowerCase().includes(q) ||
-      s.phone.includes(q) ||
+      (s.phone||'').includes(q) ||
       s.id.toLowerCase().includes(q) ||
-      s.email?.toLowerCase().includes(q)
+      (s.email||'').toLowerCase().includes(q)
     );
   }
 
-  addStudent(data) {
-    const db = this.db;
+  async addStudent(data) {
+    const phone = data.phone || '';
+    const countryCode = data.country_code || '+91';
+    const normalized_phone = data.normalized_phone || utils.normalizePhone(phone, countryCode);
+
     const student = {
       id: uid('STU'),
       status: 'active',
       createdAt: now(),
       avatar: getAvatarColor(data.name),
-      ...data
+      avatarColor: getAvatarColor(data.name),
+      country_code: countryCode,
+      phone_number: phone.replace(/[^0-9]/g, ''),
+      normalized_phone,
+      whatsapp_opt_in: data.whatsapp_opt_in !== false,
+      whatsapp_opt_in_at: data.whatsapp_opt_in_at || now(),
+      whatsapp_opt_out_at: null,
+      preferred_language: data.preferred_language || 'en',
+      communication_preferences: data.communication_preferences || {
+        whatsapp: true, payment_reminders: true, membership_reminders: true,
+        booking_notifications: true, receipt_notifications: true, announcements: true
+      },
+      ...data,
+      phone: normalized_phone || phone
     };
-    db.students.push(student);
-    this._save(db);
+
+    await apiWrite('students', 'insert', student);
+    this._db.students.push(student);
     this.addActivity({ action: 'student_created', entity: 'student', entityId: student.id, description: `Student ${student.name} added` });
+    this._notify();
     return student;
   }
 
-  updateStudent(id, updates) {
-    const db = this.db;
-    const idx = db.students.findIndex(s => s.id === id);
+  async updateStudent(id, updates) {
+    const idx = this._db.students.findIndex(s => s.id === id);
     if (idx === -1) throw new Error('Student not found');
-    db.students[idx] = { ...db.students[idx], ...updates, updatedAt: now() };
-    this._save(db);
-    return db.students[idx];
+
+    if (updates.phone) {
+      const countryCode = updates.country_code || this._db.students[idx].country_code || '+91';
+      updates.normalized_phone = utils.normalizePhone(updates.phone, countryCode);
+      updates.phone = updates.normalized_phone;
+    }
+
+    if (updates.whatsapp_opt_in !== undefined && updates.whatsapp_opt_in !== this._db.students[idx].whatsapp_opt_in) {
+      if (updates.whatsapp_opt_in) updates.whatsapp_opt_in_at = now();
+      else updates.whatsapp_opt_out_at = now();
+    }
+
+    this._db.students[idx] = { ...this._db.students[idx], ...updates, updatedAt: now() };
+    await apiWrite('students', 'update', updates, id);
+    this._notify();
+    return this._db.students[idx];
   }
 
-  // ── Membership Plans ────────────────────────────────────────────
+  // ── Membership Plans ──────────────────────────────────────────────
   getMembershipPlans(branchId) {
-    const plans = this.db.membershipPlans || [];
+    const plans = this._db?.membershipPlans || [];
     return branchId ? plans.filter(p => p.branchId === branchId || !p.branchId) : plans;
   }
 
-  getMembershipPlan(id) { return (this.db.membershipPlans || []).find(p => p.id === id); }
+  getMembershipPlan(id) { return (this._db?.membershipPlans || []).find(p => p.id === id); }
 
-  addMembershipPlan(data) {
-    const db = this.db;
+  async addMembershipPlan(data) {
     const plan = { id: uid('PLAN'), active: true, createdAt: now(), ...data };
-    db.membershipPlans.push(plan);
-    this._save(db);
+    await apiWrite('membership_plans', 'insert', plan);
+    this._db.membershipPlans.push(plan);
+    this._notify();
     return plan;
   }
 
-  // ── Memberships ─────────────────────────────────────────────────
+  async updateMembershipPlan(id, updates) {
+    const idx = this._db.membershipPlans.findIndex(p => p.id === id);
+    if (idx === -1) throw new Error('Plan not found');
+    this._db.membershipPlans[idx] = { ...this._db.membershipPlans[idx], ...updates };
+    await apiWrite('membership_plans', 'update', this._db.membershipPlans[idx], id);
+    this._notify();
+    return this._db.membershipPlans[idx];
+  }
+
+  // ── Memberships ───────────────────────────────────────────────────
   getMemberships(studentId) {
-    const memberships = this.db.memberships || [];
+    const memberships = this._db?.memberships || [];
     return studentId ? memberships.filter(m => m.studentId === studentId) : memberships;
   }
 
@@ -226,184 +325,136 @@ class Store {
     );
   }
 
-  getMembership(id) { return (this.db.memberships || []).find(m => m.id === id); }
+  getMembership(id) { return (this._db?.memberships || []).find(m => m.id === id); }
 
-  addMembership(data) {
-    const db = this.db;
+  async addMembership(data) {
     const membership = { id: uid('MEM'), status: 'active', createdAt: now(), ...data };
-    db.memberships.push(membership);
-    this._save(db);
+    await apiWrite('memberships', 'insert', membership);
+    this._db.memberships.push(membership);
+    this._notify();
     return membership;
   }
 
-  updateMembership(id, updates) {
-    const db = this.db;
-    const idx = db.memberships.findIndex(m => m.id === id);
+  async updateMembership(id, updates) {
+    const idx = this._db.memberships.findIndex(m => m.id === id);
     if (idx === -1) throw new Error('Membership not found');
-    db.memberships[idx] = { ...db.memberships[idx], ...updates, updatedAt: now() };
-    this._save(db);
-    return db.memberships[idx];
+    this._db.memberships[idx] = { ...this._db.memberships[idx], ...updates, updatedAt: now() };
+    await apiWrite('memberships', 'update', updates, id);
+    this._notify();
+    return this._db.memberships[idx];
   }
 
-  // ── Seat Assignments ────────────────────────────────────────────
+  // ── Seat Assignments ──────────────────────────────────────────────
   getAssignments(seatId) {
-    const assignments = this.db.seatAssignments || [];
+    const assignments = this._db?.seatAssignments || [];
     return seatId ? assignments.filter(a => a.seatId === seatId) : assignments;
   }
 
   getStudentAssignment(studentId) {
     const today = new Date();
-    return (this.db.seatAssignments || []).find(a =>
-      a.studentId === studentId &&
-      a.status === 'active' &&
-      new Date(a.endDate) >= today
+    return (this._db?.seatAssignments || []).find(a =>
+      a.studentId === studentId && a.status === 'active' && new Date(a.endDate) >= today
     );
   }
 
   getActiveAssignment(seatId) {
     const today = new Date();
-    return (this.db.seatAssignments || []).find(a =>
-      a.seatId === seatId &&
-      a.status === 'active' &&
-      new Date(a.endDate) >= today
+    return (this._db?.seatAssignments || []).find(a =>
+      a.seatId === seatId && a.status === 'active' && new Date(a.endDate) >= today
     );
   }
 
-  assignSeat(data) {
-    // Validate seat availability
+  async assignSeat(data) {
     const existing = this.getActiveAssignment(data.seatId);
     if (existing) throw new Error('Seat is already occupied. Please choose a different seat.');
 
-    const db = this.db;
     const assignment = { id: uid('ASN'), status: 'active', createdAt: now(), ...data };
-    db.seatAssignments.push(assignment);
-    this._save(db);
-    this.addActivity({
-      action: 'seat_assigned',
-      entity: 'seat',
-      entityId: data.seatId,
-      description: `Seat assigned to student`,
-      meta: data
-    });
+    await apiWrite('seat_assignments', 'insert', assignment);
+    this._db.seatAssignments.push(assignment);
+    this.addActivity({ action: 'seat_assigned', entity: 'seat', entityId: data.seatId, description: `Seat assigned to student`, meta: data });
+    this._notify();
     return assignment;
   }
 
-  releaseSeat(seatId, reason, userId) {
-    const db = this.db;
-    const idx = db.seatAssignments.findIndex(a => a.seatId === seatId && a.status === 'active');
+  async releaseSeat(seatId, reason, userId) {
+    const idx = this._db.seatAssignments.findIndex(a => a.seatId === seatId && a.status === 'active');
     if (idx === -1) throw new Error('No active assignment found');
-    db.seatAssignments[idx] = {
-      ...db.seatAssignments[idx],
-      status: 'released',
-      releasedAt: now(),
-      releaseReason: reason,
-      releasedBy: userId
-    };
-    this._save(db);
-    this.addActivity({
-      action: 'seat_released',
-      entity: 'seat',
-      entityId: seatId,
-      description: `Seat released. Reason: ${reason}`
-    });
-    return db.seatAssignments[idx];
+    const updates = { status: 'released', releasedAt: now(), releaseReason: reason, releasedBy: userId };
+    this._db.seatAssignments[idx] = { ...this._db.seatAssignments[idx], ...updates };
+    await apiWrite('seat_assignments', 'update', updates, this._db.seatAssignments[idx].id);
+    this.addActivity({ action: 'seat_released', entity: 'seat', entityId: seatId, description: `Seat released. Reason: ${reason}` });
+    this._notify();
+    return this._db.seatAssignments[idx];
   }
 
-  transferSeat(fromSeatId, toSeatId, studentId, reason) {
-    // Validate destination
+  async transferSeat(fromSeatId, toSeatId, studentId, reason) {
     const destAssignment = this.getActiveAssignment(toSeatId);
     if (destAssignment) throw new Error('Destination seat is already occupied.');
 
-    const db = this.db;
-
-    // Release old seat
-    const fromIdx = db.seatAssignments.findIndex(a => a.seatId === fromSeatId && a.status === 'active');
+    const fromIdx = this._db.seatAssignments.findIndex(a => a.seatId === fromSeatId && a.status === 'active');
     if (fromIdx === -1) throw new Error('Source seat has no active assignment.');
 
-    const oldAssignment = db.seatAssignments[fromIdx];
-    db.seatAssignments[fromIdx] = { ...oldAssignment, status: 'transferred', transferredAt: now(), transferReason: reason };
+    const oldAssignment = this._db.seatAssignments[fromIdx];
+    const transferUpdates = { status: 'transferred', transferredAt: now(), transferReason: reason };
+    this._db.seatAssignments[fromIdx] = { ...oldAssignment, ...transferUpdates };
+    await apiWrite('seat_assignments', 'update', transferUpdates, oldAssignment.id);
 
-    // Create new assignment
-    const newAssignment = {
-      id: uid('ASN'),
-      status: 'active',
-      seatId: toSeatId,
-      studentId: oldAssignment.studentId,
-      membershipId: oldAssignment.membershipId,
-      startDate: now(),
-      endDate: oldAssignment.endDate,
-      createdAt: now(),
-      transferredFrom: fromSeatId
-    };
-    db.seatAssignments.push(newAssignment);
+    const newAssignment = { id: uid('ASN'), status: 'active', seatId: toSeatId, studentId: oldAssignment.studentId, membershipId: oldAssignment.membershipId, startDate: now(), endDate: oldAssignment.endDate, createdAt: now(), transferredFrom: fromSeatId };
+    await apiWrite('seat_assignments', 'insert', newAssignment);
+    this._db.seatAssignments.push(newAssignment);
 
-    // Create seat transfer record
     const fromSeat = this.getSeat(fromSeatId);
     const toSeat = this.getSeat(toSeatId);
-    db.seatTransfers = db.seatTransfers || [];
-    db.seatTransfers.push({
-      id: uid('TRF'),
-      studentId,
-      fromSeatId,
-      toSeatId,
-      reason,
-      date: now(),
-      fromSeatLabel: fromSeat?.label,
-      toSeatLabel: toSeat?.label
-    });
+    const transfer = { id: uid('TRF'), studentId, fromSeatId, toSeatId, reason, date: now(), fromSeatLabel: fromSeat?.label, toSeatLabel: toSeat?.label };
+    await apiWrite('seat_transfers', 'insert', transfer);
+    this._db.seatTransfers = this._db.seatTransfers || [];
+    this._db.seatTransfers.push(transfer);
 
-    this._save(db);
-    this.addActivity({
-      action: 'seat_transferred',
-      entity: 'seat',
-      entityId: fromSeatId,
-      description: `Seat transferred from ${fromSeat?.label} to ${toSeat?.label}. Reason: ${reason}`
-    });
+    this.addActivity({ action: 'seat_transferred', entity: 'seat', entityId: fromSeatId, description: `Seat transferred from ${fromSeat?.label} to ${toSeat?.label}. Reason: ${reason}` });
+    this._notify();
     return newAssignment;
   }
 
-  // ── Reservations ─────────────────────────────────────────────────
+  // ── Reservations ──────────────────────────────────────────────────
   getReservations(seatId) {
-    const reservations = this.db.reservations || [];
+    const reservations = this._db?.reservations || [];
     return seatId ? reservations.filter(r => r.seatId === seatId) : reservations;
   }
 
   getActiveReservation(seatId) {
     const today = new Date();
-    return (this.db.reservations || []).find(r =>
-      r.seatId === seatId &&
-      r.status === 'upcoming' &&
-      new Date(r.startDate) <= today &&
-      new Date(r.endDate) >= today
+    return (this._db?.reservations || []).find(r =>
+      r.seatId === seatId && r.status === 'upcoming' &&
+      new Date(r.startDate) <= today && new Date(r.endDate) >= today
     );
   }
 
-  addReservation(data) {
-    const db = this.db;
+  async addReservation(data) {
     const reservation = { id: uid('RES'), status: 'upcoming', createdAt: now(), ...data };
-    db.reservations.push(reservation);
-    this._save(db);
+    await apiWrite('reservations', 'insert', reservation);
+    this._db.reservations.push(reservation);
+    this._notify();
     return reservation;
   }
 
-  updateReservation(id, updates) {
-    const db = this.db;
-    const idx = db.reservations.findIndex(r => r.id === id);
+  async updateReservation(id, updates) {
+    const idx = this._db.reservations.findIndex(r => r.id === id);
     if (idx === -1) throw new Error('Reservation not found');
-    db.reservations[idx] = { ...db.reservations[idx], ...updates, updatedAt: now() };
-    this._save(db);
-    return db.reservations[idx];
+    this._db.reservations[idx] = { ...this._db.reservations[idx], ...updates, updatedAt: now() };
+    await apiWrite('reservations', 'update', updates, id);
+    this._notify();
+    return this._db.reservations[idx];
   }
 
-  // ── Payments ────────────────────────────────────────────────────
+  // ── Payments ──────────────────────────────────────────────────────
   getPayments(membershipId) {
-    const payments = this.db.payments || [];
+    const payments = this._db?.payments || [];
     return membershipId ? payments.filter(p => p.membershipId === membershipId) : payments;
   }
 
   getPaymentsForStudent(studentId) {
     const membershipIds = this.getMemberships(studentId).map(m => m.id);
-    return (this.db.payments || []).filter(p => membershipIds.includes(p.membershipId));
+    return (this._db?.payments || []).filter(p => membershipIds.includes(p.membershipId));
   }
 
   getPaymentStatus(membershipId) {
@@ -424,9 +475,7 @@ class Store {
   }
 
   getPaidAmount(membershipId) {
-    return this.getPayments(membershipId)
-      .filter(p => p.status !== 'refunded')
-      .reduce((sum, p) => sum + p.amount, 0);
+    return this.getPayments(membershipId).filter(p => p.status !== 'refunded').reduce((sum, p) => sum + p.amount, 0);
   }
 
   getPendingAmount(membershipId) {
@@ -437,18 +486,10 @@ class Store {
     return Math.max(0, totalDue - paid);
   }
 
-  recordPayment(data) {
+  async recordPayment(data) {
     const membership = this.getMembership(data.membershipId);
     if (!membership) throw new Error('Membership not found');
 
-    const pending = this.getPendingAmount(data.membershipId);
-    if (data.amount > pending + 1000) {
-      // Allow up to 1000 advance, otherwise warn
-      // (not throwing, just logging)
-      console.warn('Payment exceeds outstanding amount — recording as advance');
-    }
-
-    const db = this.db;
     const payment = {
       id: uid('PAY'),
       status: 'recorded',
@@ -456,154 +497,175 @@ class Store {
       recordedAt: now(),
       ...data
     };
-    db.payments.push(payment);
-    this._save(db);
-    this.addActivity({
-      action: 'payment_recorded',
-      entity: 'payment',
-      entityId: payment.id,
-      description: `Payment of ${formatINR(payment.amount)} recorded`
-    });
+    await apiWrite('payments', 'insert', payment);
+    this._db.payments.push(payment);
+    this.addActivity({ action: 'payment_recorded', entity: 'payment', entityId: payment.id, description: `Payment of ${formatINR(payment.amount)} recorded` });
+    this._notify();
     return payment;
   }
 
-  // ── Attendance ──────────────────────────────────────────────────
+  // ── Attendance ────────────────────────────────────────────────────
   getAttendance(studentId, date) {
-    const records = this.db.attendance || [];
+    const records = this._db?.attendance || [];
     if (studentId && date) return records.find(a => a.studentId === studentId && a.date === date);
     if (studentId) return records.filter(a => a.studentId === studentId);
     if (date) return records.filter(a => a.date === date);
     return records;
   }
 
-  getTodayAttendance() {
-    return this.getAttendance(null, today());
-  }
+  getTodayAttendance() { return this.getAttendance(null, today()); }
 
-  checkIn(studentId, time) {
-    const db = this.db;
+  async checkIn(studentId, time) {
     const dateStr = today();
-    const existing = db.attendance.find(a => a.studentId === studentId && a.date === dateStr);
+    const existing = this._db.attendance.find(a => a.studentId === studentId && a.date === dateStr);
     if (existing) {
       existing.checkIn = time || now();
       existing.status = 'checked-in';
+      await apiWrite('attendance', 'update', { checkIn: existing.checkIn }, existing.id);
     } else {
-      db.attendance.push({
-        id: uid('ATT'),
-        studentId,
-        date: dateStr,
-        checkIn: time || now(),
-        status: 'checked-in'
-      });
+      const record = { id: uid('ATT'), studentId, date: dateStr, checkIn: time || now(), status: 'checked-in' };
+      await apiWrite('attendance', 'insert', record);
+      this._db.attendance.push(record);
     }
-    this._save(db);
-    this.addActivity({
-      action: 'check_in',
-      entity: 'student',
-      entityId: studentId,
-      description: 'Student checked in'
-    });
+    this.addActivity({ action: 'check_in', entity: 'student', entityId: studentId, description: 'Student checked in' });
+    this._notify();
   }
 
-  checkOut(studentId, time) {
-    const db = this.db;
+  async checkOut(studentId, time) {
     const dateStr = today();
-    const idx = db.attendance.findIndex(a => a.studentId === studentId && a.date === dateStr);
+    const idx = this._db.attendance.findIndex(a => a.studentId === studentId && a.date === dateStr);
     if (idx === -1) throw new Error('No check-in record found for today');
-    const record = db.attendance[idx];
+    const record = this._db.attendance[idx];
     const checkOutTime = time || now();
-    const duration = record.checkIn
-      ? Math.round((new Date(checkOutTime) - new Date(record.checkIn)) / 60000)
-      : null;
-    db.attendance[idx] = { ...record, checkOut: checkOutTime, status: 'checked-out', duration };
-    this._save(db);
-    return db.attendance[idx];
+    const duration = record.checkIn ? Math.round((new Date(checkOutTime) - new Date(record.checkIn)) / 60000) : null;
+    this._db.attendance[idx] = { ...record, checkOut: checkOutTime, status: 'checked-out', duration };
+    await apiWrite('attendance', 'update', { checkOut: checkOutTime }, record.id);
+    this._notify();
+    return this._db.attendance[idx];
   }
 
-  // ── Expenses ─────────────────────────────────────────────────────
+  // ── Expenses ──────────────────────────────────────────────────────
   getExpenses(branchId) {
-    const expenses = this.db.expenses || [];
+    const expenses = this._db?.expenses || [];
     return branchId ? expenses.filter(e => e.branchId === branchId) : expenses;
   }
 
-  addExpense(data) {
-    const db = this.db;
+  async addExpense(data) {
     const expense = { id: uid('EXP'), createdAt: now(), ...data };
-    db.expenses.push(expense);
-    this._save(db);
+    await apiWrite('expenses', 'insert', expense);
+    this._db.expenses.push(expense);
+    this._notify();
     return expense;
   }
 
-  // ── Notifications ────────────────────────────────────────────────
+  // ── Notifications ─────────────────────────────────────────────────
   getNotifications(branchId) {
-    return (this.db.notifications || []).filter(n => !branchId || n.branchId === branchId);
+    return (this._db?.notifications || []).filter(n => !branchId || n.branchId === branchId);
   }
 
-  getUnreadCount() {
-    return this.getNotifications().filter(n => !n.read).length;
+  getUnreadCount() { return this.getNotifications().filter(n => !n.read).length; }
+
+  async markNotificationRead(id) {
+    const notif = (this._db?.notifications || []).find(n => n.id === id);
+    if (notif) { notif.read = true; }
+    await apiWrite('notifications', 'markRead', {}, id);
+    this._notify();
   }
 
-  markNotificationRead(id) {
-    const db = this.db;
-    const notif = db.notifications.find(n => n.id === id);
-    if (notif) { notif.read = true; this._save(db); }
+  async markAllRead() {
+    (this._db?.notifications || []).forEach(n => { n.read = true; });
+    await apiWrite('notifications', 'markRead', {});
+    this._notify();
   }
 
-  markAllRead() {
-    const db = this.db;
-    db.notifications.forEach(n => { n.read = true; });
-    this._save(db);
+  // ── Documents (in-memory, not persisted to DB) ────────────────────
+  getDocuments() { return this._db?.documents || []; }
+  getDocument(id) { return (this._db?.documents || []).find(d => d.id === id); }
+  getDocumentByNumber(docNum) { return (this._db?.documents || []).find(d => d.documentNumber === docNum); }
+
+  saveDocument(doc) {
+    this._db.documents = this._db.documents || [];
+    const idx = this._db.documents.findIndex(d => d.id === doc.id);
+    if (idx !== -1) this._db.documents[idx] = { ...this._db.documents[idx], ...doc };
+    else this._db.documents.push(doc);
+    // Optionally persist: apiWrite('documents', 'insert', doc)
+    this._notify();
+    return doc;
   }
 
-  // ── Activity Log ─────────────────────────────────────────────────
+  getDocumentsForStudent(studentId) { return (this._db?.documents || []).filter(d => d.studentId === studentId); }
+
+  // ── WhatsApp notification messages (in-memory) ────────────────────
+  getNotificationMessages() { return this._db?.notificationMessages || []; }
+  getNotificationMessage(id) { return (this._db?.notificationMessages || []).find(m => m.id === id); }
+  getNotificationMessageByIdempotency(key) { return (this._db?.notificationMessages || []).find(m => m.idempotencyKey === key); }
+
+  saveNotificationMessage(msg) {
+    this._db.notificationMessages = this._db.notificationMessages || [];
+    const idx = this._db.notificationMessages.findIndex(m => m.id === msg.id);
+    if (idx !== -1) this._db.notificationMessages[idx] = { ...this._db.notificationMessages[idx], ...msg };
+    else this._db.notificationMessages.unshift(msg);
+    this._notify();
+    return msg;
+  }
+
+  getNotificationMessagesForStudent(studentId) { return (this._db?.notificationMessages || []).filter(m => m.studentId === studentId); }
+
+  getNotificationStats() {
+    const msgs = this.getNotificationMessages();
+    const todayStr = utils.today();
+    const todayMsgs = msgs.filter(m => m.createdAt && m.createdAt.startsWith(todayStr));
+    const delivered = msgs.filter(m => m.status === 'DELIVERED' || m.status === 'READ').length;
+    const pending = msgs.filter(m => m.status === 'QUEUED' || m.status === 'PROCESSING' || m.status === 'SENT').length;
+    const failed = msgs.filter(m => m.status === 'FAILED').length;
+    return { todayCount: todayMsgs.length || msgs.length, delivered, pending, failed };
+  }
+
+  // ── Activity Log ──────────────────────────────────────────────────
   getActivityLogs(limit) {
-    const logs = [...(this.db.activityLog || [])].reverse();
+    const logs = [...(this._db?.activityLog || [])].reverse();
     return limit ? logs.slice(0, limit) : logs;
   }
 
   addActivity(data) {
-    const db = this.db;
-    db.activityLog = db.activityLog || [];
-    db.activityLog.push({
-      id: uid('ACT'),
-      timestamp: now(),
-      userId: 'admin',
-      ...data
-    });
-    // Keep last 500 activities
-    if (db.activityLog.length > 500) {
-      db.activityLog = db.activityLog.slice(-500);
-    }
-    this._save(db);
+    const entry = { id: uid('ACT'), timestamp: now(), userId: 'admin', ...data };
+    this._db.activityLog = this._db.activityLog || [];
+    this._db.activityLog.push(entry);
+    if (this._db.activityLog.length > 500) this._db.activityLog = this._db.activityLog.slice(-500);
+    // Fire-and-forget write
+    apiWrite('activity_logs', 'insert', entry).catch(e => console.warn('Activity log write failed:', e));
+    this._notify();
   }
 
-  // ── Waitlist ─────────────────────────────────────────────────────
-  getWaitlist(branchId) {
-    return (this.db.waitlist || []).filter(w => !branchId || w.branchId === branchId);
-  }
+  // ── Waitlist ──────────────────────────────────────────────────────
+  getWaitlist(branchId) { return (this._db?.waitlist || []).filter(w => !branchId || w.branchId === branchId); }
 
-  addToWaitlist(data) {
-    const db = this.db;
+  async addToWaitlist(data) {
     const entry = { id: uid('WL'), status: 'waiting', createdAt: now(), priority: 1, ...data };
-    db.waitlist.push(entry);
-    this._save(db);
+    await apiWrite('waitlist', 'insert', entry);
+    this._db.waitlist.push(entry);
+    this._notify();
     return entry;
   }
 
-  // ── Staff ────────────────────────────────────────────────────────
-  getStaff(branchId) {
-    return (this.db.staff || []).filter(s => !branchId || s.branchId === branchId);
-  }
+  // ── Staff ─────────────────────────────────────────────────────────
+  getStaff(branchId) { return (this._db?.staff || []).filter(s => !branchId || s.branchId === branchId); }
 
-  addStaff(data) {
-    const db = this.db;
+  async addStaff(data) {
     const staff = { id: uid('STF'), status: 'active', createdAt: now(), ...data };
-    db.staff.push(staff);
-    this._save(db);
+    await apiWrite('staff', 'insert', staff);
+    this._db.staff.push(staff);
+    this._notify();
     return staff;
   }
 
-  // ── Aggregations ─────────────────────────────────────────────────
+  async deleteStaff(id) {
+    await apiWrite('staff', 'delete', {}, id);
+    this._db.staff = this._db.staff.filter(s => s.id !== id);
+    this._notify();
+  }
+
+  // ── Aggregations ──────────────────────────────────────────────────
   getDashboardStats(branchId) {
     const seats = this.getSeatsForBranch(branchId);
     const totalSeats = seats.length;
@@ -618,31 +680,25 @@ class Store {
       else if (status === 'maintenance' || status === 'blocked') maintenance++;
     });
 
-    // Revenue today
-    const todayPayments = (this.db.payments || []).filter(p => {
-      const d = new Date(p.recordedAt);
+    const todayPayments = (this._db?.payments || []).filter(p => {
+      const d = new Date(p.recordedAt || p.createdAt);
       return d.toDateString() === today_.toDateString();
     });
     const todayRevenue = todayPayments.reduce((sum, p) => sum + p.amount, 0);
 
-    // This month
-    const monthPayments = (this.db.payments || []).filter(p => {
-      const d = new Date(p.recordedAt);
+    const monthPayments = (this._db?.payments || []).filter(p => {
+      const d = new Date(p.recordedAt || p.createdAt);
       return d.getMonth() === today_.getMonth() && d.getFullYear() === today_.getFullYear();
     });
     const monthRevenue = monthPayments.reduce((sum, p) => sum + p.amount, 0);
 
-    // Pending dues
-    const activeMemberships = (this.db.memberships || []).filter(m => {
+    const activeMemberships = (this._db?.memberships || []).filter(m => {
       const students = this.getStudents(branchId).map(s => s.id);
       return students.includes(m.studentId) && m.status === 'active';
     });
     let totalPending = 0;
-    activeMemberships.forEach(m => {
-      totalPending += this.getPendingAmount(m.id);
-    });
+    activeMemberships.forEach(m => { totalPending += this.getPendingAmount(m.id); });
 
-    // Expiring this week
     const nextWeek = new Date(today_);
     nextWeek.setDate(nextWeek.getDate() + 7);
     const expiringCount = activeMemberships.filter(m => {
@@ -650,16 +706,11 @@ class Store {
       return exp >= today_ && exp <= nextWeek;
     }).length;
 
-    // Attendance today
     const todayAtt = this.getTodayAttendance();
     const branchStudentIds = this.getStudents(branchId).map(s => s.id);
     const presentToday = todayAtt.filter(a => branchStudentIds.includes(a.studentId)).length;
 
-    return {
-      totalSeats, occupied, available, reserved, maintenance,
-      todayRevenue, monthRevenue, totalPending,
-      expiringCount, presentToday
-    };
+    return { totalSeats, occupied, available, reserved, maintenance, todayRevenue, monthRevenue, totalPending, expiringCount, presentToday };
   }
 
   getExpiringMemberships(branchId, days = 7) {
@@ -668,7 +719,7 @@ class Store {
     future.setDate(future.getDate() + days);
 
     const studentIds = this.getStudents(branchId).map(s => s.id);
-    return (this.db.memberships || [])
+    return (this._db?.memberships || [])
       .filter(m => {
         if (!studentIds.includes(m.studentId)) return false;
         if (m.status !== 'active') return false;
@@ -690,7 +741,7 @@ class Store {
     const result = [];
     const today_ = new Date();
 
-    (this.db.memberships || []).forEach(m => {
+    (this._db?.memberships || []).forEach(m => {
       if (!studentIds.includes(m.studentId)) return;
       if (m.status !== 'active') return;
       const pending = this.getPendingAmount(m.id);
@@ -716,15 +767,11 @@ class Store {
       d.setDate(d.getDate() - i);
       const dateStr = d.toDateString();
 
-      const dayPayments = (this.db.payments || []).filter(p =>
-        new Date(p.recordedAt).toDateString() === dateStr
+      const dayPayments = (this._db?.payments || []).filter(p =>
+        new Date(p.recordedAt || p.createdAt).toDateString() === dateStr
       );
       const amount = dayPayments.reduce((sum, p) => sum + p.amount, 0);
-      result.push({
-        date: d,
-        label: d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
-        amount
-      });
+      result.push({ date: d, label: d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }), amount });
     }
 
     return result;
@@ -740,12 +787,13 @@ class Store {
     ];
   }
 
-  // ── Settings ─────────────────────────────────────────────────────
-  getSettings() { return this.db.settings || {}; }
-  updateSettings(updates) {
-    const db = this.db;
-    db.settings = { ...db.settings, ...updates };
-    this._save(db);
+  // ── Settings ──────────────────────────────────────────────────────
+  getSettings() { return this._db?.settings || {}; }
+
+  async updateSettings(updates) {
+    this._db.settings = { ...(this._db?.settings || {}), ...updates };
+    await apiWrite('settings', 'update', this._db.settings);
+    this._notify();
   }
 }
 
@@ -754,13 +802,8 @@ function uid(prefix) {
   return `${prefix}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
 }
 
-function now() {
-  return new Date().toISOString();
-}
-
-function today() {
-  return new Date().toISOString().split('T')[0];
-}
+function now() { return new Date().toISOString(); }
+function today() { return new Date().toISOString().split('T')[0]; }
 
 function formatINR(amount) {
   if (amount === undefined || amount === null) return '—';
@@ -827,6 +870,15 @@ function addDays(date, days) {
   return d.toISOString().split('T')[0];
 }
 
+function normalizePhone(phone, defaultCountry = '+91') {
+  if (!phone) return '';
+  const cleaned = String(phone).replace(/[^0-9+]/g, '');
+  if (cleaned.startsWith('+')) return cleaned;
+  if (cleaned.length === 10) return `${defaultCountry}${cleaned}`;
+  if (cleaned.startsWith('91') && cleaned.length === 12) return `+${cleaned}`;
+  return `${defaultCountry}${cleaned}`;
+}
+
 window.Store = Store;
 window.store = new Store();
-window.utils = { uid, now, today, formatINR, getAvatarColor, initials, formatDate, formatTime, formatRelative, daysUntil, addDays };
+window.utils = { uid, now, today, formatINR, getAvatarColor, initials, formatDate, formatTime, formatRelative, daysUntil, addDays, normalizePhone };

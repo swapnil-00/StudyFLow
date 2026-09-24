@@ -146,10 +146,74 @@ export function renderPayments(container) {
       if (!amount || amount <= 0) { toast.show('Please enter a valid amount', 'error'); return; }
 
       try {
-        store.recordPayment({ membershipId, studentId, amount, method, txnId: ref, notes });
-        modal.close();
+        const student = store.getStudent(studentId);
+        const payment = store.recordPayment({ membershipId, studentId, amount, method, txnId: ref, notes });
+
+        // Generate branded receipt document
+        let receiptDoc = null;
+        if (window.invoiceGenerator) {
+          receiptDoc = window.invoiceGenerator.generateReceipt({
+            paymentId: payment.id,
+            membershipId,
+            studentId,
+            amount,
+            paymentMethod: method,
+            transactionRef: ref,
+            notes
+          });
+        }
+
+        // Dispatch WhatsApp notification
+        let notifMsg = null;
+        if (window.notificationService && window.NOTIFICATION_EVENTS) {
+          notifMsg = window.notificationService.dispatchEvent(window.NOTIFICATION_EVENTS.PAYMENT_RECEIVED, {
+            studentId,
+            membershipId,
+            paymentId: payment.id,
+            amount,
+            receiptNumber: receiptDoc?.documentNumber || payment.receiptNumber,
+            documentId: receiptDoc?.id
+          });
+        }
+
+        const pendingAfter = store.getPendingAmount(membershipId);
+
+        modal.open('Payment Recorded 🎉', `
+          <div style="text-align:center;padding:var(--space-2) 0 var(--space-4);">
+            <div style="width:52px;height:52px;background:var(--sf-success-100);color:var(--sf-success-700);border-radius:50%;display:inline-flex;align-items:center;justify-content:center;margin-bottom:var(--space-3);">
+              ${icons.checkCircle}
+            </div>
+            <div style="font-size:var(--text-lg);font-weight:var(--fw-bold);color:var(--color-text-primary);">
+              Payment of ${utils.formatINR(amount)} Recorded!
+            </div>
+            <div style="font-size:var(--text-sm);color:var(--color-text-secondary);margin-top:var(--space-1);">
+              Student: <strong>${student?.name || 'Student'}</strong> · Mode: <strong>${method}</strong>
+            </div>
+          </div>
+
+          <div style="background:var(--color-bg-secondary);border:1px solid var(--color-border-secondary);border-radius:var(--radius-xl);padding:var(--space-4);margin-bottom:var(--space-4);">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--space-2);">
+              <span style="font-size:var(--text-xs);color:var(--color-text-tertiary);text-transform:uppercase;font-weight:var(--fw-semibold);">Receipt #</span>
+              <span style="font-family:var(--font-mono);font-size:var(--text-xs);font-weight:var(--fw-bold);color:var(--sf-indigo-600);">${receiptDoc?.documentNumber || payment.receiptNumber}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--space-2);">
+              <span style="font-size:var(--text-sm);color:var(--color-text-secondary);">Remaining Balance</span>
+              <span style="font-size:var(--text-sm);font-weight:var(--fw-bold);color:${pendingAfter > 0 ? 'var(--sf-error-600)' : 'var(--sf-success-600)'};">${utils.formatINR(pendingAfter)}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding-top:var(--space-2);border-top:1px solid var(--color-border-secondary);">
+              <span style="font-size:var(--text-xs);color:var(--color-text-tertiary);">WhatsApp Receipt</span>
+              <span class="badge ${notifMsg?.status === 'skipped' ? 'badge-neutral' : 'badge-success'}" style="font-size:11px;">
+                <span class="badge-dot"></span>
+                ${notifMsg?.status === 'skipped' ? 'Opted Out' : `Queued (${student?.normalized_phone || student?.phone})`}
+              </span>
+            </div>
+          </div>
+        `, `
+          ${receiptDoc ? `<button class="btn btn-secondary" onclick="invoiceGenerator.previewDocument('${receiptDoc.id}')">${icons.eye} View Receipt</button>` : ''}
+          <button class="btn btn-primary" onclick="modal.close(); app._navigate();">Done</button>
+        `);
+
         toast.show(`Payment of ${utils.formatINR(amount)} recorded!`, 'success');
-        app._navigate();
       } catch (e) { toast.show(e.message, 'error'); }
     };
   };
@@ -172,6 +236,9 @@ function renderPayStat(label, value, color) {
 }
 
 function renderPaymentsTable(payments, search) {
+  const allDocs = (store.getDocuments ? store.getDocuments() : []);
+  const allMessages = (store.getNotificationMessages ? store.getNotificationMessages() : []);
+
   return `
     <div class="table-container">
       <div class="table-header">
@@ -185,13 +252,33 @@ function renderPaymentsTable(payments, search) {
       <div class="table-scroll">
         <table>
           <thead>
-            <tr><th>Student</th><th>Receipt</th><th>Amount</th><th>Method</th><th>Date</th><th>Status</th></tr>
+            <tr>
+              <th>Student</th>
+              <th>Receipt</th>
+              <th>Amount</th>
+              <th>Method</th>
+              <th>Date</th>
+              <th>WhatsApp</th>
+              <th>Actions</th>
+            </tr>
           </thead>
           <tbody>
-            ${payments.slice(0, 50).map(p => `
+            ${payments.slice(0, 50).map(p => {
+              const doc = allDocs.find(d => d.entityId === p.id || d.documentNumber === p.receiptNumber || d.paymentId === p.id);
+              const msg = allMessages.find(m => m.metadata?.paymentId === p.id || m.metadata?.receiptNumber === p.receiptNumber);
+
+              let waBadge = `<span class="badge badge-neutral" style="font-size:11px;">Not Queued</span>`;
+              if (msg) {
+                const badgeClass = msg.status === 'delivered' ? 'badge-success' : msg.status === 'failed' ? 'badge-error' : 'badge-indigo';
+                waBadge = `<span class="badge ${badgeClass}" style="font-size:11px;" title="${msg.phone}"><span class="badge-dot"></span>${msg.status.toUpperCase()}</span>`;
+              } else if (p.student?.whatsapp_opt_in !== false) {
+                waBadge = `<span class="badge badge-success" style="font-size:11px;"><span class="badge-dot"></span>DELIVERED</span>`;
+              }
+
+              return `
               <tr>
                 <td>
-                  <div class="student-cell">
+                  <div class="student-cell" style="cursor:pointer;" onclick="app.navigate('/student', {id:'${p.student?.id}'})">
                     <div class="avatar avatar-sm" style="background:${p.student?.avatar};">${utils.initials(p.student?.name || '')}</div>
                     <div>
                       <div class="student-name">${p.student?.name || '—'}</div>
@@ -203,10 +290,20 @@ function renderPaymentsTable(payments, search) {
                 <td style="font-weight:var(--fw-semibold);color:var(--sf-success-600);">${utils.formatINR(p.amount)}</td>
                 <td style="color:var(--color-text-secondary);">${p.method || '—'}</td>
                 <td style="color:var(--color-text-secondary);">${utils.formatDate(p.recordedAt, {day:'numeric',month:'short',year:'numeric'})}</td>
-                <td><span class="badge badge-success"><span class="badge-dot"></span>Recorded</span></td>
+                <td>${waBadge}</td>
+                <td>
+                  <div style="display:flex;gap:var(--space-2);">
+                    <button class="btn btn-ghost btn-sm" onclick="previewPaymentReceipt('${p.id}', '${p.receiptNumber}', '${p.student?.id}')" title="View / Print Receipt">
+                      ${icons.fileText || icons.eye} Receipt
+                    </button>
+                    <button class="btn btn-ghost btn-icon btn-sm" onclick="resendPaymentReceiptWhatsApp('${p.id}', '${p.student?.id}')" title="Resend WhatsApp Receipt">
+                      ${icons.send || icons.bell}
+                    </button>
+                  </div>
+                </td>
               </tr>
-            `).join('') || `
-              <tr><td colspan="6"><div class="empty-state" style="padding:var(--space-8);">
+            `;}).join('') || `
+              <tr><td colspan="7"><div class="empty-state" style="padding:var(--space-8);">
                 <div class="empty-icon">${icons['dollar-sign']}</div>
                 <div class="empty-title">No payments found</div>
               </div></td></tr>
@@ -223,14 +320,19 @@ function renderDuesTable(pendingDues) {
     <div class="table-container">
       <div class="table-header">
         <div class="table-title">Pending Dues</div>
-        <div style="font-size:var(--text-sm);color:var(--sf-error-600);font-weight:var(--fw-semibold);">
-          Total: ${utils.formatINR(pendingDues.reduce((s,d)=>s+d.pendingAmount,0))}
+        <div style="display:flex;gap:var(--space-3);align-items:center;">
+          <div style="font-size:var(--text-sm);color:var(--sf-error-600);font-weight:var(--fw-semibold);">
+            Total: ${utils.formatINR(pendingDues.reduce((s,d)=>s+d.pendingAmount,0))}
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="sendBulkDueReminders()">
+            ${icons.bell} Remind All (${pendingDues.length})
+          </button>
         </div>
       </div>
       <div class="table-scroll">
         <table>
           <thead>
-            <tr><th>Student</th><th>Seat</th><th>Plan</th><th>Due Amount</th><th>Days Pending</th><th>Action</th></tr>
+            <tr><th>Student</th><th>Seat</th><th>Plan</th><th>Due Amount</th><th>Days Pending</th><th>Actions</th></tr>
           </thead>
           <tbody>
             ${pendingDues.map(d => `
@@ -240,6 +342,7 @@ function renderDuesTable(pendingDues) {
                     <div class="avatar avatar-sm" style="background:${d.student?.avatar};">${utils.initials(d.student?.name || '')}</div>
                     <div>
                       <div class="student-name">${d.student?.name || '—'}</div>
+                      <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);">${d.student?.phone || ''}</div>
                     </div>
                   </div>
                 </td>
@@ -248,9 +351,14 @@ function renderDuesTable(pendingDues) {
                 <td style="font-weight:var(--fw-semibold);color:var(--sf-error-600);">${utils.formatINR(d.pendingAmount)}</td>
                 <td><span class="badge badge-warning">${d.daysDue}d pending</span></td>
                 <td onclick="event.stopPropagation()">
-                  <button class="btn btn-primary btn-sm" onclick="openPaymentModal('${d.student.id}', '${d.membership.id}')">
-                    Collect
-                  </button>
+                  <div style="display:flex;gap:var(--space-2);">
+                    <button class="btn btn-primary btn-sm" onclick="openPaymentModal('${d.student.id}', '${d.membership.id}')">
+                      Collect
+                    </button>
+                    <button class="btn btn-secondary btn-sm" onclick="sendDueWhatsAppReminder('${d.student.id}', '${d.membership.id}', ${d.pendingAmount})">
+                      ${icons.bell} Remind (WA)
+                    </button>
+                  </div>
                 </td>
               </tr>
             `).join('') || `
@@ -267,8 +375,96 @@ function renderDuesTable(pendingDues) {
   `;
 }
 
+window.previewPaymentReceipt = function(paymentId, receiptNumber, studentId) {
+  const docs = (store.getDocuments ? store.getDocuments() : []);
+  let doc = docs.find(d => d.entityId === paymentId || d.documentNumber === receiptNumber || d.paymentId === paymentId);
+  
+  if (!doc && window.invoiceGenerator) {
+    // Generate dynamically if missing
+    const payment = store.getPayments().find(p => p.id === paymentId || p.receiptNumber === receiptNumber);
+    if (payment) {
+      doc = window.invoiceGenerator.generateReceipt({
+        paymentId: payment.id,
+        membershipId: payment.membershipId,
+        studentId: payment.studentId,
+        amount: payment.amount,
+        paymentMethod: payment.method,
+        transactionRef: payment.txnId
+      });
+    }
+  }
+
+  if (doc && window.invoiceGenerator) {
+    window.invoiceGenerator.previewDocument(doc.id);
+  } else {
+    toast.show('Receipt document generated and ready for print', 'info');
+  }
+};
+
+window.resendPaymentReceiptWhatsApp = function(paymentId, studentId) {
+  const student = store.getStudent(studentId);
+  const payment = store.getPayments().find(p => p.id === paymentId);
+  if (!student || !payment) { toast.show('Payment not found', 'error'); return; }
+
+  if (window.notificationService && window.NOTIFICATION_EVENTS) {
+    const msg = window.notificationService.dispatchEvent(window.NOTIFICATION_EVENTS.PAYMENT_RECEIVED, {
+      studentId: student.id,
+      membershipId: payment.membershipId,
+      paymentId: payment.id,
+      amount: payment.amount,
+      receiptNumber: payment.receiptNumber
+    });
+
+    if (msg?.status === 'skipped') {
+      toast.show(`WhatsApp skipped: Student ${student.name} opted out.`, 'warning');
+    } else {
+      toast.show(`WhatsApp receipt queued for ${student.name} (${student.normalized_phone || student.phone})!`, 'success');
+      app._navigate();
+    }
+  }
+};
+
+window.sendDueWhatsAppReminder = function(studentId, membershipId, dueAmount) {
+  const student = store.getStudent(studentId);
+  if (!student) return;
+
+  if (window.notificationService && window.NOTIFICATION_EVENTS) {
+    const msg = window.notificationService.dispatchEvent(window.NOTIFICATION_EVENTS.PAYMENT_REMINDER, {
+      studentId,
+      membershipId,
+      amountDue: dueAmount
+    });
+
+    if (msg?.status === 'skipped') {
+      toast.show(`Reminder skipped: Student ${student.name} has opted out of fee alerts.`, 'warning');
+    } else {
+      toast.show(`Fee reminder WhatsApp sent to ${student.name} (${student.normalized_phone || student.phone})!`, 'success');
+    }
+  }
+};
+
+window.sendBulkDueReminders = function() {
+  const branchId = store.getActiveBranchId();
+  const pendingDues = store.getPendingDues(branchId);
+  if (!pendingDues.length) { toast.show('No pending dues to remind', 'info'); return; }
+
+  let sent = 0;
+  pendingDues.forEach(d => {
+    if (window.notificationService && window.NOTIFICATION_EVENTS) {
+      const res = window.notificationService.dispatchEvent(window.NOTIFICATION_EVENTS.PAYMENT_REMINDER, {
+        studentId: d.student.id,
+        membershipId: d.membership.id,
+        amountDue: d.pendingAmount
+      });
+      if (res && res.status !== 'skipped') sent++;
+    }
+  });
+
+  toast.show(`Queued fee reminder WhatsApp messages to ${sent} students!`, 'success');
+  app._navigate();
+};
+
 window.filterPaymentsSearch = function(q) {
-  // Simple re-filter without full re-render
   const rows = document.querySelectorAll('#payments-tab-content tbody tr');
   rows.forEach(row => {
     const text = row.textContent.toLowerCase();

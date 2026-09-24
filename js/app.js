@@ -22,16 +22,13 @@ const routes = {
 class App {
   constructor() {
     this.currentRoute = null;
-    this.sidebarCollapsed = localStorage.getItem('sf_sidebar_collapsed') === 'true';
+    this.sidebarCollapsed = false; // in-memory, resets to expanded on reload
     this._themeInit();
   }
 
-  init() {
-    // Seed if needed
-    if (!store.isSeeded()) {
-      const db = seedDatabase();
-      store._save(db);
-    }
+  async init() {
+    // Load all data from Neon DB before rendering
+    await store.load();
 
     this._render();
     this._setupRouter();
@@ -40,6 +37,7 @@ class App {
     // Subscribe to store changes for reactive updates
     store.subscribe(() => {
       this._updateNotifBadge();
+      this._updateBranchName();
     });
 
     // Keyboard shortcuts
@@ -55,8 +53,7 @@ class App {
   }
 
   _themeInit() {
-    const saved = store.isSeeded() ? store.getSettings().theme : 'light';
-    const theme = saved || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    const theme = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
     document.documentElement.dataset.theme = theme;
   }
 
@@ -295,7 +292,6 @@ class App {
 
   toggleSidebar() {
     this.sidebarCollapsed = !this.sidebarCollapsed;
-    localStorage.setItem('sf_sidebar_collapsed', this.sidebarCollapsed);
     const sidebar = document.getElementById('sidebar');
     const btn = document.getElementById('sidebar-collapse-btn');
     sidebar.classList.toggle('collapsed', this.sidebarCollapsed);
@@ -319,11 +315,11 @@ class App {
     if (!isMobile) this.closeMobileSidebar();
   }
 
-  toggleTheme() {
+  async toggleTheme() {
     const current = document.documentElement.dataset.theme;
     const next = current === 'dark' ? 'light' : 'dark';
     document.documentElement.dataset.theme = next;
-    store.updateSettings({ theme: next });
+    await store.updateSettings({ theme: next });
     toast.show(`Switched to ${next} mode`, 'success');
   }
 
@@ -420,9 +416,7 @@ class App {
   }
 
   resetApp() {
-    if (confirm('Reset all demo data? This will reload the page.')) {
-      localStorage.removeItem('studyflow_db');
-      localStorage.removeItem('sf_active_branch');
+    if (confirm('Reload app and refresh data from database?')) {
       location.reload();
     }
   }
@@ -731,4 +725,8 @@ window.paymentStatusBadge = paymentStatusBadge;
 window.membershipStatusBadge = membershipStatusBadge;
 window.capitalizeFirst = capitalizeFirst;
 
-document.addEventListener('DOMContentLoaded', () => app.init());
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => app.init());
+} else {
+  app.init();
+}

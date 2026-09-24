@@ -662,8 +662,9 @@ window.confirmAssignSeat = function() {
       payAmount = 0;
     }
 
+    let paymentRecord = null;
     if (payAmount > 0) {
-      store.recordPayment({
+      paymentRecord = store.recordPayment({
         membershipId: membership.id,
         studentId,
         amount: payAmount,
@@ -672,9 +673,119 @@ window.confirmAssignSeat = function() {
       });
     }
 
+    // ── Generate Invoice & Receipt Documents ──
+    const student = store.getStudent(studentId);
+    const seat = store.getSeat(seatId);
+    const room = seat?.roomId ? store.getRoom(seat.roomId) : null;
+    const branch = store.getBranch(store.getActiveBranchId());
+
+    let invoice = null;
+    let receipt = null;
+
+    if (window.invoiceGenerator) {
+      invoice = invoiceGenerator.generateInvoice({
+        membershipId: membership.id,
+        studentId,
+        seatId,
+        paymentId: paymentRecord?.id
+      });
+      if (paymentRecord) {
+        receipt = invoiceGenerator.generateReceipt({
+          paymentId: paymentRecord.id,
+          studentId,
+          membershipId: membership.id
+        });
+      }
+    }
+
+    // ── Dispatch Asynchronous WhatsApp Notification ──
+    if (window.notificationService) {
+      notificationService.dispatch(NOTIFICATION_EVENTS.SEAT_ASSIGNED, {
+        studentId,
+        entityId: membership.id,
+        documentId: invoice?.id || null,
+        documentNumber: invoice?.documentNumber || null,
+        documentType: 'invoice',
+        variables: {
+          student_name: student?.name || 'Student',
+          seat_number: seat?.label || seat?.number || 'N/A',
+          branch_name: branch?.name || 'StudyFlow Library',
+          room_name: room?.name || 'Study Hall',
+          membership_name: plan.name,
+          start_date: startDate,
+          expiry_date: endDate,
+          amount: (price - discount).toLocaleString('en-IN'),
+          payment_status: payStatus === 'paid' ? 'Paid' : (payStatus === 'partial' ? 'Partial' : 'Pending')
+        }
+      });
+    }
+
     modal.close();
     drawer.close();
-    toast.show(`Seat assigned to ${store.getStudent(studentId)?.name} successfully!`, 'success');
+
+    // ── Show Booking & WhatsApp Confirmation Dialog ──
+    modal.open('Seat Assigned Successfully 🎉', `
+      <div style="text-align:center;padding:var(--space-2) 0 var(--space-4);">
+        <div style="width:54px;height:54px;border-radius:50%;background:var(--sf-success-50);color:var(--sf-success-600);display:flex;align-items:center;justify-content:center;margin:0 auto var(--space-3);font-size:24px;">
+          ✓
+        </div>
+        <h3 style="font-size:var(--text-lg);font-weight:var(--fw-bold);color:var(--color-text-primary);">Seat ${seat?.label} is Booked!</h3>
+        <p style="font-size:var(--text-sm);color:var(--color-text-secondary);margin-top:4px;">
+          Assigned to <strong>${student?.name}</strong> for ${plan.name} (${startDate} to ${endDate})
+        </p>
+      </div>
+
+      <div style="background:var(--color-bg-secondary);border:1px solid var(--color-border-secondary);border-radius:var(--radius-lg);padding:var(--space-4);margin-bottom:var(--space-4);">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-3);font-size:var(--text-xs);">
+          <div>
+            <span style="color:var(--color-text-tertiary);">Payment Status:</span>
+            <div style="font-weight:var(--fw-semibold);color:var(--color-text-primary);margin-top:2px;">
+              ${payStatus === 'paid' ? `₹${(price - discount).toLocaleString('en-IN')} (Paid)` : (payStatus === 'partial' ? `₹${payAmount} (Partial)` : 'Pending')}
+            </div>
+          </div>
+          <div>
+            <span style="color:var(--color-text-tertiary);">Invoice Number:</span>
+            <div style="font-weight:var(--fw-semibold);color:var(--color-text-primary);margin-top:2px;">
+              ${invoice ? invoice.documentNumber : 'Generated'}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="padding:var(--space-3) var(--space-4);background:#edfcf2;border:1px solid #aaf0c4;border-radius:var(--radius-lg);display:flex;align-items:center;gap:var(--space-3);margin-bottom:var(--space-2);">
+        <div style="width:28px;height:28px;border-radius:50%;background:#16b364;color:white;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;">
+          💬
+        </div>
+        <div style="flex:1;">
+          <div style="font-size:var(--text-sm);font-weight:var(--fw-semibold);color:#087443;">
+            WhatsApp Confirmation Queued
+          </div>
+          <div style="font-size:var(--text-xs);color:#099250;">
+            Sent to ${student?.normalized_phone || student?.phone || 'student phone'} with PDF invoice attached.
+          </div>
+        </div>
+        <span class="badge badge-success"><span class="badge-dot"></span>Queued</span>
+      </div>
+    `, `
+      <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
+        <div>
+          ${invoice ? `
+            <button class="btn btn-secondary btn-sm" onclick="invoiceGenerator.previewDocument('${invoice.id}')">
+              ${icons['file-text'] || ''} View Invoice
+            </button>
+          ` : ''}
+        </div>
+        <div style="display:flex;gap:var(--space-2);">
+          <button class="btn btn-secondary btn-sm" onclick="modal.close(); app.navigate('/student?id=${studentId}')">
+            View Student
+          </button>
+          <button class="btn btn-primary btn-sm" onclick="modal.close()">
+            Done
+          </button>
+        </div>
+      </div>
+    `, { size: 'md' });
+
     app._navigate();
   } catch (e) {
     toast.show(e.message, 'error');
@@ -742,8 +853,28 @@ window.confirmTransfer = function(fromSeatId, studentId) {
     store.transferSeat(fromSeatId, toSeatId, studentId, reason);
     modal.close();
     drawer.close();
+    const fromSeat = store.getSeat(fromSeatId);
     const toSeat = store.getSeat(toSeatId);
-    toast.show(`Seat transferred to ${toSeat.label}!`, 'success');
+    const student = store.getStudent(studentId);
+    const branch = store.getBranch(store.getActiveBranchId());
+    const room = toSeat?.roomId ? store.getRoom(toSeat.roomId) : null;
+
+    if (window.notificationService && student) {
+      notificationService.dispatch(NOTIFICATION_EVENTS.SEAT_TRANSFERRED, {
+        studentId,
+        entityId: toSeatId,
+        variables: {
+          student_name: student.name,
+          previous_seat: fromSeat?.label || 'Previous',
+          seat_number: toSeat?.label || 'New',
+          branch_name: branch?.name || 'StudyFlow Library',
+          room_name: room?.name || 'Study Area',
+          effective_date: utils.today()
+        }
+      });
+    }
+
+    toast.show(`Seat transferred to ${toSeat.label}! WhatsApp confirmation sent.`, 'success');
     app._navigate();
   } catch (e) {
     toast.show(e.message, 'error');
@@ -893,10 +1024,76 @@ window.confirmPayment = function(membershipId, studentId) {
   if (!amount || amount <= 0) { toast.show('Please enter a valid amount', 'error'); return; }
 
   try {
-    store.recordPayment({ membershipId, studentId, amount, method, txnId, notes });
-    modal.close();
+    const student = store.getStudent(studentId);
+    const membership = store.getMembership(membershipId);
+    const payment = store.recordPayment({ membershipId, studentId, amount, method, txnId, notes });
+
+    // Generate receipt document
+    let receiptDoc = null;
+    if (window.invoiceGenerator) {
+      receiptDoc = window.invoiceGenerator.generateReceipt({
+        paymentId: payment.id,
+        membershipId,
+        studentId,
+        amount,
+        paymentMethod: method,
+        transactionRef: txnId,
+        notes
+      });
+    }
+
+    // Dispatch WhatsApp notification
+    let notifMsg = null;
+    if (window.notificationService && window.NOTIFICATION_EVENTS) {
+      notifMsg = window.notificationService.dispatchEvent(window.NOTIFICATION_EVENTS.PAYMENT_RECEIVED, {
+        studentId,
+        membershipId,
+        paymentId: payment.id,
+        amount,
+        receiptNumber: receiptDoc?.documentNumber || payment.receiptNumber,
+        documentId: receiptDoc?.id
+      });
+    }
+
+    const pendingAfter = store.getPendingAmount(membershipId);
+
+    // Show success modal with document and WhatsApp dispatch status
+    modal.open('Payment Recorded 🎉', `
+      <div style="text-align:center;padding:var(--space-2) 0 var(--space-4);">
+        <div style="width:52px;height:52px;background:var(--sf-success-100);color:var(--sf-success-700);border-radius:50%;display:inline-flex;align-items:center;justify-content:center;margin-bottom:var(--space-3);">
+          ${icons.checkCircle}
+        </div>
+        <div style="font-size:var(--text-lg);font-weight:var(--fw-bold);color:var(--color-text-primary);">
+          Payment of ${utils.formatINR(amount)} Received!
+        </div>
+        <div style="font-size:var(--text-sm);color:var(--color-text-secondary);margin-top:var(--space-1);">
+          Student: <strong>${student?.name || 'Student'}</strong> · Method: <strong>${method}</strong>
+        </div>
+      </div>
+
+      <div style="background:var(--color-bg-secondary);border:1px solid var(--color-border-secondary);border-radius:var(--radius-xl);padding:var(--space-4);margin-bottom:var(--space-4);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--space-2);">
+          <span style="font-size:var(--text-xs);color:var(--color-text-tertiary);text-transform:uppercase;font-weight:var(--fw-semibold);">Receipt #</span>
+          <span style="font-family:var(--font-mono);font-size:var(--text-xs);font-weight:var(--fw-bold);color:var(--sf-indigo-600);">${receiptDoc?.documentNumber || payment.receiptNumber}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--space-2);">
+          <span style="font-size:var(--text-sm);color:var(--color-text-secondary);">Remaining Balance</span>
+          <span style="font-size:var(--text-sm);font-weight:var(--fw-bold);color:${pendingAfter > 0 ? 'var(--sf-error-600)' : 'var(--sf-success-600)'};">${utils.formatINR(pendingAfter)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding-top:var(--space-2);border-top:1px solid var(--color-border-secondary);">
+          <span style="font-size:var(--text-xs);color:var(--color-text-tertiary);">WhatsApp Receipt</span>
+          <span class="badge ${notifMsg?.status === 'skipped' ? 'badge-neutral' : 'badge-success'}" style="font-size:11px;">
+            <span class="badge-dot"></span>
+            ${notifMsg?.status === 'skipped' ? 'Opted Out' : `Queued (${student?.normalized_phone || student?.phone})`}
+          </span>
+        </div>
+      </div>
+    `, `
+      ${receiptDoc ? `<button class="btn btn-secondary" onclick="invoiceGenerator.previewDocument('${receiptDoc.id}')">${icons.eye} View Receipt</button>` : ''}
+      <button class="btn btn-primary" onclick="modal.close(); app._navigate();">Done</button>
+    `);
+
     toast.show(`Payment of ${utils.formatINR(amount)} recorded!`, 'success');
-    app._navigate();
   } catch (e) {
     toast.show(e.message, 'error');
   }
@@ -1012,16 +1209,56 @@ window.confirmRenew = function(studentId, seatId) {
       if (idx !== -1) { db.seatAssignments[idx].membershipId = newMem.id; db.seatAssignments[idx].endDate = endDate; store._save(db); }
     }
 
-    // Record payment
+    // Auto-generate renewal invoice
+    let renewInvoiceDoc = null;
+    if (window.invoiceGenerator) {
+      renewInvoiceDoc = window.invoiceGenerator.generateInvoice({
+        membershipId: newMem.id,
+        studentId,
+        seatId: assignment?.seatId,
+        planId: plan.id,
+        amount: price,
+        discount: 0
+      });
+    }
+
+    // Record payment if price > 0
+    let renewPayment = null;
+    let renewReceiptDoc = null;
     if (price > 0) {
-      store.recordPayment({ membershipId: newMem.id, studentId, amount: price, method });
+      renewPayment = store.recordPayment({ membershipId: newMem.id, studentId, amount: price, method });
+      if (window.invoiceGenerator) {
+        renewReceiptDoc = window.invoiceGenerator.generateReceipt({
+          paymentId: renewPayment.id,
+          membershipId: newMem.id,
+          studentId,
+          amount: price,
+          paymentMethod: method
+        });
+      }
+    }
+
+    // Dispatch MEMBERSHIP_RENEWED WhatsApp event
+    let notifMsg = null;
+    if (window.notificationService && window.NOTIFICATION_EVENTS) {
+      notifMsg = window.notificationService.dispatchEvent(window.NOTIFICATION_EVENTS.MEMBERSHIP_RENEWED, {
+        studentId,
+        membershipId: newMem.id,
+        seatId: assignment?.seatId,
+        planName: plan.name,
+        newEndDate: endDate,
+        amount: price,
+        invoiceNumber: renewInvoiceDoc?.documentNumber,
+        receiptNumber: renewReceiptDoc?.documentNumber,
+        documentId: renewInvoiceDoc?.id
+      });
     }
 
     store.addActivity({ action: 'membership_renewed', entity: 'membership', entityId: newMem.id, description: `Membership renewed for ${store.getStudent(studentId)?.name}` });
 
     modal.close();
     drawer.close();
-    toast.show('Membership renewed successfully!', 'success');
+    toast.show('Membership renewed successfully! WhatsApp confirmation queued.', 'success');
     app._navigate();
   } catch (e) {
     toast.show(e.message, 'error');
@@ -1078,10 +1315,22 @@ window.confirmReservation = function(seatId) {
   if (new Date(endDate) <= new Date(startDate)) { toast.show('End date must be after start date', 'error'); return; }
 
   try {
-    store.addReservation({ studentId, seatId, startDate, endDate, notes });
+    const reservation = store.addReservation({ studentId, seatId, startDate, endDate, notes });
+
+    // Dispatch RESERVATION_CONFIRMED event
+    if (window.notificationService && window.NOTIFICATION_EVENTS) {
+      window.notificationService.dispatchEvent(window.NOTIFICATION_EVENTS.RESERVATION_CONFIRMED, {
+        studentId,
+        seatId,
+        reservationId: reservation.id,
+        startDate,
+        endDate
+      });
+    }
+
     modal.close();
     drawer.close();
-    toast.show('Seat reserved!', 'success');
+    toast.show('Seat reserved & confirmation queued!', 'success');
     app._navigate();
   } catch (e) {
     toast.show(e.message, 'error');

@@ -6,6 +6,14 @@ const pagesDir = path.join(rootDir, 'js', 'pages');
 const appJsPath = path.join(rootDir, 'js', 'app.js');
 const bundlePath = path.join(rootDir, 'js', 'bundle.js');
 
+const servicesDir = path.join(rootDir, 'js', 'services');
+
+const serviceFiles = [
+  'whatsapp-provider.js',
+  'invoice-generator.js',
+  'notification-service.js'
+];
+
 const pageFiles = [
   'dashboard.js',
   'seat-map.js',
@@ -25,6 +33,15 @@ const pageFiles = [
 ];
 
 let bundleContent = `// StudyFlow Bundled Application Scripts\nwindow.Pages = window.Pages || {};\n\n`;
+
+// ─── SERVICES ───
+for (const file of serviceFiles) {
+  const filePath = path.join(servicesDir, file);
+  if (fs.existsSync(filePath)) {
+    const content = fs.readFileSync(filePath, 'utf8');
+    bundleContent += `// ─── SERVICE: ${file} ───\n(function() {\n${content}\n})();\n\n`;
+  }
+}
 
 for (const file of pageFiles) {
   const filePath = path.join(pagesDir, file);

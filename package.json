@@ -5,14 +5,18 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "dev": "node server.js",
     "migrate": "node db/migrate.js",
-    "build": "node build.js"
+    "build": "node build.js",
+    "deploy": "vercel --prod"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
     "pg": "^8.13.3"
   },
-  "devDependencies": {},
+  "devDependencies": {
+    "vercel": "^37.0.0"
+  },
   "keywords": [
     "library-management",
     "study-hall",

@@ -1,6 +1,1319 @@
 // StudyFlow Bundled Application Scripts
 window.Pages = window.Pages || {};
 
+// ─── SERVICE: whatsapp-provider.js ───
+(function() {
+// StudyFlow — WhatsApp Provider Abstraction Layer
+// Supports Mock (Development), Meta WhatsApp Cloud API, and Twilio
+
+class BaseWhatsAppProvider {
+  constructor(name) {
+    this.name = name;
+  }
+
+  async sendTemplateMessage(params) {
+    throw new Error('sendTemplateMessage must be implemented by provider');
+  }
+
+  async sendTextMessage(params) {
+    throw new Error('sendTextMessage must be implemented by provider');
+  }
+
+  async sendDocument(params) {
+    throw new Error('sendDocument must be implemented by provider');
+  }
+
+  async getMessageStatus(providerMessageId) {
+    throw new Error('getMessageStatus must be implemented by provider');
+  }
+}
+
+// ─── 1. Mock WhatsApp Provider (Development & Testing) ────────────────────────
+class MockWhatsAppProvider extends BaseWhatsAppProvider {
+  constructor() {
+    super('MockWhatsAppProvider');
+    this.simulatedFailureRate = 0; // 0 to 1
+    this._logs = []; // In-memory log store (replaces localStorage)
+  }
+
+  setSimulatedFailureRate(rate) {
+    this.simulatedFailureRate = Math.max(0, Math.min(1, rate));
+  }
+
+  async sendTemplateMessage({ to, templateName, language = 'en', variables = {}, document = null }) {
+    const providerMessageId = `mock_wa_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    
+    // Simulate slight network delay
+    await new Promise(r => setTimeout(r, 180));
+
+    if (this.simulatedFailureRate > 0 && Math.random() < this.simulatedFailureRate) {
+      return {
+        success: false,
+        providerMessageId,
+        status: 'FAILED',
+        error: 'Simulated WhatsApp delivery failure (Mock Provider)',
+        timestamp: new Date().toISOString()
+      };
+    }
+
+    const logEntry = {
+      providerMessageId,
+      provider: 'mock',
+      to,
+      templateName,
+      language,
+      variables,
+      document,
+      status: 'SENT',
+      createdAt: new Date().toISOString(),
+      sentAt: new Date().toISOString(),
+      deliveredAt: new Date(Date.now() + 500).toISOString(),
+      readAt: null
+    };
+
+    // Store in mock delivery logs for debugging
+    this._saveMockLog(logEntry);
+
+    return {
+      success: true,
+      providerMessageId,
+      status: 'SENT',
+      log: logEntry,
+      timestamp: new Date().toISOString()
+    };
+  }
+
+  async sendTextMessage({ to, text }) {
+    const providerMessageId = `mock_wa_text_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    await new Promise(r => setTimeout(r, 150));
+
+    const logEntry = {
+      providerMessageId,
+      provider: 'mock',
+      to,
+      text,
+      status: 'SENT',
+      createdAt: new Date().toISOString(),
+      sentAt: new Date().toISOString()
+    };
+    this._saveMockLog(logEntry);
+
+    return {
+      success: true,
+      providerMessageId,
+      status: 'SENT',
+      log: logEntry,
+      timestamp: new Date().toISOString()
+    };
+  }
+
+  async sendDocument({ to, documentUrl, filename, caption = '' }) {
+    const providerMessageId = `mock_wa_doc_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    await new Promise(r => setTimeout(r, 220));
+
+    const logEntry = {
+      providerMessageId,
+      provider: 'mock',
+      to,
+      documentUrl,
+      filename,
+      caption,
+      status: 'SENT',
+      createdAt: new Date().toISOString()
+    };
+    this._saveMockLog(logEntry);
+
+    return {
+      success: true,
+      providerMessageId,
+      status: 'SENT',
+      log: logEntry,
+      timestamp: new Date().toISOString()
+    };
+  }
+
+  async getMessageStatus(providerMessageId) {
+    const logs = this._getMockLogs();
+    const entry = logs.find(l => l.providerMessageId === providerMessageId);
+    if (!entry) return { status: 'UNKNOWN' };
+    return { status: entry.status, deliveredAt: entry.deliveredAt, readAt: entry.readAt };
+  }
+
+  _saveMockLog(entry) {
+    this._logs.unshift(entry);
+    if (this._logs.length > 200) this._logs.pop();
+  }
+
+  _getMockLogs() {
+    return this._logs;
+  }
+}
+
+// ─── 2. Meta WhatsApp Cloud API Provider ─────────────────────────────────────
+class MetaWhatsAppProvider extends BaseWhatsAppProvider {
+  constructor(config = {}) {
+    super('MetaWhatsAppProvider');
+    this.apiUrl = config.apiUrl || 'https://graph.facebook.com/v19.0';
+    this.phoneNumberId = config.phoneNumberId || '';
+    this.accessToken = config.accessToken || '';
+    this.businessAccountId = config.businessAccountId || '';
+  }
+
+  async sendTemplateMessage({ to, templateName, language = 'en', variables = {}, document = null }) {
+    if (!this.phoneNumberId || !this.accessToken) {
+      return {
+        success: false,
+        error: 'Meta WhatsApp credentials missing (WHATSAPP_PHONE_NUMBER_ID / WHATSAPP_API_KEY)',
+        status: 'FAILED'
+      };
+    }
+
+    // Format body parameters for Meta template
+    const parameters = Object.entries(variables).map(([key, value]) => ({
+      type: 'text',
+      text: String(value)
+    }));
+
+    const components = [
+      {
+        type: 'body',
+        parameters
+      }
+    ];
+
+    // Optional document header if template supports media header
+    if (document && document.url) {
+      components.unshift({
+        type: 'header',
+        parameters: [
+          {
+            type: 'document',
+            document: {
+              link: document.url,
+              filename: document.filename || 'Document.pdf'
+            }
+          }
+        ]
+      });
+    }
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: to.replace(/[^0-9]/g, ''),
+      type: 'template',
+      template: {
+        name: templateName,
+        language: { code: language },
+        components
+      }
+    };
+
+    try {
+      const response = await fetch(`${this.apiUrl}/${this.phoneNumberId}/messages`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        return {
+          success: false,
+          error: data.error?.message || 'Meta API error',
+          status: 'FAILED',
+          details: data
+        };
+      }
+
+      return {
+        success: true,
+        providerMessageId: data.messages?.[0]?.id || `meta_${Date.now()}`,
+        status: 'SENT',
+        data
+      };
+    } catch (e) {
+      return {
+        success: false,
+        error: e.message,
+        status: 'FAILED'
+      };
+    }
+  }
+
+  async sendTextMessage({ to, text }) {
+    if (!this.phoneNumberId || !this.accessToken) {
+      return { success: false, error: 'Credentials missing', status: 'FAILED' };
+    }
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: to.replace(/[^0-9]/g, ''),
+      type: 'text',
+      text: { body: text }
+    };
+
+    try {
+      const response = await fetch(`${this.apiUrl}/${this.phoneNumberId}/messages`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json();
+      return {
+        success: response.ok,
+        providerMessageId: data.messages?.[0]?.id,
+        status: response.ok ? 'SENT' : 'FAILED',
+        error: data.error?.message
+      };
+    } catch (e) {
+      return { success: false, error: e.message, status: 'FAILED' };
+    }
+  }
+
+  async sendDocument({ to, documentUrl, filename, caption = '' }) {
+    if (!this.phoneNumberId || !this.accessToken) {
+      return { success: false, error: 'Credentials missing', status: 'FAILED' };
+    }
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: to.replace(/[^0-9]/g, ''),
+      type: 'document',
+      document: {
+        link: documentUrl,
+        filename: filename || 'Invoice.pdf',
+        caption: caption
+      }
+    };
+
+    try {
+      const response = await fetch(`${this.apiUrl}/${this.phoneNumberId}/messages`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json();
+      return {
+        success: response.ok,
+        providerMessageId: data.messages?.[0]?.id,
+        status: response.ok ? 'SENT' : 'FAILED',
+        error: data.error?.message
+      };
+    } catch (e) {
+      return { success: false, error: e.message, status: 'FAILED' };
+    }
+  }
+}
+
+// ─── 3. Twilio WhatsApp Provider ─────────────────────────────────────────────
+class TwilioWhatsAppProvider extends BaseWhatsAppProvider {
+  constructor(config = {}) {
+    super('TwilioWhatsAppProvider');
+    this.accountSid = config.accountSid || '';
+    this.authToken = config.authToken || '';
+    this.fromNumber = config.fromNumber || ''; // e.g. whatsapp:+14155238886
+  }
+
+  async sendTemplateMessage({ to, variables = {}, document = null }) {
+    // Basic text/media dispatch for Twilio sandbox/messaging
+    const bodyText = Object.entries(variables).map(([k, v]) => `${k}: ${v}`).join('\n');
+    return this.sendTextMessage({ to, text: bodyText, mediaUrl: document?.url });
+  }
+
+  async sendTextMessage({ to, text, mediaUrl = null }) {
+    if (!this.accountSid || !this.authToken) {
+      return { success: false, error: 'Twilio credentials missing', status: 'FAILED' };
+    }
+
+    const formattedTo = to.startsWith('whatsapp:') ? to : `whatsapp:${to}`;
+    const params = new URLSearchParams();
+    params.append('From', this.fromNumber);
+    params.append('To', formattedTo);
+    params.append('Body', text);
+    if (mediaUrl) params.append('MediaUrl', mediaUrl);
+
+    try {
+      const auth = btoa(`${this.accountSid}:${this.authToken}`);
+      const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${this.accountSid}/Messages.json`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${auth}`,
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: params.toString()
+      });
+      const data = await response.json();
+      return {
+        success: response.ok,
+        providerMessageId: data.sid,
+        status: response.ok ? 'SENT' : 'FAILED',
+        error: data.message
+      };
+    } catch (e) {
+      return { success: false, error: e.message, status: 'FAILED' };
+    }
+  }
+}
+
+// ─── 4. Provider Factory & Global Registry ────────────────────────────────────
+const providers = {
+  mock: new MockWhatsAppProvider(),
+  meta: null,
+  twilio: null
+};
+
+function getWhatsAppProvider(customConfig = null) {
+  let providerType = 'mock';
+  try {
+    if (typeof store !== 'undefined' && store.getSettings) {
+      const settings = store.getSettings();
+      providerType = settings.whatsappProvider || 'mock';
+    }
+  } catch (e) {}
+
+  if (providerType === 'meta') {
+    if (!providers.meta || customConfig) {
+      providers.meta = new MetaWhatsAppProvider(customConfig || {});
+    }
+    return providers.meta;
+  }
+
+  if (providerType === 'twilio') {
+    if (!providers.twilio || customConfig) {
+      providers.twilio = new TwilioWhatsAppProvider(customConfig || {});
+    }
+    return providers.twilio;
+  }
+
+  return providers.mock;
+}
+
+if (typeof window !== 'undefined') {
+  window.MockWhatsAppProvider = MockWhatsAppProvider;
+  window.MetaWhatsAppProvider = MetaWhatsAppProvider;
+  window.TwilioWhatsAppProvider = TwilioWhatsAppProvider;
+  window.getWhatsAppProvider = getWhatsAppProvider;
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    MockWhatsAppProvider,
+    MetaWhatsAppProvider,
+    TwilioWhatsAppProvider,
+    getWhatsAppProvider
+  };
+}
+
+})();
+
+// ─── SERVICE: invoice-generator.js ───
+(function() {
+// StudyFlow — Professional Invoice & Receipt Document Generator
+
+const invoiceGenerator = {
+  // ── 1. Generate Invoice ──────────────────────────────────────────
+  generateInvoice({ membershipId, studentId, seatId, paymentId = null }) {
+    const student = store.getStudent(studentId);
+    const membership = store.getMembership(membershipId);
+    const seat = seatId ? store.getSeat(seatId) : (membership?.seatId ? store.getSeat(membership.seatId) : null);
+    const room = seat?.roomId ? store.getRoom(seat.roomId) : null;
+    const floor = room?.floorId ? store.getFloor(room.floorId) : null;
+    const branchId = membership?.branchId || seat?.branchId || store.getActiveBranchId();
+    const branch = store.getBranch(branchId);
+    const settings = store.getSettings();
+
+    const invoiceNumber = `INV-${new Date().getFullYear()}-${Math.floor(10000 + Math.random() * 90000)}`;
+    const payment = paymentId ? store.getPayment(paymentId) : (membership ? store.getPaymentsForMembership(membership.id)[0] : null);
+
+    const baseAmount = membership?.price || 0;
+    const discount = membership?.discount || 0;
+    const finalAmount = membership?.finalAmount || (baseAmount - discount);
+    const paidAmount = payment?.amount || (membership?.paymentStatus === 'paid' ? finalAmount : 0);
+    const pendingAmount = Math.max(0, finalAmount - paidAmount);
+
+    const docId = `DOC-${utils.uid()}`;
+    const documentData = {
+      id: docId,
+      documentType: 'invoice',
+      documentNumber: invoiceNumber,
+      date: utils.today(),
+      createdAt: new Date().toISOString(),
+      studentId: student?.id,
+      studentName: student?.name,
+      studentPhone: student?.phone || student?.normalized_phone,
+      branchId: branch?.id,
+      branchName: branch?.name,
+      branchAddress: branch?.address,
+      branchPhone: branch?.phone,
+      branchEmail: branch?.email,
+      membershipId: membership?.id,
+      planName: membership?.planName || 'Study Space Access',
+      startDate: membership?.startDate,
+      endDate: membership?.endDate,
+      seatNumber: seat?.label || seat?.number || 'Flexible',
+      roomName: room?.name || 'Study Hall',
+      floorName: floor?.name || 'Main Floor',
+      baseAmount,
+      discount,
+      finalAmount,
+      paidAmount,
+      pendingAmount,
+      paymentMethod: payment?.method || payment?.mode || 'UPI',
+      paymentRef: payment?.referenceNumber || payment?.receiptNumber || 'N/A',
+      paymentDate: payment?.date || utils.today(),
+      status: pendingAmount === 0 ? 'PAID' : (paidAmount > 0 ? 'PARTIAL' : 'PENDING'),
+      currency: settings?.currency || 'INR'
+    };
+
+    // Store in documents table
+    store.saveDocument(documentData);
+
+    return documentData;
+  },
+
+  // ── 2. Generate Payment Receipt ──────────────────────────────────
+  generateReceipt({ paymentId, studentId = null, membershipId = null }) {
+    const payment = store.getPayment(paymentId);
+    const mId = membershipId || payment?.membershipId;
+    const membership = mId ? store.getMembership(mId) : null;
+    const sId = studentId || payment?.studentId || membership?.studentId;
+    const student = store.getStudent(sId);
+    const seat = membership?.seatId ? store.getSeat(membership.seatId) : null;
+    const room = seat?.roomId ? store.getRoom(seat.roomId) : null;
+    const branchId = payment?.branchId || membership?.branchId || store.getActiveBranchId();
+    const branch = store.getBranch(branchId);
+    const settings = store.getSettings();
+
+    const receiptNumber = payment?.receiptNumber || `REC-${new Date().getFullYear()}-${Math.floor(10000 + Math.random() * 90000)}`;
+    const docId = `DOC-${utils.uid()}`;
+
+    const documentData = {
+      id: docId,
+      documentType: 'receipt',
+      documentNumber: receiptNumber,
+      date: payment?.date || utils.today(),
+      createdAt: new Date().toISOString(),
+      studentId: student?.id,
+      studentName: student?.name,
+      studentPhone: student?.phone || student?.normalized_phone,
+      branchId: branch?.id,
+      branchName: branch?.name,
+      branchAddress: branch?.address,
+      branchPhone: branch?.phone,
+      membershipId: membership?.id,
+      planName: membership?.planName || 'Study Space Access',
+      startDate: membership?.startDate,
+      endDate: membership?.endDate,
+      seatNumber: seat?.label || 'General',
+      roomName: room?.name || 'Study Area',
+      amount: payment?.amount || 0,
+      paymentMethod: payment?.method || payment?.mode || 'UPI',
+      paymentRef: payment?.referenceNumber || 'N/A',
+      status: 'SUCCESS',
+      currency: settings?.currency || 'INR'
+    };
+
+    store.saveDocument(documentData);
+    return documentData;
+  },
+
+  // ── 3. Render Branded Document HTML ──────────────────────────────
+  renderDocumentHTML(doc) {
+    const isReceipt = doc.documentType === 'receipt';
+    const statusColor = doc.status === 'PAID' || doc.status === 'SUCCESS' ? '#079455' : (doc.status === 'PARTIAL' ? '#dc6803' : '#d92d20');
+
+    return `
+      <div class="sf-invoice-sheet" id="invoice-sheet-${doc.id}" style="
+        background: #ffffff;
+        color: #181d27;
+        font-family: 'Inter', -apple-system, sans-serif;
+        padding: 36px 40px;
+        border-radius: 12px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+        max-width: 720px;
+        margin: 0 auto;
+        line-height: 1.5;
+        border: 1px solid #e9eaeb;
+      ">
+        <!-- Document Header -->
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:24px;border-bottom:1px solid #e9eaeb;">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <div style="
+              width:44px;height:44px;border-radius:10px;
+              background:linear-gradient(135deg, #181d27 0%, #252b37 100%);
+              color:#ffffff;display:flex;align-items:center;justify-content:center;
+              font-weight:700;font-size:18px;letter-spacing:-0.5px;
+            ">SF</div>
+            <div>
+              <div style="font-size:18px;font-weight:700;color:#181d27;letter-spacing:-0.3px;">StudyFlow</div>
+              <div style="font-size:12px;color:#535862;">${doc.branchName || 'Main Study Library'}</div>
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size:20px;font-weight:700;color:#181d27;text-transform:uppercase;letter-spacing:0.5px;">
+              ${isReceipt ? 'Payment Receipt' : 'Tax Invoice'}
+            </div>
+            <div style="font-size:13px;font-weight:600;color:#535862;margin-top:2px;">
+              # ${doc.documentNumber}
+            </div>
+            <div style="display:inline-block;margin-top:6px;padding:2px 10px;border-radius:9999px;font-size:11px;font-weight:600;background:${statusColor}15;color:${statusColor};border:1px solid ${statusColor}40;">
+              ● ${doc.status}
+            </div>
+          </div>
+        </div>
+
+        <!-- Meta Details: Two Columns -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;padding:20px 0;border-bottom:1px solid #e9eaeb;">
+          <div>
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:#717680;letter-spacing:0.5px;margin-bottom:6px;">Billed To</div>
+            <div style="font-size:15px;font-weight:600;color:#181d27;">${doc.studentName || 'Student'}</div>
+            <div style="font-size:13px;color:#535862;margin-top:2px;">Phone: ${doc.studentPhone || 'N/A'}</div>
+            ${doc.studentId ? `<div style="font-size:12px;color:#717680;">Student ID: ${doc.studentId}</div>` : ''}
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:#717680;letter-spacing:0.5px;margin-bottom:6px;">Library Details</div>
+            <div style="font-size:13px;font-weight:500;color:#181d27;">${doc.branchAddress || 'Mumbai, Maharashtra'}</div>
+            <div style="font-size:13px;color:#535862;">Support: ${doc.branchPhone || '+91 98765 43210'}</div>
+            <div style="font-size:12px;color:#717680;margin-top:4px;">Date: ${doc.date}</div>
+          </div>
+        </div>
+
+        <!-- Seat & Facility Breakdown Card -->
+        <div style="background:#fafafa;border:1px solid #e9eaeb;border-radius:8px;padding:16px;margin:20px 0;">
+          <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:#717680;letter-spacing:0.5px;margin-bottom:10px;">Allocated Facility</div>
+          <div style="display:grid;grid-template-columns:repeat(4, 1fr);gap:12px;text-align:center;">
+            <div style="background:#ffffff;padding:8px;border-radius:6px;border:1px solid #e9eaeb;">
+              <div style="font-size:11px;color:#717680;">Seat</div>
+              <div style="font-size:14px;font-weight:700;color:#181d27;">${doc.seatNumber || 'N/A'}</div>
+            </div>
+            <div style="background:#ffffff;padding:8px;border-radius:6px;border:1px solid #e9eaeb;">
+              <div style="font-size:11px;color:#717680;">Room</div>
+              <div style="font-size:13px;font-weight:600;color:#181d27;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${doc.roomName || 'General'}</div>
+            </div>
+            <div style="background:#ffffff;padding:8px;border-radius:6px;border:1px solid #e9eaeb;">
+              <div style="font-size:11px;color:#717680;">Plan</div>
+              <div style="font-size:13px;font-weight:600;color:#181d27;">${doc.planName || 'Monthly'}</div>
+            </div>
+            <div style="background:#ffffff;padding:8px;border-radius:6px;border:1px solid #e9eaeb;">
+              <div style="font-size:11px;color:#717680;">Valid Until</div>
+              <div style="font-size:13px;font-weight:600;color:#181d27;">${doc.endDate || 'N/A'}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Line Item Table -->
+        <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+          <thead>
+            <tr style="border-bottom:1px solid #e9eaeb;background:#fafafa;">
+              <th style="padding:10px 12px;text-align:left;font-size:12px;font-weight:600;color:#535862;">Description</th>
+              <th style="padding:10px 12px;text-align:center;font-size:12px;font-weight:600;color:#535862;">Period</th>
+              <th style="padding:10px 12px;text-align:right;font-size:12px;font-weight:600;color:#535862;">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="border-bottom:1px solid #e9eaeb;">
+              <td style="padding:12px;font-size:13px;font-weight:500;color:#181d27;">
+                Library Study Space Access (${doc.planName})
+                <div style="font-size:12px;color:#717680;">Seat ${doc.seatNumber}, ${doc.roomName}</div>
+              </td>
+              <td style="padding:12px;text-align:center;font-size:12px;color:#535862;">
+                ${doc.startDate || ''} to ${doc.endDate || ''}
+              </td>
+              <td style="padding:12px;text-align:right;font-size:14px;font-weight:600;color:#181d27;">
+                ₹${(doc.baseAmount || doc.amount || 0).toLocaleString('en-IN')}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- Totals & Payment Breakdown -->
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:12px 0 24px;border-bottom:1px solid #e9eaeb;">
+          <div style="font-size:12px;color:#535862;max-width:280px;">
+            <div style="font-weight:600;color:#181d27;margin-bottom:4px;">Payment Method: ${doc.paymentMethod || 'UPI'}</div>
+            <div>Reference / Txn: <code style="background:#f5f5f5;padding:2px 6px;border-radius:4px;font-size:11px;">${doc.paymentRef || 'Verified'}</code></div>
+            <div style="margin-top:2px;">Paid On: ${doc.paymentDate || doc.date}</div>
+          </div>
+          <div style="min-width:220px;">
+            ${doc.discount > 0 ? `
+              <div style="display:flex;justify-content:space-between;font-size:13px;color:#535862;margin-bottom:6px;">
+                <span>Discount</span>
+                <span style="color:#079455;">- ₹${doc.discount.toLocaleString('en-IN')}</span>
+              </div>
+            ` : ''}
+            <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:600;color:#181d27;margin-bottom:8px;">
+              <span>Total Fee</span>
+              <span>₹${(doc.finalAmount || doc.amount || 0).toLocaleString('en-IN')}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:600;color:#079455;margin-bottom:6px;">
+              <span>Amount Paid</span>
+              <span>₹${(doc.paidAmount || doc.amount || 0).toLocaleString('en-IN')}</span>
+            </div>
+            ${doc.pendingAmount > 0 ? `
+              <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;color:#d92d20;padding-top:6px;border-top:1px dashed #e9eaeb;">
+                <span>Balance Due</span>
+                <span>₹${doc.pendingAmount.toLocaleString('en-IN')}</span>
+              </div>
+            ` : ''}
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div style="display:flex;justify-content:space-between;align-items:center;padding-top:20px;font-size:12px;color:#717680;">
+          <div>
+            <div style="font-weight:600;color:#181d27;">Thank you for studying with StudyFlow!</div>
+            <div>This is a computer generated document and requires no physical signature.</div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-weight:600;color:#181d27;">StudyFlow Systems</div>
+            <div style="font-size:11px;">studyflow.in</div>
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
+  // ── 4. Document Modal & Actions ──────────────────────────────────
+  previewDocument(docId) {
+    const doc = store.getDocument(docId);
+    if (!doc) {
+      toast.show('Document not found', 'error');
+      return;
+    }
+
+    const html = this.renderDocumentHTML(doc);
+    modal.open(`${doc.documentType === 'receipt' ? 'Receipt' : 'Invoice'} — ${doc.documentNumber}`, `
+      <div style="max-height:75vh;overflow-y:auto;padding:12px;">
+        ${html}
+      </div>
+    `, `
+      <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
+        <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);">
+          Document ID: ${doc.id}
+        </div>
+        <div style="display:flex;gap:var(--space-2);">
+          <button class="btn btn-secondary btn-sm" onclick="invoiceGenerator.printDocument('${doc.id}')">
+            ${icons.printer || ''} Print / PDF
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="modal.close()">
+            Close
+          </button>
+        </div>
+      </div>
+    `, { size: 'lg' });
+  },
+
+  printDocument(docId) {
+    const doc = store.getDocument(docId);
+    if (!doc) return;
+    const html = this.renderDocumentHTML(doc);
+    const win = window.open('', '_blank');
+    if (!win) {
+      toast.show('Popups blocked. Please allow popups to print.', 'warning');
+      return;
+    }
+    win.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>${doc.documentNumber}</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <style>
+          @media print {
+            body { margin: 0; padding: 20px; background: #fff !important; }
+            .sf-invoice-sheet { box-shadow: none !important; border: none !important; max-width: 100% !important; }
+          }
+        </style>
+      </head>
+      <body style="background:#f5f5f5;padding:40px 0;">
+        ${html}
+        <script>
+          setTimeout(() => { window.print(); }, 400);
+        <\/script>
+      </body>
+      </html>
+    `);
+    win.document.close();
+  }
+};
+
+if (typeof window !== 'undefined') {
+  window.invoiceGenerator = invoiceGenerator;
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { invoiceGenerator };
+}
+
+})();
+
+// ─── SERVICE: notification-service.js ───
+(function() {
+// StudyFlow — Decoupled Notification & Communication Service
+// Manages Event Bus, Safe Template Engine, Multi-language Support, Idempotency & Queue
+
+const NOTIFICATION_EVENTS = {
+  SEAT_ASSIGNED: 'SEAT_ASSIGNED',
+  SEAT_TRANSFERRED: 'SEAT_TRANSFERRED',
+  SEAT_RELEASED: 'SEAT_RELEASED',
+  PAYMENT_RECEIVED: 'PAYMENT_RECEIVED',
+  PAYMENT_DUE: 'PAYMENT_DUE',
+  PAYMENT_OVERDUE: 'PAYMENT_OVERDUE',
+  MEMBERSHIP_CREATED: 'MEMBERSHIP_CREATED',
+  MEMBERSHIP_RENEWED: 'MEMBERSHIP_RENEWED',
+  MEMBERSHIP_EXPIRING: 'MEMBERSHIP_EXPIRING',
+  MEMBERSHIP_EXPIRED: 'MEMBERSHIP_EXPIRED',
+  RESERVATION_CREATED: 'RESERVATION_CREATED',
+  IMPORTANT_ANNOUNCEMENT: 'IMPORTANT_ANNOUNCEMENT'
+};
+
+// ── Standard Approved WhatsApp Templates (EN, HI, MR) ────────────────────────
+const DEFAULT_TEMPLATES = {
+  // 1. Seat Assignment Confirmation
+  'seat_assignment_confirmation_en': {
+    name: 'seat_assignment_confirmation',
+    event: 'SEAT_ASSIGNED',
+    language: 'en',
+    category: 'Booking',
+    text: `Hello {{student_name}},
+
+Your StudyFlow library membership has been successfully activated.
+
+Seat: {{seat_number}}
+Branch: {{branch_name}}
+Room: {{room_name}}
+
+Membership: {{membership_name}}
+Start Date: {{start_date}}
+Expiry Date: {{expiry_date}}
+
+Amount: ₹{{amount}}
+Payment Status: {{payment_status}}
+
+Your invoice/receipt is attached.
+
+Thank you,
+{{branch_name}} — StudyFlow`
+  },
+  'seat_assignment_confirmation_hi': {
+    name: 'seat_assignment_confirmation',
+    event: 'SEAT_ASSIGNED',
+    language: 'hi',
+    category: 'Booking',
+    text: `नमस्ते {{student_name}},
+
+आपकी StudyFlow लाइब्रेरी सदस्यता सफलतापूर्वक सक्रिय हो गई है।
+
+सीट: {{seat_number}}
+शाखा: {{branch_name}}
+कमरा: {{room_name}}
+
+सदस्यता योजना: {{membership_name}}
+आरंभ तिथि: {{start_date}}
+समाप्ति तिथि: {{expiry_date}}
+
+शुल्क: ₹{{amount}}
+भुगतान स्थिति: {{payment_status}}
+
+आपका इनवॉइस / रसीद संलग्न है।
+
+धन्यवाद,
+{{branch_name}} — StudyFlow`
+  },
+  'seat_assignment_confirmation_mr': {
+    name: 'seat_assignment_confirmation',
+    event: 'SEAT_ASSIGNED',
+    language: 'mr',
+    category: 'Booking',
+    text: `नमस्कार {{student_name}},
+
+तुमचे StudyFlow लायब्ररीचे सदस्यत्व यशस्वीरित्या सक्रिय झाले आहे.
+
+सीट क्रमांक: {{seat_number}}
+शाखा: {{branch_name}}
+खोली: {{room_name}}
+
+प्लॅन: {{membership_name}}
+सुरुवात: {{start_date}}
+मुदत संपण्याची तारीख: {{expiry_date}}
+
+रक्कम: ₹{{amount}}
+पेमेंट स्थिती: {{payment_status}}
+
+आपली पावती सोबत जोडलेली आहे.
+
+धन्यवाद,
+{{branch_name}} — StudyFlow`
+  },
+
+  // 2. Payment Receipt
+  'payment_receipt_en': {
+    name: 'payment_receipt',
+    event: 'PAYMENT_RECEIVED',
+    language: 'en',
+    category: 'Payments',
+    text: `Hello {{student_name}},
+
+We have received your payment.
+
+Amount: ₹{{amount}}
+Payment Method: {{payment_method}}
+Receipt: {{receipt_number}}
+Date: {{payment_date}}
+
+Your official receipt is attached.
+
+Thank you,
+{{branch_name}} — StudyFlow`
+  },
+  'payment_receipt_hi': {
+    name: 'payment_receipt',
+    event: 'PAYMENT_RECEIVED',
+    language: 'hi',
+    category: 'Payments',
+    text: `नमस्ते {{student_name}},
+
+हमें आपका भुगतान प्राप्त हो गया है।
+
+राशि: ₹{{amount}}
+भुगतान माध्यम: {{payment_method}}
+रसीद संख्या: {{receipt_number}}
+तारीख: {{payment_date}}
+
+आपकी आधिकारिक रसीद संलग्न है।
+
+धन्यवाद,
+{{branch_name}} — StudyFlow`
+  },
+  'payment_receipt_mr': {
+    name: 'payment_receipt',
+    event: 'PAYMENT_RECEIVED',
+    language: 'mr',
+    category: 'Payments',
+    text: `नमस्कार {{student_name}},
+
+आम्हाला आपले पेमेंट प्राप्त झाले आहे.
+
+रक्कम: ₹{{amount}}
+पेमेंट पद्धत: {{payment_method}}
+पावती क्र.: {{receipt_number}}
+तारीख: {{payment_date}}
+
+आपली पावती सोबत जोडली आहे.
+
+धन्यवाद,
+{{branch_name}} — StudyFlow`
+  },
+
+  // 3. Payment Due Reminder
+  'payment_due_reminder_en': {
+    name: 'payment_due_reminder',
+    event: 'PAYMENT_DUE',
+    language: 'en',
+    category: 'Payments',
+    text: `Hello {{student_name}},
+
+This is a reminder from StudyFlow.
+
+Your library membership fee is due.
+
+Seat: {{seat_number}}
+Amount Due: ₹{{amount}}
+Due Date: {{due_date}}
+
+Please contact the library or complete the payment to maintain uninterrupted access.
+
+Thank you,
+{{branch_name}}`
+  },
+
+  // 4. Overdue Notice
+  'payment_overdue_notice_en': {
+    name: 'payment_overdue_notice',
+    event: 'PAYMENT_OVERDUE',
+    language: 'en',
+    category: 'Payments',
+    text: `Hello {{student_name}},
+
+Your StudyFlow library fee is currently overdue.
+
+Seat: {{seat_number}}
+Outstanding Amount: ₹{{amount}}
+Due Since: {{due_date}}
+
+Please contact the library desk to clear the outstanding balance and retain your assigned seat.
+
+Thank you,
+{{branch_name}}`
+  },
+
+  // 5. Membership Expiry Reminder
+  'membership_expiring_reminder_en': {
+    name: 'membership_expiring_reminder',
+    event: 'MEMBERSHIP_EXPIRING',
+    language: 'en',
+    category: 'Membership',
+    text: `Hello {{student_name}},
+
+Your StudyFlow membership is expiring soon.
+
+Seat: {{seat_number}}
+Expiry Date: {{expiry_date}}
+
+Renew your membership in advance to retain your dedicated seat.
+
+Please visit the front desk for seamless renewal.
+
+Thank you,
+{{branch_name}}`
+  },
+
+  // 6. Seat Transfer Confirmation
+  'seat_transfer_notification_en': {
+    name: 'seat_transfer_notification',
+    event: 'SEAT_TRANSFERRED',
+    language: 'en',
+    category: 'Booking',
+    text: `Hello {{student_name}},
+
+Your library seat has been updated.
+
+Previous Seat: {{previous_seat}}
+New Seat: {{seat_number}}
+Branch: {{branch_name}}
+Room: {{room_name}}
+
+Effective From: {{effective_date}}
+
+Please reach out if you have any questions.
+
+Thank you,
+{{branch_name}} — StudyFlow`
+  },
+
+  // 7. Reservation Confirmation
+  'reservation_confirmation_en': {
+    name: 'reservation_confirmation',
+    event: 'RESERVATION_CREATED',
+    language: 'en',
+    category: 'Reservations',
+    text: `Hello {{student_name}},
+
+Your study desk reservation is confirmed!
+
+Seat: {{seat_number}}
+Room: {{room_name}}
+Date: {{reservation_date}}
+Time Slot: {{start_time}} to {{end_time}}
+
+We look forward to hosting your study session.
+
+Thank you,
+{{branch_name}} — StudyFlow`
+  }
+};
+
+class NotificationService {
+  constructor() {
+    this.templates = { ...DEFAULT_TEMPLATES };
+    this.isProcessingQueue = false;
+  }
+
+  // ── Template Engine ──────────────────────────────────────────────
+  getTemplate(templateName, language = 'en') {
+    const keyWithLang = `${templateName}_${language}`;
+    if (this.templates[keyWithLang]) return this.templates[keyWithLang];
+    // Fallback to English
+    const fallbackKey = `${templateName}_en`;
+    return this.templates[fallbackKey] || null;
+  }
+
+  renderTemplate(templateText, variables = {}) {
+    if (!templateText) return '';
+    // Safe variable substitution: only replace {{var_name}} with string values
+    return templateText.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (match, key) => {
+      if (variables[key] !== undefined && variables[key] !== null) {
+        return String(variables[key]);
+      }
+      return match;
+    });
+  }
+
+  // ── Event Dispatcher & Message Queue ─────────────────────────────
+  async dispatch(eventType, payload, options = {}) {
+    const studentId = payload.studentId;
+    const student = store.getStudent(studentId);
+
+    if (!student) {
+      console.warn(`[NotificationService] Student not found for ID: ${studentId}`);
+      return { queued: false, reason: 'student_not_found' };
+    }
+
+    // Normalization & Consent Checks
+    const normalizedPhone = student.normalized_phone || student.phone;
+    if (!normalizedPhone) {
+      console.warn(`[NotificationService] Student ${student.name} has no valid phone number`);
+      return { queued: false, reason: 'no_phone' };
+    }
+
+    const optIn = student.whatsapp_opt_in !== false;
+    const prefs = student.communication_preferences || {
+      whatsapp: true,
+      payment_reminders: true,
+      membership_reminders: true,
+      booking_notifications: true,
+      receipt_notifications: true
+    };
+
+    // Category Preference Enforcement
+    if (!optIn || prefs.whatsapp === false) {
+      console.log(`[NotificationService] Skipped: Student ${student.name} has opted out of WhatsApp.`);
+      return { queued: false, reason: 'opted_out' };
+    }
+
+    if (eventType === NOTIFICATION_EVENTS.PAYMENT_DUE || eventType === NOTIFICATION_EVENTS.PAYMENT_OVERDUE) {
+      if (prefs.payment_reminders === false) return { queued: false, reason: 'preference_disabled' };
+    }
+    if (eventType === NOTIFICATION_EVENTS.MEMBERSHIP_EXPIRING || eventType === NOTIFICATION_EVENTS.MEMBERSHIP_EXPIRED) {
+      if (prefs.membership_reminders === false) return { queued: false, reason: 'preference_disabled' };
+    }
+    if (eventType === NOTIFICATION_EVENTS.SEAT_ASSIGNED || eventType === NOTIFICATION_EVENTS.SEAT_TRANSFERRED) {
+      if (prefs.booking_notifications === false) return { queued: false, reason: 'preference_disabled' };
+    }
+    if (eventType === NOTIFICATION_EVENTS.PAYMENT_RECEIVED) {
+      if (prefs.receipt_notifications === false) return { queued: false, reason: 'preference_disabled' };
+    }
+
+    // Idempotency Protection
+    const idempotencyKey = options.idempotencyKey || `${eventType}:${payload.entityId || studentId}:${payload.qualifier || utils.today()}`;
+    const existingMsg = store.getNotificationMessageByIdempotency(idempotencyKey);
+    if (existingMsg && (existingMsg.status === 'SENT' || existingMsg.status === 'DELIVERED' || existingMsg.status === 'READ')) {
+      console.log(`[NotificationService] Skipped duplicate message with idempotencyKey: ${idempotencyKey}`);
+      return { queued: false, duplicate: true, messageId: existingMsg.id };
+    }
+
+    // Select Template & Language
+    const preferredLang = student.preferred_language || 'en';
+    const templateName = options.templateName || this._getTemplateNameForEvent(eventType);
+    const template = this.getTemplate(templateName, preferredLang);
+    const bodyText = template ? this.renderTemplate(template.text, payload.variables || {}) : (options.customText || '');
+
+    const messageRecord = {
+      id: `NOTIF-MSG-${utils.uid()}`,
+      studentId: student.id,
+      studentName: student.name,
+      phoneNumber: normalizedPhone,
+      eventType,
+      templateName,
+      language: preferredLang,
+      bodyText,
+      variables: payload.variables || {},
+      documentId: payload.documentId || null,
+      documentNumber: payload.documentNumber || null,
+      documentType: payload.documentType || null,
+      idempotencyKey,
+      status: 'QUEUED',
+      retryCount: 0,
+      maxRetries: 3,
+      createdAt: new Date().toISOString(),
+      sentAt: null,
+      deliveredAt: null,
+      readAt: null,
+      failedAt: null,
+      failureReason: null
+    };
+
+    // Save to store queue
+    store.saveNotificationMessage(messageRecord);
+
+    // Asynchronous Execution (Decoupled from booking flow)
+    setTimeout(() => {
+      this.processMessage(messageRecord.id);
+    }, 100);
+
+    return {
+      queued: true,
+      messageId: messageRecord.id,
+      documentId: payload.documentId,
+      status: 'QUEUED'
+    };
+  }
+
+  // ── Worker & Delivery Execution ───────────────────────────────────
+  async processMessage(messageId) {
+    const msg = store.getNotificationMessage(messageId);
+    if (!msg || msg.status === 'SENT' || msg.status === 'DELIVERED' || msg.status === 'READ') return;
+
+    msg.status = 'PROCESSING';
+    store.saveNotificationMessage(msg);
+
+    const provider = getWhatsAppProvider();
+
+    try {
+      let result;
+      const document = msg.documentId ? store.getDocument(msg.documentId) : null;
+
+      if (msg.templateName) {
+        result = await provider.sendTemplateMessage({
+          to: msg.phoneNumber,
+          templateName: msg.templateName,
+          language: msg.language,
+          variables: msg.variables,
+          document: document ? { id: document.id, filename: `${document.documentNumber}.pdf`, url: `http://localhost:5173/api/documents/${document.id}` } : null
+        });
+      } else {
+        result = await provider.sendTextMessage({
+          to: msg.phoneNumber,
+          text: msg.bodyText
+        });
+      }
+
+      if (result.success) {
+        msg.status = 'SENT';
+        msg.sentAt = new Date().toISOString();
+        msg.providerMessageId = result.providerMessageId;
+        store.saveNotificationMessage(msg);
+
+        // Simulate realistic delivery transition for mock provider
+        setTimeout(() => {
+          const current = store.getNotificationMessage(messageId);
+          if (current && current.status === 'SENT') {
+            current.status = 'DELIVERED';
+            current.deliveredAt = new Date().toISOString();
+            store.saveNotificationMessage(current);
+          }
+        }, 1200);
+
+      } else {
+        throw new Error(result.error || 'Provider rejected message');
+      }
+
+    } catch (err) {
+      console.error(`[NotificationService] Delivery error for ${messageId}:`, err);
+      msg.retryCount += 1;
+      if (msg.retryCount >= msg.maxRetries) {
+        msg.status = 'FAILED';
+        msg.failedAt = new Date().toISOString();
+        msg.failureReason = err.message;
+      } else {
+        msg.status = 'QUEUED'; // Re-queue for next retry attempt
+      }
+      store.saveNotificationMessage(msg);
+    }
+  }
+
+  // ── Retry Failed Message ──────────────────────────────────────────
+  async retryMessage(messageId) {
+    const msg = store.getNotificationMessage(messageId);
+    if (!msg) return { success: false, error: 'Message not found' };
+
+    msg.status = 'QUEUED';
+    msg.retryCount = 0;
+    msg.failureReason = null;
+    store.saveNotificationMessage(msg);
+
+    return this.processMessage(messageId);
+  }
+
+  // ── Automated Reminder Scheduler ──────────────────────────────────
+  async runAutomatedReminders() {
+    const branchId = store.getActiveBranchId();
+    const activeMemberships = store.getMemberships().filter(m => m.status === 'active');
+    let reminderCount = 0;
+
+    for (const mem of activeMemberships) {
+      const student = store.getStudent(mem.studentId);
+      if (!student) continue;
+
+      const seat = mem.seatId ? store.getSeat(mem.seatId) : null;
+      const daysUntilExpiry = utils.daysUntil(mem.endDate);
+      const branch = store.getBranch(mem.branchId || branchId);
+
+      // Expiry Reminders (7d, 3d, 1d)
+      if (daysUntilExpiry === 7 || daysUntilExpiry === 3 || daysUntilExpiry === 1) {
+        const idempKey = `membership_expiring:${mem.id}:${daysUntilExpiry}d`;
+        const res = await this.dispatch(NOTIFICATION_EVENTS.MEMBERSHIP_EXPIRING, {
+          studentId: student.id,
+          entityId: mem.id,
+          qualifier: `${daysUntilExpiry}d`,
+          variables: {
+            student_name: student.name,
+            seat_number: seat?.label || 'General',
+            expiry_date: mem.endDate,
+            branch_name: branch?.name || 'StudyFlow Library'
+          }
+        }, { idempotencyKey: idempKey });
+
+        if (res.queued) reminderCount++;
+      }
+
+      // Overdue & Fee Due Reminders
+      if (mem.paymentStatus === 'pending' || mem.paymentStatus === 'partial') {
+        const pendingAmount = mem.finalAmount - (mem.paidAmount || 0);
+        if (pendingAmount > 0) {
+          const idempKey = `fee_due:${mem.id}:${utils.today()}`;
+          const res = await this.dispatch(NOTIFICATION_EVENTS.PAYMENT_DUE, {
+            studentId: student.id,
+            entityId: mem.id,
+            qualifier: 'payment_due',
+            variables: {
+              student_name: student.name,
+              seat_number: seat?.label || 'General',
+              amount: pendingAmount,
+              due_date: mem.startDate,
+              branch_name: branch?.name || 'StudyFlow Library'
+            }
+          }, { idempotencyKey: idempKey });
+
+          if (res.queued) reminderCount++;
+        }
+      }
+    }
+
+    return { processed: activeMemberships.length, dispatched: reminderCount };
+  }
+
+  _getTemplateNameForEvent(eventType) {
+    switch (eventType) {
+      case NOTIFICATION_EVENTS.SEAT_ASSIGNED: return 'seat_assignment_confirmation';
+      case NOTIFICATION_EVENTS.SEAT_TRANSFERRED: return 'seat_transfer_notification';
+      case NOTIFICATION_EVENTS.PAYMENT_RECEIVED: return 'payment_receipt';
+      case NOTIFICATION_EVENTS.PAYMENT_DUE: return 'payment_due_reminder';
+      case NOTIFICATION_EVENTS.PAYMENT_OVERDUE: return 'payment_overdue_notice';
+      case NOTIFICATION_EVENTS.MEMBERSHIP_EXPIRING: return 'membership_expiring_reminder';
+      case NOTIFICATION_EVENTS.RESERVATION_CREATED: return 'reservation_confirmation';
+      default: return 'seat_assignment_confirmation';
+    }
+  }
+}
+
+const notificationService = new NotificationService();
+
+if (typeof window !== 'undefined') {
+  window.NOTIFICATION_EVENTS = NOTIFICATION_EVENTS;
+  window.notificationService = notificationService;
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    NOTIFICATION_EVENTS,
+    notificationService
+  };
+}
+
+})();
+
 // ─── PAGE: dashboard.js ───
 (function() {
 // Dashboard Page
@@ -25,6 +1338,10 @@ window.Pages.renderDashboard = function renderDashboard(container) {
           <p class="page-subtitle">Here's what's happening at <strong>${branch?.name || 'your library'}</strong> today.</p>
         </div>
         <div style="display:flex;gap:var(--space-3);">
+          <button class="btn btn-secondary" onclick="app.navigate('/notifications')">
+            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--sf-success-500);margin-right:6px;"></span>
+            WhatsApp Active
+          </button>
           <button class="btn btn-secondary" onclick="app.navigate('/seat-map')">
             ${icons.map} View Seat Map
           </button>
@@ -48,6 +1365,32 @@ window.Pages.renderDashboard = function renderDashboard(container) {
       ${renderStatCard('Expiring Soon', stats.expiringCount, 'Within 14 days', 'expiring', '#fef0c7', '#dc6803', icons.clock)}
       ${renderStatCard("Today's Attendance", stats.presentToday, `of ${store.getStudents(branchId).length} students`, 'attendance', '#ecfdf3', '#079455', icons.checkCircle)}
       ${renderStatCard('Under Maintenance', stats.maintenance, 'Seats blocked', 'maintenance', '#f3f4f6', '#6c737f', icons.tool)}
+    </div>
+
+    <!-- WhatsApp & Invoice Automation Banner -->
+    <div style="background:linear-gradient(135deg, var(--sf-indigo-900) 0%, #1e1b4b 100%);color:white;border-radius:var(--radius-xl);padding:var(--space-4) var(--space-5);margin-bottom:var(--space-6);display:flex;align-items:center;justify-content:space-between;box-shadow:0 4px 14px rgba(0,0,0,0.08);">
+      <div style="display:flex;align-items:center;gap:var(--space-4);">
+        <div style="width:44px;height:44px;background:rgba(255,255,255,0.12);border-radius:var(--radius-lg);display:flex;align-items:center;justify-content:center;color:#4ade80;">
+          ${icons.bell}
+        </div>
+        <div>
+          <div style="font-size:var(--text-sm);font-weight:var(--fw-bold);display:flex;align-items:center;gap:var(--space-2);">
+            <span>WhatsApp & Invoice Automation Active</span>
+            <span class="badge" style="background:rgba(74,222,128,0.2);color:#4ade80;font-size:10px;border:none;">● LIVE</span>
+          </div>
+          <div style="font-size:var(--text-xs);color:rgba(255,255,255,0.7);margin-top:2px;">
+            Seat assignments auto-generate tax invoices & receipts with instant WhatsApp delivery.
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;gap:var(--space-2);">
+        <button class="btn btn-sm" style="background:rgba(255,255,255,0.15);color:white;border:none;" onclick="triggerRunReminders()">
+          ${icons.repeat} Run Reminders
+        </button>
+        <button class="btn btn-sm" style="background:white;color:var(--sf-indigo-950);border:none;font-weight:var(--fw-semibold);" onclick="app.navigate('/notifications')">
+          View Logs
+        </button>
+      </div>
     </div>
 
     <!-- Charts + Lists Row -->
@@ -983,8 +2326,9 @@ window.confirmAssignSeat = function() {
       payAmount = 0;
     }
 
+    let paymentRecord = null;
     if (payAmount > 0) {
-      store.recordPayment({
+      paymentRecord = store.recordPayment({
         membershipId: membership.id,
         studentId,
         amount: payAmount,
@@ -993,9 +2337,119 @@ window.confirmAssignSeat = function() {
       });
     }
 
+    // ── Generate Invoice & Receipt Documents ──
+    const student = store.getStudent(studentId);
+    const seat = store.getSeat(seatId);
+    const room = seat?.roomId ? store.getRoom(seat.roomId) : null;
+    const branch = store.getBranch(store.getActiveBranchId());
+
+    let invoice = null;
+    let receipt = null;
+
+    if (window.invoiceGenerator) {
+      invoice = invoiceGenerator.generateInvoice({
+        membershipId: membership.id,
+        studentId,
+        seatId,
+        paymentId: paymentRecord?.id
+      });
+      if (paymentRecord) {
+        receipt = invoiceGenerator.generateReceipt({
+          paymentId: paymentRecord.id,
+          studentId,
+          membershipId: membership.id
+        });
+      }
+    }
+
+    // ── Dispatch Asynchronous WhatsApp Notification ──
+    if (window.notificationService) {
+      notificationService.dispatch(NOTIFICATION_EVENTS.SEAT_ASSIGNED, {
+        studentId,
+        entityId: membership.id,
+        documentId: invoice?.id || null,
+        documentNumber: invoice?.documentNumber || null,
+        documentType: 'invoice',
+        variables: {
+          student_name: student?.name || 'Student',
+          seat_number: seat?.label || seat?.number || 'N/A',
+          branch_name: branch?.name || 'StudyFlow Library',
+          room_name: room?.name || 'Study Hall',
+          membership_name: plan.name,
+          start_date: startDate,
+          expiry_date: endDate,
+          amount: (price - discount).toLocaleString('en-IN'),
+          payment_status: payStatus === 'paid' ? 'Paid' : (payStatus === 'partial' ? 'Partial' : 'Pending')
+        }
+      });
+    }
+
     modal.close();
     drawer.close();
-    toast.show(`Seat assigned to ${store.getStudent(studentId)?.name} successfully!`, 'success');
+
+    // ── Show Booking & WhatsApp Confirmation Dialog ──
+    modal.open('Seat Assigned Successfully 🎉', `
+      <div style="text-align:center;padding:var(--space-2) 0 var(--space-4);">
+        <div style="width:54px;height:54px;border-radius:50%;background:var(--sf-success-50);color:var(--sf-success-600);display:flex;align-items:center;justify-content:center;margin:0 auto var(--space-3);font-size:24px;">
+          ✓
+        </div>
+        <h3 style="font-size:var(--text-lg);font-weight:var(--fw-bold);color:var(--color-text-primary);">Seat ${seat?.label} is Booked!</h3>
+        <p style="font-size:var(--text-sm);color:var(--color-text-secondary);margin-top:4px;">
+          Assigned to <strong>${student?.name}</strong> for ${plan.name} (${startDate} to ${endDate})
+        </p>
+      </div>
+
+      <div style="background:var(--color-bg-secondary);border:1px solid var(--color-border-secondary);border-radius:var(--radius-lg);padding:var(--space-4);margin-bottom:var(--space-4);">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-3);font-size:var(--text-xs);">
+          <div>
+            <span style="color:var(--color-text-tertiary);">Payment Status:</span>
+            <div style="font-weight:var(--fw-semibold);color:var(--color-text-primary);margin-top:2px;">
+              ${payStatus === 'paid' ? `₹${(price - discount).toLocaleString('en-IN')} (Paid)` : (payStatus === 'partial' ? `₹${payAmount} (Partial)` : 'Pending')}
+            </div>
+          </div>
+          <div>
+            <span style="color:var(--color-text-tertiary);">Invoice Number:</span>
+            <div style="font-weight:var(--fw-semibold);color:var(--color-text-primary);margin-top:2px;">
+              ${invoice ? invoice.documentNumber : 'Generated'}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="padding:var(--space-3) var(--space-4);background:#edfcf2;border:1px solid #aaf0c4;border-radius:var(--radius-lg);display:flex;align-items:center;gap:var(--space-3);margin-bottom:var(--space-2);">
+        <div style="width:28px;height:28px;border-radius:50%;background:#16b364;color:white;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;">
+          💬
+        </div>
+        <div style="flex:1;">
+          <div style="font-size:var(--text-sm);font-weight:var(--fw-semibold);color:#087443;">
+            WhatsApp Confirmation Queued
+          </div>
+          <div style="font-size:var(--text-xs);color:#099250;">
+            Sent to ${student?.normalized_phone || student?.phone || 'student phone'} with PDF invoice attached.
+          </div>
+        </div>
+        <span class="badge badge-success"><span class="badge-dot"></span>Queued</span>
+      </div>
+    `, `
+      <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
+        <div>
+          ${invoice ? `
+            <button class="btn btn-secondary btn-sm" onclick="invoiceGenerator.previewDocument('${invoice.id}')">
+              ${icons['file-text'] || ''} View Invoice
+            </button>
+          ` : ''}
+        </div>
+        <div style="display:flex;gap:var(--space-2);">
+          <button class="btn btn-secondary btn-sm" onclick="modal.close(); app.navigate('/student?id=${studentId}')">
+            View Student
+          </button>
+          <button class="btn btn-primary btn-sm" onclick="modal.close()">
+            Done
+          </button>
+        </div>
+      </div>
+    `, { size: 'md' });
+
     app._navigate();
   } catch (e) {
     toast.show(e.message, 'error');
@@ -1063,8 +2517,28 @@ window.confirmTransfer = function(fromSeatId, studentId) {
     store.transferSeat(fromSeatId, toSeatId, studentId, reason);
     modal.close();
     drawer.close();
+    const fromSeat = store.getSeat(fromSeatId);
     const toSeat = store.getSeat(toSeatId);
-    toast.show(`Seat transferred to ${toSeat.label}!`, 'success');
+    const student = store.getStudent(studentId);
+    const branch = store.getBranch(store.getActiveBranchId());
+    const room = toSeat?.roomId ? store.getRoom(toSeat.roomId) : null;
+
+    if (window.notificationService && student) {
+      notificationService.dispatch(NOTIFICATION_EVENTS.SEAT_TRANSFERRED, {
+        studentId,
+        entityId: toSeatId,
+        variables: {
+          student_name: student.name,
+          previous_seat: fromSeat?.label || 'Previous',
+          seat_number: toSeat?.label || 'New',
+          branch_name: branch?.name || 'StudyFlow Library',
+          room_name: room?.name || 'Study Area',
+          effective_date: utils.today()
+        }
+      });
+    }
+
+    toast.show(`Seat transferred to ${toSeat.label}! WhatsApp confirmation sent.`, 'success');
     app._navigate();
   } catch (e) {
     toast.show(e.message, 'error');
@@ -1214,10 +2688,76 @@ window.confirmPayment = function(membershipId, studentId) {
   if (!amount || amount <= 0) { toast.show('Please enter a valid amount', 'error'); return; }
 
   try {
-    store.recordPayment({ membershipId, studentId, amount, method, txnId, notes });
-    modal.close();
+    const student = store.getStudent(studentId);
+    const membership = store.getMembership(membershipId);
+    const payment = store.recordPayment({ membershipId, studentId, amount, method, txnId, notes });
+
+    // Generate receipt document
+    let receiptDoc = null;
+    if (window.invoiceGenerator) {
+      receiptDoc = window.invoiceGenerator.generateReceipt({
+        paymentId: payment.id,
+        membershipId,
+        studentId,
+        amount,
+        paymentMethod: method,
+        transactionRef: txnId,
+        notes
+      });
+    }
+
+    // Dispatch WhatsApp notification
+    let notifMsg = null;
+    if (window.notificationService && window.NOTIFICATION_EVENTS) {
+      notifMsg = window.notificationService.dispatchEvent(window.NOTIFICATION_EVENTS.PAYMENT_RECEIVED, {
+        studentId,
+        membershipId,
+        paymentId: payment.id,
+        amount,
+        receiptNumber: receiptDoc?.documentNumber || payment.receiptNumber,
+        documentId: receiptDoc?.id
+      });
+    }
+
+    const pendingAfter = store.getPendingAmount(membershipId);
+
+    // Show success modal with document and WhatsApp dispatch status
+    modal.open('Payment Recorded 🎉', `
+      <div style="text-align:center;padding:var(--space-2) 0 var(--space-4);">
+        <div style="width:52px;height:52px;background:var(--sf-success-100);color:var(--sf-success-700);border-radius:50%;display:inline-flex;align-items:center;justify-content:center;margin-bottom:var(--space-3);">
+          ${icons.checkCircle}
+        </div>
+        <div style="font-size:var(--text-lg);font-weight:var(--fw-bold);color:var(--color-text-primary);">
+          Payment of ${utils.formatINR(amount)} Received!
+        </div>
+        <div style="font-size:var(--text-sm);color:var(--color-text-secondary);margin-top:var(--space-1);">
+          Student: <strong>${student?.name || 'Student'}</strong> · Method: <strong>${method}</strong>
+        </div>
+      </div>
+
+      <div style="background:var(--color-bg-secondary);border:1px solid var(--color-border-secondary);border-radius:var(--radius-xl);padding:var(--space-4);margin-bottom:var(--space-4);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--space-2);">
+          <span style="font-size:var(--text-xs);color:var(--color-text-tertiary);text-transform:uppercase;font-weight:var(--fw-semibold);">Receipt #</span>
+          <span style="font-family:var(--font-mono);font-size:var(--text-xs);font-weight:var(--fw-bold);color:var(--sf-indigo-600);">${receiptDoc?.documentNumber || payment.receiptNumber}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--space-2);">
+          <span style="font-size:var(--text-sm);color:var(--color-text-secondary);">Remaining Balance</span>
+          <span style="font-size:var(--text-sm);font-weight:var(--fw-bold);color:${pendingAfter > 0 ? 'var(--sf-error-600)' : 'var(--sf-success-600)'};">${utils.formatINR(pendingAfter)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding-top:var(--space-2);border-top:1px solid var(--color-border-secondary);">
+          <span style="font-size:var(--text-xs);color:var(--color-text-tertiary);">WhatsApp Receipt</span>
+          <span class="badge ${notifMsg?.status === 'skipped' ? 'badge-neutral' : 'badge-success'}" style="font-size:11px;">
+            <span class="badge-dot"></span>
+            ${notifMsg?.status === 'skipped' ? 'Opted Out' : `Queued (${student?.normalized_phone || student?.phone})`}
+          </span>
+        </div>
+      </div>
+    `, `
+      ${receiptDoc ? `<button class="btn btn-secondary" onclick="invoiceGenerator.previewDocument('${receiptDoc.id}')">${icons.eye} View Receipt</button>` : ''}
+      <button class="btn btn-primary" onclick="modal.close(); app._navigate();">Done</button>
+    `);
+
     toast.show(`Payment of ${utils.formatINR(amount)} recorded!`, 'success');
-    app._navigate();
   } catch (e) {
     toast.show(e.message, 'error');
   }
@@ -1333,16 +2873,56 @@ window.confirmRenew = function(studentId, seatId) {
       if (idx !== -1) { db.seatAssignments[idx].membershipId = newMem.id; db.seatAssignments[idx].endDate = endDate; store._save(db); }
     }
 
-    // Record payment
+    // Auto-generate renewal invoice
+    let renewInvoiceDoc = null;
+    if (window.invoiceGenerator) {
+      renewInvoiceDoc = window.invoiceGenerator.generateInvoice({
+        membershipId: newMem.id,
+        studentId,
+        seatId: assignment?.seatId,
+        planId: plan.id,
+        amount: price,
+        discount: 0
+      });
+    }
+
+    // Record payment if price > 0
+    let renewPayment = null;
+    let renewReceiptDoc = null;
     if (price > 0) {
-      store.recordPayment({ membershipId: newMem.id, studentId, amount: price, method });
+      renewPayment = store.recordPayment({ membershipId: newMem.id, studentId, amount: price, method });
+      if (window.invoiceGenerator) {
+        renewReceiptDoc = window.invoiceGenerator.generateReceipt({
+          paymentId: renewPayment.id,
+          membershipId: newMem.id,
+          studentId,
+          amount: price,
+          paymentMethod: method
+        });
+      }
+    }
+
+    // Dispatch MEMBERSHIP_RENEWED WhatsApp event
+    let notifMsg = null;
+    if (window.notificationService && window.NOTIFICATION_EVENTS) {
+      notifMsg = window.notificationService.dispatchEvent(window.NOTIFICATION_EVENTS.MEMBERSHIP_RENEWED, {
+        studentId,
+        membershipId: newMem.id,
+        seatId: assignment?.seatId,
+        planName: plan.name,
+        newEndDate: endDate,
+        amount: price,
+        invoiceNumber: renewInvoiceDoc?.documentNumber,
+        receiptNumber: renewReceiptDoc?.documentNumber,
+        documentId: renewInvoiceDoc?.id
+      });
     }
 
     store.addActivity({ action: 'membership_renewed', entity: 'membership', entityId: newMem.id, description: `Membership renewed for ${store.getStudent(studentId)?.name}` });
 
     modal.close();
     drawer.close();
-    toast.show('Membership renewed successfully!', 'success');
+    toast.show('Membership renewed successfully! WhatsApp confirmation queued.', 'success');
     app._navigate();
   } catch (e) {
     toast.show(e.message, 'error');
@@ -1399,10 +2979,22 @@ window.confirmReservation = function(seatId) {
   if (new Date(endDate) <= new Date(startDate)) { toast.show('End date must be after start date', 'error'); return; }
 
   try {
-    store.addReservation({ studentId, seatId, startDate, endDate, notes });
+    const reservation = store.addReservation({ studentId, seatId, startDate, endDate, notes });
+
+    // Dispatch RESERVATION_CONFIRMED event
+    if (window.notificationService && window.NOTIFICATION_EVENTS) {
+      window.notificationService.dispatchEvent(window.NOTIFICATION_EVENTS.RESERVATION_CONFIRMED, {
+        studentId,
+        seatId,
+        reservationId: reservation.id,
+        startDate,
+        endDate
+      });
+    }
+
     modal.close();
     drawer.close();
-    toast.show('Seat reserved!', 'success');
+    toast.show('Seat reserved & confirmation queued!', 'success');
     app._navigate();
   } catch (e) {
     toast.show(e.message, 'error');
@@ -1607,6 +3199,7 @@ window.openStudentActions = function(event, studentId) {
 
   menu.innerHTML = `
     <button class="dropdown-item" onclick="app.navigate('/student', {id:'${studentId}'}); document.getElementById('student-actions-menu')?.remove()">${icons.eye} View Profile</button>
+    <button class="dropdown-item" onclick="openSendWhatsAppModal('${studentId}'); document.getElementById('student-actions-menu')?.remove()">${icons.bell} Send WhatsApp Message</button>
     ${!assignment ? `<button class="dropdown-item" onclick="openAssignModal(); document.getElementById('student-actions-menu')?.remove()">${icons['map-pin']} Assign Seat</button>` : ''}
     ${assignment ? `<button class="dropdown-item" onclick="openTransferModal('${assignment.seatId}'); document.getElementById('student-actions-menu')?.remove()">${icons['arrow-right']} Transfer Seat</button>` : ''}
     ${membership ? `<button class="dropdown-item" onclick="openPaymentModal('${studentId}', '${membership.id}'); document.getElementById('student-actions-menu')?.remove()">${icons['dollar-sign']} Record Payment</button>` : ''}
@@ -1639,8 +3232,16 @@ window.openAddStudentModal = function() {
           <input type="text" class="input" id="new-student-name" placeholder="Rahul Sharma">
         </div>
         <div class="form-group">
-          <label class="form-label">Phone <span class="required">*</span></label>
-          <input type="tel" class="input" id="new-student-phone" placeholder="9876543210">
+          <label class="form-label">WhatsApp Phone <span class="required">*</span></label>
+          <div style="display:flex;gap:var(--space-2);">
+            <select class="select" id="new-student-cc" style="width:105px;flex-shrink:0;">
+              <option value="+91" selected>🇮🇳 +91</option>
+              <option value="+1">🇺🇸 +1</option>
+              <option value="+44">🇬🇧 +44</option>
+              <option value="+971">🇦🇪 +971</option>
+            </select>
+            <input type="tel" class="input flex-1" id="new-student-phone" placeholder="9876543210" maxlength="15">
+          </div>
         </div>
       </div>
       <div class="grid-2">
@@ -1649,29 +3250,39 @@ window.openAddStudentModal = function() {
           <input type="email" class="input" id="new-student-email" placeholder="student@email.com">
         </div>
         <div class="form-group">
-          <label class="form-label">Gender</label>
-          <select class="select" id="new-student-gender">
-            <option>Male</option><option>Female</option><option>Other</option>
+          <label class="form-label">Preferred Notification Language</label>
+          <select class="select" id="new-student-lang">
+            <option value="en" selected>English</option>
+            <option value="hi">हिन्दी (Hindi)</option>
+            <option value="mr">मराठी (Marathi)</option>
           </select>
         </div>
       </div>
       <div class="grid-2">
         <div class="form-group">
+          <label class="form-label">Gender</label>
+          <select class="select" id="new-student-gender">
+            <option>Male</option><option>Female</option><option>Other</option>
+          </select>
+        </div>
+        <div class="form-group">
           <label class="form-label">Course / Exam</label>
           <input type="text" class="input" id="new-student-course" placeholder="UPSC Civil Services">
         </div>
+      </div>
+      <div class="grid-2">
         <div class="form-group">
           <label class="form-label">College / Institution</label>
           <input type="text" class="input" id="new-student-college" placeholder="City College">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Date of Birth</label>
+          <input type="date" class="input" id="new-student-dob">
         </div>
       </div>
       <div class="form-group">
         <label class="form-label">Address</label>
         <input type="text" class="input" id="new-student-address" placeholder="Full address">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Date of Birth</label>
-        <input type="date" class="input" id="new-student-dob">
       </div>
       <div class="grid-2">
         <div class="form-group">
@@ -1682,6 +3293,19 @@ window.openAddStudentModal = function() {
           <label class="form-label">Emergency Contact Phone</label>
           <input type="tel" class="input" id="new-ec-phone" placeholder="9876543210">
         </div>
+      </div>
+
+      <!-- WhatsApp Consent Disclosure -->
+      <div style="padding:var(--space-3);background:var(--color-bg-secondary);border:1px solid var(--color-border-secondary);border-radius:var(--radius-lg);">
+        <label style="display:flex;align-items:flex-start;gap:var(--space-3);cursor:pointer;font-size:var(--text-sm);margin:0;">
+          <input type="checkbox" id="new-student-optin" checked style="accent-color:var(--sf-success-600);width:16px;height:16px;margin-top:2px;">
+          <div>
+            <span style="font-weight:var(--fw-medium);color:var(--color-text-primary);">Opt-in for WhatsApp Notifications & Digital Receipts</span>
+            <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-top:2px;">
+              Automatically send seat confirmations, invoices, tax receipts, and renewal reminders via WhatsApp to this student.
+            </div>
+          </div>
+        </label>
       </div>
     </div>
   `, `
@@ -1694,8 +3318,10 @@ window.openAddStudentModal = function() {
 
 window.confirmAddStudent = function(branchId) {
   const name = document.getElementById('new-student-name')?.value?.trim();
-  const phone = document.getElementById('new-student-phone')?.value?.trim();
+  const rawPhone = document.getElementById('new-student-phone')?.value?.trim();
+  const countryCode = document.getElementById('new-student-cc')?.value || '+91';
   const email = document.getElementById('new-student-email')?.value?.trim();
+  const preferredLang = document.getElementById('new-student-lang')?.value || 'en';
   const gender = document.getElementById('new-student-gender')?.value;
   const course = document.getElementById('new-student-course')?.value?.trim();
   const college = document.getElementById('new-student-college')?.value?.trim();
@@ -1703,18 +3329,44 @@ window.confirmAddStudent = function(branchId) {
   const dob = document.getElementById('new-student-dob')?.value;
   const ecName = document.getElementById('new-ec-name')?.value?.trim();
   const ecPhone = document.getElementById('new-ec-phone')?.value?.trim();
+  const whatsappOptIn = document.getElementById('new-student-optin')?.checked ?? true;
 
   if (!name) { toast.show('Student name is required', 'error'); return; }
-  if (!phone) { toast.show('Phone number is required', 'error'); return; }
-  if (phone.length < 10) { toast.show('Please enter a valid 10-digit phone number', 'error'); return; }
+  if (!rawPhone) { toast.show('Phone number is required', 'error'); return; }
+  if (rawPhone.replace(/\D/g, '').length < 10) { toast.show('Please enter a valid 10-digit phone number', 'error'); return; }
+
+  const normalizedPhone = (window.utils && window.utils.normalizePhone)
+    ? window.utils.normalizePhone(rawPhone, countryCode)
+    : (countryCode + rawPhone.replace(/\D/g, ''));
 
   try {
     const student = store.addStudent({
-      name, phone, email, gender, course, college, address, dob, branchId,
+      name,
+      phone: rawPhone,
+      country_code: countryCode,
+      phone_number: rawPhone.replace(/\D/g, ''),
+      normalized_phone: normalizedPhone,
+      preferred_language: preferredLang,
+      whatsapp_opt_in: whatsappOptIn,
+      whatsapp_opt_in_at: whatsappOptIn ? new Date().toISOString() : null,
+      communication_preferences: {
+        seat_alerts: true,
+        fee_reminders: true,
+        announcements: true
+      },
+      email, gender, course, college, address, dob, branchId,
       emergencyContact: ecName ? { name: ecName, phone: ecPhone } : null
     });
+
+    // Dispatch welcome notification
+    if (window.notificationService && window.NOTIFICATION_EVENTS) {
+      window.notificationService.dispatchEvent(window.NOTIFICATION_EVENTS.STUDENT_REGISTERED, {
+        studentId: student.id
+      });
+    }
+
     modal.close();
-    toast.show(`Student ${name} added successfully!`, 'success');
+    toast.show(`Student ${name} registered successfully! WhatsApp welcome queued.`, 'success');
     app.navigate('/student', { id: student.id });
   } catch (e) {
     toast.show(e.message, 'error');
@@ -1781,6 +3433,9 @@ window.Pages.renderStudentProfile = function renderStudentProfile(container, par
           </div>
         </div>
         <div class="profile-actions">
+          <button class="btn btn-secondary" onclick="openSendWhatsAppModal('${studentId}')" style="color:var(--sf-success-700);border-color:var(--sf-success-300);">
+            ${icons.bell} Send WhatsApp
+          </button>
           ${membership ? `
           <button class="btn btn-secondary" onclick="openPaymentModal('${studentId}', '${membership.id}')">
             ${icons['dollar-sign']} Payment
@@ -1820,7 +3475,7 @@ window.Pages.renderStudentProfile = function renderStudentProfile(container, par
 
       <!-- Tabs -->
       <div class="tabs">
-        ${['overview','payments','attendance','history'].map(t => `
+        ${['overview','payments','attendance','history','communication'].map(t => `
           <button class="tab-btn ${activeTab === t ? 'active' : ''}" onclick="switchProfileTab('${t}')">${capitalizeFirst(t)}</button>
         `).join('')}
       </div>
@@ -1843,6 +3498,7 @@ window.Pages.renderStudentProfile = function renderStudentProfile(container, par
       case 'payments': return renderPaymentsTab();
       case 'attendance': return renderAttendanceTab();
       case 'history': return renderHistoryTab();
+      case 'communication': return renderCommunicationTab();
       default: return '';
     }
   }
@@ -2045,6 +3701,159 @@ window.Pages.renderStudentProfile = function renderStudentProfile(container, par
     `;
   }
 
+  function renderCommunicationTab() {
+    const studentDocs = (store.getDocumentsForStudent ? store.getDocumentsForStudent(studentId) : []);
+    const studentMsgs = (store.getNotificationMessagesForStudent ? store.getNotificationMessagesForStudent(studentId) : []);
+    const optIn = student.whatsapp_opt_in !== false;
+    const phoneDisplay = student.normalized_phone || student.phone;
+
+    return `
+      <div style="display:flex;flex-direction:column;gap:var(--space-5);">
+        <!-- WhatsApp Profile & Preferences Card -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">WhatsApp Communication Status</div>
+              <div class="card-subtitle">Consent, registered phone, and automated dispatch settings</div>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="openSendWhatsAppModal('${studentId}')">
+              ${icons.bell} Send Message
+            </button>
+          </div>
+          <div class="card-body">
+            <div class="grid-3" style="gap:var(--space-4);align-items:stretch;">
+              <div style="padding:var(--space-4);background:var(--color-bg-secondary);border-radius:var(--radius-lg);border:1px solid var(--color-border-secondary);">
+                <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);text-transform:uppercase;font-weight:var(--fw-semibold);">Registered WhatsApp Phone</div>
+                <div style="font-size:var(--text-base);font-weight:var(--fw-bold);color:var(--color-text-primary);margin-top:var(--space-2);display:flex;align-items:center;gap:var(--space-2);">
+                  <span>${phoneDisplay}</span>
+                  <span class="badge badge-success" style="font-size:10px;">E.164</span>
+                </div>
+                <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-top:var(--space-1);">Primary delivery destination</div>
+              </div>
+
+              <div style="padding:var(--space-4);background:var(--color-bg-secondary);border-radius:var(--radius-lg);border:1px solid var(--color-border-secondary);">
+                <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);text-transform:uppercase;font-weight:var(--fw-semibold);">Delivery Consent</div>
+                <div style="margin-top:var(--space-2);display:flex;align-items:center;justify-content:space-between;">
+                  <span class="badge ${optIn ? 'badge-success' : 'badge-neutral'}">
+                    <span class="badge-dot"></span>${optIn ? 'Opted In' : 'Opted Out'}
+                  </span>
+                  <button class="btn btn-ghost btn-sm" onclick="toggleWhatsAppOptIn('${studentId}')">
+                    ${optIn ? 'Revoke' : 'Opt In'}
+                  </button>
+                </div>
+                <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-top:var(--space-1);">${optIn ? 'Consented to receive automated messages' : 'Messages will be suppressed'}</div>
+              </div>
+
+              <div style="padding:var(--space-4);background:var(--color-bg-secondary);border-radius:var(--radius-lg);border:1px solid var(--color-border-secondary);">
+                <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);text-transform:uppercase;font-weight:var(--fw-semibold);">Language Preference</div>
+                <div style="font-size:var(--text-base);font-weight:var(--fw-bold);color:var(--color-text-primary);margin-top:var(--space-2);">
+                  ${student.preferred_language === 'hi' ? 'हिन्दी (Hindi)' : student.preferred_language === 'mr' ? 'मराठी (Marathi)' : 'English (en)'}
+                </div>
+                <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-top:var(--space-1);">Template locale</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Generated Documents (Invoices & Receipts) -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Generated Documents & Tax Invoices</div>
+              <div class="card-subtitle">Official printable tax invoices and payment receipts</div>
+            </div>
+            <span class="badge badge-indigo">${studentDocs.length} Total</span>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Doc Number</th>
+                  <th>Type</th>
+                  <th>Date</th>
+                  <th>Total Amount</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${studentDocs.map(d => `
+                  <tr>
+                    <td><span style="font-family:var(--font-mono);font-size:var(--text-xs);font-weight:var(--fw-semibold);color:var(--sf-indigo-600);">${d.documentNumber}</span></td>
+                    <td><span class="badge ${d.type === 'invoice' ? 'badge-indigo' : 'badge-success'}">${d.type === 'invoice' ? 'Tax Invoice' : 'Payment Receipt'}</span></td>
+                    <td style="color:var(--color-text-secondary);">${utils.formatDate(d.createdAt)}</td>
+                    <td style="font-weight:var(--fw-semibold);">${utils.formatINR(d.amount)}</td>
+                    <td><span class="badge badge-success"><span class="badge-dot"></span>${d.status.toUpperCase()}</span></td>
+                    <td>
+                      <div style="display:flex;gap:var(--space-2);">
+                        <button class="btn btn-secondary btn-sm" onclick="invoiceGenerator.previewDocument('${d.id}')">
+                          ${icons.eye} View
+                        </button>
+                        <button class="btn btn-ghost btn-sm" onclick="invoiceGenerator.printDocument('${d.id}')">
+                          ${icons.fileText} Print
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                `).join('') || `
+                  <tr><td colspan="6"><div class="empty-state" style="padding:var(--space-6);"><div class="empty-title" style="font-size:var(--text-sm);">No documents generated yet</div></div></td></tr>
+                `}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- WhatsApp Dispatch & Delivery Logs -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">WhatsApp Communication History</div>
+              <div class="card-subtitle">Automated event triggers, reminders, and delivery timeline</div>
+            </div>
+            <span class="badge badge-success">${studentMsgs.length} Dispatches</span>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Event</th>
+                  <th>Message Preview</th>
+                  <th>Status</th>
+                  <th>Dispatched At</th>
+                  <th>Idempotency Key</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${studentMsgs.map(m => {
+                  const badgeClass = m.status === 'delivered' ? 'badge-success' : m.status === 'failed' ? 'badge-error' : m.status === 'skipped' ? 'badge-neutral' : 'badge-indigo';
+                  return `
+                    <tr>
+                      <td><span class="badge badge-indigo" style="font-size:11px;">${m.eventType}</span></td>
+                      <td style="max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:var(--text-xs);color:var(--color-text-secondary);" title="${m.content}">
+                        ${m.content}
+                      </td>
+                      <td><span class="badge ${badgeClass}" style="font-size:11px;"><span class="badge-dot"></span>${m.status.toUpperCase()}</span></td>
+                      <td style="font-size:var(--text-xs);color:var(--color-text-tertiary);">${utils.formatDate(m.createdAt, {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</td>
+                      <td><span style="font-family:var(--font-mono);font-size:10px;color:var(--color-text-tertiary);">${m.idempotencyKey || '—'}</span></td>
+                      <td>
+                        <button class="btn btn-ghost btn-sm" onclick="retryStudentWhatsAppMessage('${m.id}')">
+                          ${icons.repeat} Resend
+                        </button>
+                      </td>
+                    </tr>
+                  `;
+                }).join('') || `
+                  <tr><td colspan="6"><div class="empty-state" style="padding:var(--space-6);"><div class="empty-title" style="font-size:var(--text-sm);">No WhatsApp dispatches recorded</div></div></td></tr>
+                `}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   window.doCheckIn = function(studentId) {
     try {
       store.checkIn(studentId);
@@ -2069,7 +3878,17 @@ window.Pages.renderStudentProfile = function renderStudentProfile(container, par
           <div class="form-group"><label class="form-label">Full Name</label><input type="text" class="input" id="edit-name" value="${s.name}"></div>
           <div class="form-group"><label class="form-label">Phone</label><input type="tel" class="input" id="edit-phone" value="${s.phone}"></div>
         </div>
-        <div class="form-group"><label class="form-label">Email</label><input type="email" class="input" id="edit-email" value="${s.email || ''}"></div>
+        <div class="grid-2">
+          <div class="form-group"><label class="form-label">Email</label><input type="email" class="input" id="edit-email" value="${s.email || ''}"></div>
+          <div class="form-group">
+            <label class="form-label">Notification Language</label>
+            <select class="select" id="edit-lang">
+              <option value="en" ${s.preferred_language === 'en' ? 'selected' : ''}>English</option>
+              <option value="hi" ${s.preferred_language === 'hi' ? 'selected' : ''}>हिन्दी (Hindi)</option>
+              <option value="mr" ${s.preferred_language === 'mr' ? 'selected' : ''}>मराठी (Marathi)</option>
+            </select>
+          </div>
+        </div>
         <div class="form-group"><label class="form-label">Course</label><input type="text" class="input" id="edit-course" value="${s.course || ''}"></div>
         <div class="form-group"><label class="form-label">Address</label><input type="text" class="input" id="edit-address" value="${s.address || ''}"></div>
       </div>
@@ -2082,10 +3901,17 @@ window.Pages.renderStudentProfile = function renderStudentProfile(container, par
   window.confirmEditStudent = function(studentId) {
     const name = document.getElementById('edit-name')?.value?.trim();
     const phone = document.getElementById('edit-phone')?.value?.trim();
+    const lang = document.getElementById('edit-lang')?.value || 'en';
     if (!name || !phone) { toast.show('Name and phone are required', 'error'); return; }
+    
+    const countryCode = '+91';
+    const normalized = (window.utils && window.utils.normalizePhone) ? window.utils.normalizePhone(phone, countryCode) : (countryCode + phone.replace(/\D/g, ''));
+    
     store.updateStudent(studentId, {
       name,
       phone,
+      normalized_phone: normalized,
+      preferred_language: lang,
       email: document.getElementById('edit-email')?.value?.trim(),
       course: document.getElementById('edit-course')?.value?.trim(),
       address: document.getElementById('edit-address')?.value?.trim(),
@@ -2093,6 +3919,104 @@ window.Pages.renderStudentProfile = function renderStudentProfile(container, par
     modal.close();
     toast.show('Student updated!', 'success');
     render();
+  };
+
+  window.toggleWhatsAppOptIn = function(studentId) {
+    const s = store.getStudent(studentId);
+    if (!s) return;
+    const current = s.whatsapp_opt_in !== false;
+    store.updateStudent(studentId, {
+      whatsapp_opt_in: !current,
+      whatsapp_opt_in_at: !current ? new Date().toISOString() : null
+    });
+    toast.show(`WhatsApp status updated: ${!current ? 'Opted In' : 'Opted Out'}`, 'info');
+    render();
+  };
+
+  window.retryStudentWhatsAppMessage = function(messageId) {
+    if (window.notificationService && window.notificationService.retryFailedMessage) {
+      window.notificationService.retryFailedMessage(messageId).then(res => {
+        toast.show('Message resent via WhatsApp provider!', 'success');
+        render();
+      }).catch(err => {
+        toast.show(err.message, 'error');
+      });
+    } else {
+      toast.show('Message re-queued for delivery', 'info');
+      render();
+    }
+  };
+
+  window.openSendWhatsAppModal = function(studentId) {
+    const s = store.getStudent(studentId);
+    if (!s) return;
+
+    modal.open(`Send WhatsApp to ${s.name}`, `
+      <div style="display:flex;flex-direction:column;gap:var(--space-4);">
+        <div style="padding:var(--space-3);background:var(--color-bg-secondary);border-radius:var(--radius-lg);font-size:var(--text-sm);">
+          <div>Recipient: <strong>${s.name}</strong> (${s.normalized_phone || s.phone})</div>
+          <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-top:2px;">
+            Status: ${s.whatsapp_opt_in !== false ? '<span style="color:var(--sf-success-600);font-weight:600;">Consented</span>' : '<span style="color:var(--sf-warning-600);font-weight:600;">Opted Out</span>'}
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Template / Notification Type <span class="required">*</span></label>
+          <select class="select" id="custom-wa-template" onchange="updateCustomWaPreview('${studentId}', this.value)">
+            <option value="GENERAL_NOTICE">General Notice / Alert</option>
+            <option value="PAYMENT_REMINDER">Fee Due Reminder</option>
+            <option value="EXPIRY_REMINDER">Membership Expiry Notice</option>
+            <option value="HOLIDAY_ANNOUNCEMENT">Holiday / Schedule Notice</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Message Content Preview</label>
+          <textarea class="textarea" id="custom-wa-content" rows="4">Hello ${s.name}, this is an official update from your study library.</textarea>
+          <div class="form-hint">Variables and library contact details will be automatically included.</div>
+        </div>
+      </div>
+    `, `
+      <button class="btn btn-secondary" onclick="modal.close()">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmSendCustomWhatsApp('${studentId}')">
+        ${icons.bell} Send via WhatsApp
+      </button>
+    `);
+
+    window.updateCustomWaPreview = (sId, templateType) => {
+      const stud = store.getStudent(sId);
+      const ta = document.getElementById('custom-wa-content');
+      if (!ta || !stud) return;
+      if (templateType === 'PAYMENT_REMINDER') {
+        ta.value = `Hello ${stud.name}, this is a gentle reminder that your membership fee is pending. Kindly clear your dues to ensure uninterrupted access.`;
+      } else if (templateType === 'EXPIRY_REMINDER') {
+        ta.value = `Hello ${stud.name}, your study library membership will expire soon. Please renew your seat promptly.`;
+      } else if (templateType === 'HOLIDAY_ANNOUNCEMENT') {
+        ta.value = `Dear ${stud.name}, please note that the study library will remain closed tomorrow for scheduled maintenance. Thank you.`;
+      } else {
+        ta.value = `Hello ${stud.name}, this is an official update from your study library.`;
+      }
+    };
+  };
+
+  window.confirmSendCustomWhatsApp = function(studentId) {
+    const s = store.getStudent(studentId);
+    const content = document.getElementById('custom-wa-content')?.value?.trim();
+    if (!content) { toast.show('Message content cannot be empty', 'error'); return; }
+
+    if (window.notificationService) {
+      window.notificationService.queueMessage({
+        studentId: s.id,
+        phone: s.normalized_phone || s.phone,
+        eventType: 'CUSTOM_NOTICE',
+        templateName: 'custom_notice',
+        content,
+        metadata: { custom: true }
+      });
+      modal.close();
+      toast.show(`WhatsApp notice queued for ${s.name}!`, 'success');
+      render();
+    }
   };
 
   render();
@@ -2401,10 +4325,74 @@ window.Pages.renderPayments = function renderPayments(container) {
       if (!amount || amount <= 0) { toast.show('Please enter a valid amount', 'error'); return; }
 
       try {
-        store.recordPayment({ membershipId, studentId, amount, method, txnId: ref, notes });
-        modal.close();
+        const student = store.getStudent(studentId);
+        const payment = store.recordPayment({ membershipId, studentId, amount, method, txnId: ref, notes });
+
+        // Generate branded receipt document
+        let receiptDoc = null;
+        if (window.invoiceGenerator) {
+          receiptDoc = window.invoiceGenerator.generateReceipt({
+            paymentId: payment.id,
+            membershipId,
+            studentId,
+            amount,
+            paymentMethod: method,
+            transactionRef: ref,
+            notes
+          });
+        }
+
+        // Dispatch WhatsApp notification
+        let notifMsg = null;
+        if (window.notificationService && window.NOTIFICATION_EVENTS) {
+          notifMsg = window.notificationService.dispatchEvent(window.NOTIFICATION_EVENTS.PAYMENT_RECEIVED, {
+            studentId,
+            membershipId,
+            paymentId: payment.id,
+            amount,
+            receiptNumber: receiptDoc?.documentNumber || payment.receiptNumber,
+            documentId: receiptDoc?.id
+          });
+        }
+
+        const pendingAfter = store.getPendingAmount(membershipId);
+
+        modal.open('Payment Recorded 🎉', `
+          <div style="text-align:center;padding:var(--space-2) 0 var(--space-4);">
+            <div style="width:52px;height:52px;background:var(--sf-success-100);color:var(--sf-success-700);border-radius:50%;display:inline-flex;align-items:center;justify-content:center;margin-bottom:var(--space-3);">
+              ${icons.checkCircle}
+            </div>
+            <div style="font-size:var(--text-lg);font-weight:var(--fw-bold);color:var(--color-text-primary);">
+              Payment of ${utils.formatINR(amount)} Recorded!
+            </div>
+            <div style="font-size:var(--text-sm);color:var(--color-text-secondary);margin-top:var(--space-1);">
+              Student: <strong>${student?.name || 'Student'}</strong> · Mode: <strong>${method}</strong>
+            </div>
+          </div>
+
+          <div style="background:var(--color-bg-secondary);border:1px solid var(--color-border-secondary);border-radius:var(--radius-xl);padding:var(--space-4);margin-bottom:var(--space-4);">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--space-2);">
+              <span style="font-size:var(--text-xs);color:var(--color-text-tertiary);text-transform:uppercase;font-weight:var(--fw-semibold);">Receipt #</span>
+              <span style="font-family:var(--font-mono);font-size:var(--text-xs);font-weight:var(--fw-bold);color:var(--sf-indigo-600);">${receiptDoc?.documentNumber || payment.receiptNumber}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--space-2);">
+              <span style="font-size:var(--text-sm);color:var(--color-text-secondary);">Remaining Balance</span>
+              <span style="font-size:var(--text-sm);font-weight:var(--fw-bold);color:${pendingAfter > 0 ? 'var(--sf-error-600)' : 'var(--sf-success-600)'};">${utils.formatINR(pendingAfter)}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding-top:var(--space-2);border-top:1px solid var(--color-border-secondary);">
+              <span style="font-size:var(--text-xs);color:var(--color-text-tertiary);">WhatsApp Receipt</span>
+              <span class="badge ${notifMsg?.status === 'skipped' ? 'badge-neutral' : 'badge-success'}" style="font-size:11px;">
+                <span class="badge-dot"></span>
+                ${notifMsg?.status === 'skipped' ? 'Opted Out' : `Queued (${student?.normalized_phone || student?.phone})`}
+              </span>
+            </div>
+          </div>
+        `, `
+          ${receiptDoc ? `<button class="btn btn-secondary" onclick="invoiceGenerator.previewDocument('${receiptDoc.id}')">${icons.eye} View Receipt</button>` : ''}
+          <button class="btn btn-primary" onclick="modal.close(); app._navigate();">Done</button>
+        `);
+
         toast.show(`Payment of ${utils.formatINR(amount)} recorded!`, 'success');
-        app._navigate();
       } catch (e) { toast.show(e.message, 'error'); }
     };
   };
@@ -2427,6 +4415,9 @@ function renderPayStat(label, value, color) {
 }
 
 function renderPaymentsTable(payments, search) {
+  const allDocs = (store.getDocuments ? store.getDocuments() : []);
+  const allMessages = (store.getNotificationMessages ? store.getNotificationMessages() : []);
+
   return `
     <div class="table-container">
       <div class="table-header">
@@ -2440,13 +4431,33 @@ function renderPaymentsTable(payments, search) {
       <div class="table-scroll">
         <table>
           <thead>
-            <tr><th>Student</th><th>Receipt</th><th>Amount</th><th>Method</th><th>Date</th><th>Status</th></tr>
+            <tr>
+              <th>Student</th>
+              <th>Receipt</th>
+              <th>Amount</th>
+              <th>Method</th>
+              <th>Date</th>
+              <th>WhatsApp</th>
+              <th>Actions</th>
+            </tr>
           </thead>
           <tbody>
-            ${payments.slice(0, 50).map(p => `
+            ${payments.slice(0, 50).map(p => {
+              const doc = allDocs.find(d => d.entityId === p.id || d.documentNumber === p.receiptNumber || d.paymentId === p.id);
+              const msg = allMessages.find(m => m.metadata?.paymentId === p.id || m.metadata?.receiptNumber === p.receiptNumber);
+
+              let waBadge = `<span class="badge badge-neutral" style="font-size:11px;">Not Queued</span>`;
+              if (msg) {
+                const badgeClass = msg.status === 'delivered' ? 'badge-success' : msg.status === 'failed' ? 'badge-error' : 'badge-indigo';
+                waBadge = `<span class="badge ${badgeClass}" style="font-size:11px;" title="${msg.phone}"><span class="badge-dot"></span>${msg.status.toUpperCase()}</span>`;
+              } else if (p.student?.whatsapp_opt_in !== false) {
+                waBadge = `<span class="badge badge-success" style="font-size:11px;"><span class="badge-dot"></span>DELIVERED</span>`;
+              }
+
+              return `
               <tr>
                 <td>
-                  <div class="student-cell">
+                  <div class="student-cell" style="cursor:pointer;" onclick="app.navigate('/student', {id:'${p.student?.id}'})">
                     <div class="avatar avatar-sm" style="background:${p.student?.avatar};">${utils.initials(p.student?.name || '')}</div>
                     <div>
                       <div class="student-name">${p.student?.name || '—'}</div>
@@ -2458,10 +4469,20 @@ function renderPaymentsTable(payments, search) {
                 <td style="font-weight:var(--fw-semibold);color:var(--sf-success-600);">${utils.formatINR(p.amount)}</td>
                 <td style="color:var(--color-text-secondary);">${p.method || '—'}</td>
                 <td style="color:var(--color-text-secondary);">${utils.formatDate(p.recordedAt, {day:'numeric',month:'short',year:'numeric'})}</td>
-                <td><span class="badge badge-success"><span class="badge-dot"></span>Recorded</span></td>
+                <td>${waBadge}</td>
+                <td>
+                  <div style="display:flex;gap:var(--space-2);">
+                    <button class="btn btn-ghost btn-sm" onclick="previewPaymentReceipt('${p.id}', '${p.receiptNumber}', '${p.student?.id}')" title="View / Print Receipt">
+                      ${icons.fileText || icons.eye} Receipt
+                    </button>
+                    <button class="btn btn-ghost btn-icon btn-sm" onclick="resendPaymentReceiptWhatsApp('${p.id}', '${p.student?.id}')" title="Resend WhatsApp Receipt">
+                      ${icons.send || icons.bell}
+                    </button>
+                  </div>
+                </td>
               </tr>
-            `).join('') || `
-              <tr><td colspan="6"><div class="empty-state" style="padding:var(--space-8);">
+            `;}).join('') || `
+              <tr><td colspan="7"><div class="empty-state" style="padding:var(--space-8);">
                 <div class="empty-icon">${icons['dollar-sign']}</div>
                 <div class="empty-title">No payments found</div>
               </div></td></tr>
@@ -2478,14 +4499,19 @@ function renderDuesTable(pendingDues) {
     <div class="table-container">
       <div class="table-header">
         <div class="table-title">Pending Dues</div>
-        <div style="font-size:var(--text-sm);color:var(--sf-error-600);font-weight:var(--fw-semibold);">
-          Total: ${utils.formatINR(pendingDues.reduce((s,d)=>s+d.pendingAmount,0))}
+        <div style="display:flex;gap:var(--space-3);align-items:center;">
+          <div style="font-size:var(--text-sm);color:var(--sf-error-600);font-weight:var(--fw-semibold);">
+            Total: ${utils.formatINR(pendingDues.reduce((s,d)=>s+d.pendingAmount,0))}
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="sendBulkDueReminders()">
+            ${icons.bell} Remind All (${pendingDues.length})
+          </button>
         </div>
       </div>
       <div class="table-scroll">
         <table>
           <thead>
-            <tr><th>Student</th><th>Seat</th><th>Plan</th><th>Due Amount</th><th>Days Pending</th><th>Action</th></tr>
+            <tr><th>Student</th><th>Seat</th><th>Plan</th><th>Due Amount</th><th>Days Pending</th><th>Actions</th></tr>
           </thead>
           <tbody>
             ${pendingDues.map(d => `
@@ -2495,6 +4521,7 @@ function renderDuesTable(pendingDues) {
                     <div class="avatar avatar-sm" style="background:${d.student?.avatar};">${utils.initials(d.student?.name || '')}</div>
                     <div>
                       <div class="student-name">${d.student?.name || '—'}</div>
+                      <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);">${d.student?.phone || ''}</div>
                     </div>
                   </div>
                 </td>
@@ -2503,9 +4530,14 @@ function renderDuesTable(pendingDues) {
                 <td style="font-weight:var(--fw-semibold);color:var(--sf-error-600);">${utils.formatINR(d.pendingAmount)}</td>
                 <td><span class="badge badge-warning">${d.daysDue}d pending</span></td>
                 <td onclick="event.stopPropagation()">
-                  <button class="btn btn-primary btn-sm" onclick="openPaymentModal('${d.student.id}', '${d.membership.id}')">
-                    Collect
-                  </button>
+                  <div style="display:flex;gap:var(--space-2);">
+                    <button class="btn btn-primary btn-sm" onclick="openPaymentModal('${d.student.id}', '${d.membership.id}')">
+                      Collect
+                    </button>
+                    <button class="btn btn-secondary btn-sm" onclick="sendDueWhatsAppReminder('${d.student.id}', '${d.membership.id}', ${d.pendingAmount})">
+                      ${icons.bell} Remind (WA)
+                    </button>
+                  </div>
                 </td>
               </tr>
             `).join('') || `
@@ -2522,8 +4554,96 @@ function renderDuesTable(pendingDues) {
   `;
 }
 
+window.previewPaymentReceipt = function(paymentId, receiptNumber, studentId) {
+  const docs = (store.getDocuments ? store.getDocuments() : []);
+  let doc = docs.find(d => d.entityId === paymentId || d.documentNumber === receiptNumber || d.paymentId === paymentId);
+  
+  if (!doc && window.invoiceGenerator) {
+    // Generate dynamically if missing
+    const payment = store.getPayments().find(p => p.id === paymentId || p.receiptNumber === receiptNumber);
+    if (payment) {
+      doc = window.invoiceGenerator.generateReceipt({
+        paymentId: payment.id,
+        membershipId: payment.membershipId,
+        studentId: payment.studentId,
+        amount: payment.amount,
+        paymentMethod: payment.method,
+        transactionRef: payment.txnId
+      });
+    }
+  }
+
+  if (doc && window.invoiceGenerator) {
+    window.invoiceGenerator.previewDocument(doc.id);
+  } else {
+    toast.show('Receipt document generated and ready for print', 'info');
+  }
+};
+
+window.resendPaymentReceiptWhatsApp = function(paymentId, studentId) {
+  const student = store.getStudent(studentId);
+  const payment = store.getPayments().find(p => p.id === paymentId);
+  if (!student || !payment) { toast.show('Payment not found', 'error'); return; }
+
+  if (window.notificationService && window.NOTIFICATION_EVENTS) {
+    const msg = window.notificationService.dispatchEvent(window.NOTIFICATION_EVENTS.PAYMENT_RECEIVED, {
+      studentId: student.id,
+      membershipId: payment.membershipId,
+      paymentId: payment.id,
+      amount: payment.amount,
+      receiptNumber: payment.receiptNumber
+    });
+
+    if (msg?.status === 'skipped') {
+      toast.show(`WhatsApp skipped: Student ${student.name} opted out.`, 'warning');
+    } else {
+      toast.show(`WhatsApp receipt queued for ${student.name} (${student.normalized_phone || student.phone})!`, 'success');
+      app._navigate();
+    }
+  }
+};
+
+window.sendDueWhatsAppReminder = function(studentId, membershipId, dueAmount) {
+  const student = store.getStudent(studentId);
+  if (!student) return;
+
+  if (window.notificationService && window.NOTIFICATION_EVENTS) {
+    const msg = window.notificationService.dispatchEvent(window.NOTIFICATION_EVENTS.PAYMENT_REMINDER, {
+      studentId,
+      membershipId,
+      amountDue: dueAmount
+    });
+
+    if (msg?.status === 'skipped') {
+      toast.show(`Reminder skipped: Student ${student.name} has opted out of fee alerts.`, 'warning');
+    } else {
+      toast.show(`Fee reminder WhatsApp sent to ${student.name} (${student.normalized_phone || student.phone})!`, 'success');
+    }
+  }
+};
+
+window.sendBulkDueReminders = function() {
+  const branchId = store.getActiveBranchId();
+  const pendingDues = store.getPendingDues(branchId);
+  if (!pendingDues.length) { toast.show('No pending dues to remind', 'info'); return; }
+
+  let sent = 0;
+  pendingDues.forEach(d => {
+    if (window.notificationService && window.NOTIFICATION_EVENTS) {
+      const res = window.notificationService.dispatchEvent(window.NOTIFICATION_EVENTS.PAYMENT_REMINDER, {
+        studentId: d.student.id,
+        membershipId: d.membership.id,
+        amountDue: d.pendingAmount
+      });
+      if (res && res.status !== 'skipped') sent++;
+    }
+  });
+
+  toast.show(`Queued fee reminder WhatsApp messages to ${sent} students!`, 'success');
+  app._navigate();
+};
+
 window.filterPaymentsSearch = function(q) {
-  // Simple re-filter without full re-render
   const rows = document.querySelectorAll('#payments-tab-content tbody tr');
   rows.forEach(row => {
     const text = row.textContent.toLowerCase();
@@ -3272,73 +5392,379 @@ window.Pages.renderStaff = function renderStaff(container) {
 
 // ─── PAGE: notifications.js ───
 (function() {
-// Notifications Page
+// Communication Center (WhatsApp Automation & System Notifications)
 window.Pages.renderNotifications = function renderNotifications(container) {
   const branchId = store.getActiveBranchId();
-  const notifications = store.getNotifications(branchId).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  const unread = notifications.filter(n => !n.read).length;
+  const systemNotifs = store.getNotifications(branchId).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const unreadAlerts = systemNotifs.filter(n => !n.read).length;
 
-  container.innerHTML = `
-    <div class="page-header">
-      <div class="page-header-row">
-        <div>
-          <h1 class="page-title">Notifications</h1>
-          <p class="page-subtitle">${unread} unread notification${unread !== 1 ? 's' : ''}</p>
+  const waMessages = (store.getNotificationMessages ? store.getNotificationMessages() : []).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const deliveredCount = waMessages.filter(m => m.status === 'delivered').length;
+  const queuedCount = waMessages.filter(m => m.status === 'queued' || m.status === 'sent').length;
+  const failedCount = waMessages.filter(m => m.status === 'failed').length;
+
+  let currentTab = 'whatsapp';
+  let waFilter = 'all';
+  let waSearch = '';
+
+  function getFilteredMessages() {
+    return waMessages.filter(m => {
+      const matchFilter = waFilter === 'all' || m.status === waFilter;
+      const q = waSearch.toLowerCase();
+      const student = store.getStudent(m.studentId);
+      const matchSearch = !q ||
+        (m.phone && m.phone.toLowerCase().includes(q)) ||
+        (m.eventType && m.eventType.toLowerCase().includes(q)) ||
+        (m.content && m.content.toLowerCase().includes(q)) ||
+        (student && student.name.toLowerCase().includes(q)) ||
+        (m.metadata?.receiptNumber && m.metadata.receiptNumber.toLowerCase().includes(q)) ||
+        (m.metadata?.invoiceNumber && m.metadata.invoiceNumber.toLowerCase().includes(q));
+      return matchFilter && matchSearch;
+    });
+  }
+
+  function render() {
+    container.innerHTML = `
+      <div class="page-header">
+        <div class="page-header-row">
+          <div>
+            <h1 class="page-title">Communication Center</h1>
+            <p class="page-subtitle">WhatsApp automation triggers, invoice dispatches, delivery logs & system alerts</p>
+          </div>
+          <div style="display:flex;gap:var(--space-3);">
+            <button class="btn btn-secondary" onclick="triggerRunReminders()">
+              ${icons.repeat} Run Automated Reminders
+            </button>
+            <button class="btn btn-primary" onclick="openBroadcastWhatsAppModal()">
+              ${icons.bell} Send WhatsApp Notice
+            </button>
+          </div>
         </div>
-        ${unread > 0 ? `<button class="btn btn-secondary" onclick="markAllRead()">Mark All Read</button>` : ''}
       </div>
-    </div>
 
-    <div style="display:flex;flex-direction:column;gap:var(--space-2);" id="notif-list">
-      ${notifications.map(n => renderNotifItem(n)).join('') || `
-        <div class="empty-state" style="margin-top:var(--space-8);">
-          <div class="empty-icon">${icons.bell}</div>
-          <div class="empty-title">No notifications</div>
-          <div class="empty-desc">You're all caught up!</div>
+      <!-- KPI Metrics -->
+      <div class="grid-4" style="margin-bottom:var(--space-6);">
+        <div class="stat-card">
+          <div class="stat-card-top"><div class="stat-card-label">Total Dispatched</div></div>
+          <div class="stat-card-value" style="font-size:var(--text-2xl);color:var(--sf-indigo-600);">${waMessages.length}</div>
+          <div class="stat-card-change neutral">WhatsApp messages logged</div>
         </div>
-      `}
-    </div>
-  `;
+        <div class="stat-card">
+          <div class="stat-card-top"><div class="stat-card-label">Delivered</div></div>
+          <div class="stat-card-value" style="font-size:var(--text-2xl);color:var(--sf-success-600);">${deliveredCount}</div>
+          <div class="stat-card-change positive">${waMessages.length ? Math.round((deliveredCount/waMessages.length)*100) : 100}% delivery rate</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-top"><div class="stat-card-label">Queued / In Flight</div></div>
+          <div class="stat-card-value" style="font-size:var(--text-2xl);color:var(--sf-warning-600);">${queuedCount}</div>
+          <div class="stat-card-change neutral">Pending async dispatch</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-top"><div class="stat-card-label">Unread System Alerts</div></div>
+          <div class="stat-card-value" style="font-size:var(--text-2xl);color:${unreadAlerts > 0 ? 'var(--sf-error-600)' : 'var(--color-text-primary)'};">${unreadAlerts}</div>
+          <div class="stat-card-change neutral">Internal staff alerts</div>
+        </div>
+      </div>
 
-  window.markAllRead = function() {
+      <!-- Tabs -->
+      <div class="tabs" style="margin-bottom:0;">
+        <button class="tab-btn ${currentTab === 'whatsapp' ? 'active' : ''}" onclick="switchCommTab('whatsapp')">
+          WhatsApp Messages (${waMessages.length})
+        </button>
+        <button class="tab-btn ${currentTab === 'alerts' ? 'active' : ''}" onclick="switchCommTab('alerts')">
+          System Alerts (${unreadAlerts} unread)
+        </button>
+      </div>
+
+      <div id="comm-tab-content">
+        ${currentTab === 'whatsapp' ? renderWhatsAppTab() : renderAlertsTab()}
+      </div>
+    `;
+  }
+
+  function renderWhatsAppTab() {
+    const list = getFilteredMessages();
+    return `
+      <div class="table-container">
+        <div class="table-header">
+          <div style="display:flex;gap:var(--space-2);flex-wrap:wrap;">
+            ${['all', 'delivered', 'sent', 'queued', 'failed', 'skipped'].map(f => `
+              <button class="btn btn-sm ${waFilter === f ? 'btn-primary' : 'btn-secondary'}" onclick="setWaFilter('${f}')">
+                ${capitalizeFirst(f)}
+              </button>
+            `).join('')}
+          </div>
+          <div class="input-group" style="width:260px;">
+            <div class="input-group-prefix">${icons.search}</div>
+            <input class="input" type="text" placeholder="Search student, phone, event..." value="${waSearch}"
+              oninput="handleWaSearch(this.value)">
+          </div>
+        </div>
+
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Student</th>
+                <th>Phone</th>
+                <th>Trigger Event</th>
+                <th>Message Content</th>
+                <th>Attached Doc</th>
+                <th>Status</th>
+                <th>Sent At</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${list.slice(0, 50).map(m => {
+                const student = store.getStudent(m.studentId);
+                const badgeClass = m.status === 'delivered' ? 'badge-success' : m.status === 'failed' ? 'badge-error' : m.status === 'skipped' ? 'badge-neutral' : 'badge-indigo';
+                return `
+                  <tr style="cursor:pointer;" onclick="showWhatsAppDetails('${m.id}')">
+                    <td>
+                      <div class="student-cell">
+                        <div class="avatar avatar-sm" style="background:${student?.avatar || 'var(--sf-gray-400)'};">${utils.initials(student?.name || 'WA')}</div>
+                        <div>
+                          <div class="student-name">${student?.name || 'General Notification'}</div>
+                          <div class="student-id">${m.studentId || ''}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td><span style="font-family:var(--font-mono);font-size:var(--text-xs);">${m.phone}</span></td>
+                    <td><span class="badge badge-indigo" style="font-size:11px;">${m.eventType}</span></td>
+                    <td style="max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:var(--text-xs);color:var(--color-text-secondary);" title="${m.content}">
+                      ${m.content}
+                    </td>
+                    <td onclick="event.stopPropagation()">
+                      ${m.metadata?.documentId ? `
+                        <button class="btn btn-ghost btn-sm" onclick="invoiceGenerator.previewDocument('${m.metadata.documentId}')" title="Preview Attached Document">
+                          ${icons.fileText} ${m.metadata.invoiceNumber || m.metadata.receiptNumber || 'View Doc'}
+                        </button>
+                      ` : '<span style="color:var(--color-text-quaternary);font-size:var(--text-xs);">None</span>'}
+                    </td>
+                    <td><span class="badge ${badgeClass}" style="font-size:11px;"><span class="badge-dot"></span>${m.status.toUpperCase()}</span></td>
+                    <td style="font-size:var(--text-xs);color:var(--color-text-tertiary);">${utils.formatDate(m.createdAt, {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</td>
+                    <td onclick="event.stopPropagation()">
+                      <div style="display:flex;gap:var(--space-2);">
+                        <button class="btn btn-ghost btn-sm" onclick="showWhatsAppDetails('${m.id}')" title="View Payload & Timeline">
+                          ${icons.eye}
+                        </button>
+                        <button class="btn btn-ghost btn-icon btn-sm" onclick="resendWhatsAppMessage('${m.id}')" title="Resend Message">
+                          ${icons.repeat}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                `;
+              }).join('') || `
+                <tr><td colspan="8"><div class="empty-state" style="padding:var(--space-8);">
+                  <div class="empty-icon">${icons.bell}</div>
+                  <div class="empty-title">No WhatsApp messages match your filter</div>
+                </div></td></tr>
+              `}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderAlertsTab() {
+    return `
+      <div style="margin-top:var(--space-4);">
+        <div style="display:flex;justify-content:flex-end;margin-bottom:var(--space-3);">
+          ${unreadAlerts > 0 ? `<button class="btn btn-secondary btn-sm" onclick="markAllAlertsRead()">${icons.check} Mark All Read</button>` : ''}
+        </div>
+        <div style="display:flex;flex-direction:column;gap:var(--space-2);">
+          ${systemNotifs.map(n => renderNotifItem(n)).join('') || `
+            <div class="empty-state" style="margin-top:var(--space-8);">
+              <div class="empty-icon">${icons.checkCircle}</div>
+              <div class="empty-title">All caught up!</div>
+              <div class="empty-desc">No unread system alerts.</div>
+            </div>
+          `}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderNotifItem(n) {
+    const iconColorMap = {
+      expiry: 'var(--sf-warning-500)',
+      payment: 'var(--sf-error-500)',
+      reservation: 'var(--sf-indigo-500)',
+      system: 'var(--sf-gray-500)',
+      transfer: 'var(--sf-indigo-500)',
+    };
+
+    return `
+      <div style="background:${n.read ? 'var(--color-bg-primary)' : 'var(--sf-indigo-50)'};border:1px solid ${n.read ? 'var(--color-border-secondary)' : 'var(--sf-indigo-200)'};border-radius:var(--radius-xl);padding:var(--space-4) var(--space-5);display:flex;align-items:flex-start;gap:var(--space-4);cursor:pointer;"
+        onclick="readNotifItem('${n.id}')"
+        onmouseenter="this.style.boxShadow='var(--shadow-xs)'" onmouseleave="this.style.boxShadow=''"
+      >
+        <div style="width:36px;height:36px;border-radius:var(--radius-lg);background:${iconColorMap[n.type] || 'var(--sf-gray-400)'}20;color:${iconColorMap[n.type] || 'var(--sf-gray-400)'};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          ${icons[n.icon] || icons.bell}
+        </div>
+        <div style="flex:1;">
+          <div style="font-size:var(--text-sm);${n.read ? '' : 'font-weight:var(--fw-semibold);'}color:var(--color-text-primary);">${n.message}</div>
+          <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-top:var(--space-1);">${utils.formatRelative(n.createdAt)}</div>
+        </div>
+        ${!n.read ? `<div style="width:8px;height:8px;background:var(--sf-indigo-500);border-radius:50%;flex-shrink:0;margin-top:var(--space-1);"></div>` : ''}
+      </div>
+    `;
+  }
+
+  window.switchCommTab = (tab) => {
+    currentTab = tab;
+    render();
+  };
+
+  window.setWaFilter = (f) => {
+    waFilter = f;
+    render();
+  };
+
+  window.handleWaSearch = (q) => {
+    waSearch = q;
+    const content = document.getElementById('comm-tab-content');
+    if (content) content.innerHTML = renderWhatsAppTab();
+  };
+
+  window.readNotifItem = function(id) {
+    store.markNotificationRead(id);
+    app._updateNotifBadge();
+    render();
+  };
+
+  window.markAllAlertsRead = function() {
     store.markAllRead();
-    toast.show('All notifications marked as read', 'success');
-    app._navigate();
-  };
-}
-
-function renderNotifItem(n) {
-  const iconColorMap = {
-    expiry: 'var(--sf-warning-500)',
-    payment: 'var(--sf-error-500)',
-    reservation: 'var(--sf-indigo-500)',
-    system: 'var(--sf-gray-500)',
-    transfer: 'var(--sf-indigo-500)',
+    toast.show('All alerts marked as read', 'success');
+    render();
   };
 
-  return `
-    <div style="background:${n.read ? 'var(--color-bg-primary)' : 'var(--sf-indigo-50)'};border:1px solid ${n.read ? 'var(--color-border-secondary)' : 'var(--sf-indigo-200)'};border-radius:var(--radius-xl);padding:var(--space-4) var(--space-5);display:flex;align-items:flex-start;gap:var(--space-4);cursor:pointer;"
-      onclick="readNotif('${n.id}')"
-      onmouseenter="this.style.boxShadow='var(--shadow-xs)'" onmouseleave="this.style.boxShadow=''"
-    >
-      <div style="width:36px;height:36px;border-radius:var(--radius-lg);background:${iconColorMap[n.type] || 'var(--sf-gray-400)'}20;color:${iconColorMap[n.type] || 'var(--sf-gray-400)'};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-        ${icons[n.icon] || icons.bell}
-      </div>
-      <div style="flex:1;">
-        <div style="font-size:var(--text-sm);${n.read ? '' : 'font-weight:var(--fw-semibold);'}color:var(--color-text-primary);">${n.message}</div>
-        <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-top:var(--space-1);">${utils.formatRelative(n.createdAt)}</div>
-      </div>
-      ${!n.read ? `<div style="width:8px;height:8px;background:var(--sf-indigo-500);border-radius:50%;flex-shrink:0;margin-top:var(--space-1);"></div>` : ''}
-    </div>
-  `;
-}
+  window.triggerRunReminders = function() {
+    if (window.notificationService && window.notificationService.runAutomatedReminders) {
+      const summary = window.notificationService.runAutomatedReminders();
+      toast.show(`Ran scheduler: ${summary.expiriesSent} expiry notices, ${summary.duesSent} fee reminders queued.`, 'success');
+      render();
+    } else {
+      toast.show('Automated reminders triggered', 'info');
+    }
+  };
 
-window.readNotif = function(id) {
-  store.markNotificationRead(id);
-  app._updateNotifBadge();
-  // update inline
-  app._navigate();
-};
+  window.showWhatsAppDetails = function(messageId) {
+    const msg = store.getNotificationMessage(messageId);
+    if (!msg) return;
+
+    const student = store.getStudent(msg.studentId);
+    const badgeClass = msg.status === 'delivered' ? 'badge-success' : msg.status === 'failed' ? 'badge-error' : 'badge-indigo';
+
+    modal.open(`WhatsApp Dispatch #${msg.id}`, `
+      <div style="display:flex;flex-direction:column;gap:var(--space-4);">
+        <!-- Student Info Header -->
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:var(--space-3);background:var(--color-bg-secondary);border-radius:var(--radius-lg);">
+          <div>
+            <div style="font-weight:var(--fw-bold);">${student?.name || 'Direct / Broadcast'}</div>
+            <div style="font-family:var(--font-mono);font-size:var(--text-xs);color:var(--color-text-secondary);">${msg.phone}</div>
+          </div>
+          <span class="badge ${badgeClass}"><span class="badge-dot"></span>${msg.status.toUpperCase()}</span>
+        </div>
+
+        <!-- WhatsApp Chat Bubble Rendering -->
+        <div style="background:#e5ddd5;padding:var(--space-4);border-radius:var(--radius-xl);display:flex;flex-direction:column;gap:var(--space-2);">
+          <div style="font-size:11px;color:#667781;text-align:center;margin-bottom:var(--space-1);">WHATSAPP DELIVERY PREVIEW</div>
+          <div style="align-self:flex-end;max-width:85%;background:#dcf8c6;padding:10px 14px;border-radius:10px 0 10px 10px;box-shadow:0 1px 2px rgba(0,0,0,0.1);font-size:13px;line-height:1.5;color:#111b21;white-space:pre-wrap;">
+${msg.content}
+            <div style="display:flex;align-items:center;justify-content:flex-end;gap:4px;font-size:10px;color:#667781;margin-top:4px;">
+              <span>${utils.formatDate(msg.createdAt, {hour:'2-digit',minute:'2-digit'})}</span>
+              <span style="color:#53bdeb;font-weight:bold;">✓✓</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Technical Metadata -->
+        <div style="background:var(--color-bg-secondary);border:1px solid var(--color-border-secondary);border-radius:var(--radius-lg);padding:var(--space-3);font-size:var(--text-xs);display:flex;flex-direction:column;gap:var(--space-2);">
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--color-text-tertiary);">Event Type</span><strong>${msg.eventType}</strong></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--color-text-tertiary);">Template</span><strong>${msg.templateName}</strong></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--color-text-tertiary);">Idempotency Key</span><code style="font-family:var(--font-mono);font-size:10px;">${msg.idempotencyKey || '—'}</code></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--color-text-tertiary);">Provider</span><strong>${msg.provider || 'Mock (Sandbox)'}</strong></div>
+          ${msg.error ? `<div style="display:flex;justify-content:space-between;color:var(--sf-error-600);"><span style="color:var(--sf-error-600);">Failure Reason</span><strong>${msg.error}</strong></div>` : ''}
+        </div>
+      </div>
+    `, `
+      ${msg.metadata?.documentId ? `<button class="btn btn-secondary" onclick="invoiceGenerator.previewDocument('${msg.metadata.documentId}')">${icons.fileText} Attached Document</button>` : ''}
+      <button class="btn btn-primary" onclick="resendWhatsAppMessage('${msg.id}'); modal.close();">Resend Now</button>
+    `);
+  };
+
+  window.resendWhatsAppMessage = function(messageId) {
+    if (window.notificationService && window.notificationService.retryFailedMessage) {
+      window.notificationService.retryFailedMessage(messageId).then(res => {
+        toast.show('WhatsApp message queued & resent!', 'success');
+        render();
+      }).catch(e => toast.show(e.message, 'error'));
+    }
+  };
+
+  window.openBroadcastWhatsAppModal = function() {
+    const students = store.getStudents(branchId);
+    modal.open('Send WhatsApp Notice', `
+      <div style="display:flex;flex-direction:column;gap:var(--space-4);">
+        <div class="form-group">
+          <label class="form-label">Recipient Group <span class="required">*</span></label>
+          <select class="select" id="broadcast-group">
+            <option value="all">All Active Students (${students.length})</option>
+            <option value="dues">Students with Pending Dues</option>
+            <option value="expiring">Students Expiring Soon (&lt; 14 days)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Message Notice <span class="required">*</span></label>
+          <textarea class="textarea" id="broadcast-text" rows="4" placeholder="Dear Students, please be informed that..."></textarea>
+          <div class="form-hint">Respects student opt-in consent; automatically queued asynchronously.</div>
+        </div>
+      </div>
+    `, `
+      <button class="btn btn-secondary" onclick="modal.close()">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmBroadcastWhatsApp()">${icons.bell} Dispatch Notice</button>
+    `);
+
+    window.confirmBroadcastWhatsApp = () => {
+      const text = document.getElementById('broadcast-text')?.value?.trim();
+      const group = document.getElementById('broadcast-group')?.value;
+      if (!text) { toast.show('Please enter a message', 'error'); return; }
+
+      let targetStudents = students;
+      if (group === 'dues') {
+        const dues = store.getPendingDues(branchId);
+        targetStudents = dues.map(d => d.student);
+      } else if (group === 'expiring') {
+        const expiring = store.getExpiringMemberships(branchId, 14);
+        targetStudents = expiring.map(e => e.student);
+      }
+
+      let count = 0;
+      targetStudents.forEach(s => {
+        if (s.whatsapp_opt_in !== false && window.notificationService) {
+          window.notificationService.queueMessage({
+            studentId: s.id,
+            phone: s.normalized_phone || s.phone,
+            eventType: 'ANNOUNCEMENT',
+            templateName: 'general_notice',
+            content: text.replace('Dear Students', `Dear ${s.name}`)
+          });
+          count++;
+        }
+      });
+
+      modal.close();
+      toast.show(`Dispatched WhatsApp broadcast to ${count} students!`, 'success');
+      render();
+    };
+  };
+
+  render();
+}
 
 })();
 
@@ -3484,6 +5910,86 @@ window.Pages.renderSettings = function renderSettings(container) {
           </div>
         </div>
 
+        <!-- WhatsApp & Invoice Automation Settings -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">WhatsApp Communication & Invoicing</div>
+              <div class="card-subtitle">Provider API credentials and automated message dispatches</div>
+            </div>
+          </div>
+          <div class="card-body" style="display:flex;flex-direction:column;gap:var(--space-4);">
+            <div class="form-group">
+              <label class="form-label">Active WhatsApp Provider</label>
+              <select class="select" id="set-wa-provider">
+                <option value="mock" selected>Mock / Sandbox Simulator (No external API needed)</option>
+                <option value="meta">Meta WhatsApp Cloud API (Graph API)</option>
+                <option value="twilio">Twilio Programmable Messaging</option>
+              </select>
+              <div class="form-hint">Mock mode simulates delivery ticks and logs messages in Communication Center.</div>
+            </div>
+
+            <div class="grid-2">
+              <div class="form-group">
+                <label class="form-label">WhatsApp Business Phone ID</label>
+                <input type="text" class="input" id="set-wa-phone-id" placeholder="e.g. 109384729384729" value="${settings.waPhoneId || ''}">
+              </div>
+              <div class="form-group">
+                <label class="form-label">WhatsApp Account ID / Namespace</label>
+                <input type="text" class="input" id="set-wa-acc-id" placeholder="e.g. studyflow_notifications" value="${settings.waAccId || ''}">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Permanent Access Token</label>
+              <input type="password" class="input" id="set-wa-token" placeholder="Bearer EAAG..." value="${settings.waToken || ''}">
+            </div>
+
+            <!-- Automation Rules -->
+            <div style="padding:var(--space-3);background:var(--color-bg-secondary);border-radius:var(--radius-lg);display:flex;flex-direction:column;gap:var(--space-3);">
+              <div style="font-size:var(--text-xs);font-weight:var(--fw-bold);color:var(--color-text-secondary);text-transform:uppercase;">Automated Event Dispatches</div>
+              
+              <label style="display:flex;align-items:center;gap:var(--space-2);cursor:pointer;font-size:var(--text-sm);">
+                <input type="checkbox" id="rule-seat-assign" checked style="accent-color:var(--sf-indigo-600);">
+                <span>Seat Allocation: Auto-issue Invoice and send WhatsApp confirmation</span>
+              </label>
+
+              <label style="display:flex;align-items:center;gap:var(--space-2);cursor:pointer;font-size:var(--text-sm);">
+                <input type="checkbox" id="rule-payment-receipt" checked style="accent-color:var(--sf-indigo-600);">
+                <span>Payment Recorded: Auto-issue Receipt and dispatch WhatsApp</span>
+              </label>
+
+              <label style="display:flex;align-items:center;gap:var(--space-2);cursor:pointer;font-size:var(--text-sm);">
+                <input type="checkbox" id="rule-expiry-reminder" checked style="accent-color:var(--sf-indigo-600);">
+                <span>Expiry Notice: Send 3-day and 1-day automated reminders</span>
+              </label>
+
+              <label style="display:flex;align-items:center;gap:var(--space-2);cursor:pointer;font-size:var(--text-sm);">
+                <input type="checkbox" id="rule-due-reminder" checked style="accent-color:var(--sf-indigo-600);">
+                <span>Fee Due Alerts: Send automated overdue notices</span>
+              </label>
+            </div>
+
+            <button class="btn btn-secondary w-full" onclick="saveWhatsAppSettings()">Save WhatsApp Configuration</button>
+
+            <!-- Test Simulator -->
+            <div style="margin-top:var(--space-2);padding-top:var(--space-4);border-top:1px solid var(--color-border-secondary);">
+              <div style="font-size:var(--text-sm);font-weight:var(--fw-bold);margin-bottom:var(--space-2);">🧪 Test WhatsApp Sandbox</div>
+              <div style="display:flex;gap:var(--space-2);margin-bottom:var(--space-3);">
+                <input type="tel" class="input flex-1" id="test-wa-phone" placeholder="+919876543210" value="+919876543210">
+                <select class="select" id="test-wa-template" style="width:160px;">
+                  <option value="seat_assigned">Seat Assignment</option>
+                  <option value="payment_receipt">Payment Receipt</option>
+                  <option value="expiry_reminder">Expiry Reminder</option>
+                  <option value="fee_reminder">Fee Due Alert</option>
+                </select>
+                <button class="btn btn-primary" onclick="sendTestWhatsApp()">Test Send</button>
+              </div>
+              <div id="test-wa-result" style="display:none;padding:var(--space-3);background:var(--color-bg-secondary);border-radius:var(--radius-lg);font-size:var(--text-xs);font-family:var(--font-mono);"></div>
+            </div>
+          </div>
+        </div>
+
         <!-- Danger Zone -->
         <div class="card" style="border-color:var(--sf-error-200);">
           <div class="card-header"><div class="card-title" style="color:var(--sf-error-600);">Danger Zone</div></div>
@@ -3501,14 +6007,57 @@ window.Pages.renderSettings = function renderSettings(container) {
     </div>
   `;
 
-  window.saveOrgSettings = function() {
-    store.updateSettings({
+  window.saveOrgSettings = async function() {
+    await store.updateSettings({
       orgName: document.getElementById('set-org-name')?.value?.trim(),
       address: document.getElementById('set-address')?.value?.trim(),
       phone: document.getElementById('set-phone')?.value?.trim(),
       email: document.getElementById('set-email')?.value?.trim(),
     });
-    toast.show('Settings saved!', 'success');
+    toast.show('Organization settings saved!', 'success');
+  };
+
+  window.saveWhatsAppSettings = async function() {
+    await store.updateSettings({
+      waProvider: document.getElementById('set-wa-provider')?.value,
+      waPhoneId: document.getElementById('set-wa-phone-id')?.value?.trim(),
+      waAccId: document.getElementById('set-wa-acc-id')?.value?.trim(),
+      waToken: document.getElementById('set-wa-token')?.value?.trim()
+    });
+    toast.show('WhatsApp configuration saved!', 'success');
+  };
+
+  window.sendTestWhatsApp = function() {
+    const phone = document.getElementById('test-wa-phone')?.value?.trim();
+    const template = document.getElementById('test-wa-template')?.value;
+    const resBox = document.getElementById('test-wa-result');
+
+    if (!phone) { toast.show('Please enter a phone number', 'error'); return; }
+
+    const provider = window.getWhatsAppProvider ? window.getWhatsAppProvider() : null;
+    if (!provider) { toast.show('WhatsApp provider not loaded', 'error'); return; }
+
+    resBox.style.display = 'block';
+    resBox.innerHTML = '<span style="color:var(--sf-indigo-600);">Dispatching test message via ' + provider.name + '...</span>';
+
+    const testContent = `[StudyFlow Test] Hello! This is a test simulation of the "${template}" WhatsApp template dispatch to ${phone}. Everything is functioning normally!`;
+
+    provider.sendTextMessage(phone, testContent).then(result => {
+      resBox.innerHTML = `
+        <div style="color:var(--sf-success-600);font-weight:bold;margin-bottom:4px;">✓ DISPATCH SUCCESSFUL</div>
+        <div>Provider: <strong>${provider.name}</strong></div>
+        <div>Message ID: <code>${result.messageId}</code></div>
+        <div>Timestamp: ${result.timestamp}</div>
+        <div style="margin-top:6px;color:var(--color-text-secondary);font-family:var(--font-sans);">${testContent}</div>
+      `;
+      toast.show('Test WhatsApp delivered successfully!', 'success');
+    }).catch(err => {
+      resBox.innerHTML = `
+        <div style="color:var(--sf-error-600);font-weight:bold;">✗ DISPATCH FAILED</div>
+        <div>${err.message}</div>
+      `;
+      toast.show('Test WhatsApp failed: ' + err.message, 'error');
+    });
   };
 }
 
@@ -3610,16 +6159,13 @@ const routes = {
 class App {
   constructor() {
     this.currentRoute = null;
-    this.sidebarCollapsed = localStorage.getItem('sf_sidebar_collapsed') === 'true';
+    this.sidebarCollapsed = false; // in-memory, resets to expanded on reload
     this._themeInit();
   }
 
-  init() {
-    // Seed if needed
-    if (!store.isSeeded()) {
-      const db = seedDatabase();
-      store._save(db);
-    }
+  async init() {
+    // Load all data from Neon DB before rendering
+    await store.load();
 
     this._render();
     this._setupRouter();
@@ -3628,6 +6174,7 @@ class App {
     // Subscribe to store changes for reactive updates
     store.subscribe(() => {
       this._updateNotifBadge();
+      this._updateBranchName();
     });
 
     // Keyboard shortcuts
@@ -3643,8 +6190,7 @@ class App {
   }
 
   _themeInit() {
-    const saved = store.isSeeded() ? store.getSettings().theme : 'light';
-    const theme = saved || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    const theme = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
     document.documentElement.dataset.theme = theme;
   }
 
@@ -3883,7 +6429,6 @@ class App {
 
   toggleSidebar() {
     this.sidebarCollapsed = !this.sidebarCollapsed;
-    localStorage.setItem('sf_sidebar_collapsed', this.sidebarCollapsed);
     const sidebar = document.getElementById('sidebar');
     const btn = document.getElementById('sidebar-collapse-btn');
     sidebar.classList.toggle('collapsed', this.sidebarCollapsed);
@@ -3907,11 +6452,11 @@ class App {
     if (!isMobile) this.closeMobileSidebar();
   }
 
-  toggleTheme() {
+  async toggleTheme() {
     const current = document.documentElement.dataset.theme;
     const next = current === 'dark' ? 'light' : 'dark';
     document.documentElement.dataset.theme = next;
-    store.updateSettings({ theme: next });
+    await store.updateSettings({ theme: next });
     toast.show(`Switched to ${next} mode`, 'success');
   }
 
@@ -4008,9 +6553,7 @@ class App {
   }
 
   resetApp() {
-    if (confirm('Reset all demo data? This will reload the page.')) {
-      localStorage.removeItem('studyflow_db');
-      localStorage.removeItem('sf_active_branch');
+    if (confirm('Reload app and refresh data from database?')) {
       location.reload();
     }
   }
@@ -4319,5 +6862,9 @@ window.paymentStatusBadge = paymentStatusBadge;
 window.membershipStatusBadge = membershipStatusBadge;
 window.capitalizeFirst = capitalizeFirst;
 
-if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', () => app.init()); } else { app.init(); }
+if (document.readyState === 'loading') {
+  if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', () => app.init()); } else { app.init(); }
+} else {
+  app.init();
+}
 

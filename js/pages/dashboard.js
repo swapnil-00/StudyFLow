@@ -20,6 +20,10 @@ export function renderDashboard(container) {
           <p class="page-subtitle">Here's what's happening at <strong>${branch?.name || 'your library'}</strong> today.</p>
         </div>
         <div style="display:flex;gap:var(--space-3);">
+          <button class="btn btn-secondary" onclick="app.navigate('/notifications')">
+            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--sf-success-500);margin-right:6px;"></span>
+            WhatsApp Active
+          </button>
           <button class="btn btn-secondary" onclick="app.navigate('/seat-map')">
             ${icons.map} View Seat Map
           </button>
@@ -43,6 +47,32 @@ export function renderDashboard(container) {
       ${renderStatCard('Expiring Soon', stats.expiringCount, 'Within 14 days', 'expiring', '#fef0c7', '#dc6803', icons.clock)}
       ${renderStatCard("Today's Attendance", stats.presentToday, `of ${store.getStudents(branchId).length} students`, 'attendance', '#ecfdf3', '#079455', icons.checkCircle)}
       ${renderStatCard('Under Maintenance', stats.maintenance, 'Seats blocked', 'maintenance', '#f3f4f6', '#6c737f', icons.tool)}
+    </div>
+
+    <!-- WhatsApp & Invoice Automation Banner -->
+    <div style="background:linear-gradient(135deg, var(--sf-indigo-900) 0%, #1e1b4b 100%);color:white;border-radius:var(--radius-xl);padding:var(--space-4) var(--space-5);margin-bottom:var(--space-6);display:flex;align-items:center;justify-content:space-between;box-shadow:0 4px 14px rgba(0,0,0,0.08);">
+      <div style="display:flex;align-items:center;gap:var(--space-4);">
+        <div style="width:44px;height:44px;background:rgba(255,255,255,0.12);border-radius:var(--radius-lg);display:flex;align-items:center;justify-content:center;color:#4ade80;">
+          ${icons.bell}
+        </div>
+        <div>
+          <div style="font-size:var(--text-sm);font-weight:var(--fw-bold);display:flex;align-items:center;gap:var(--space-2);">
+            <span>WhatsApp & Invoice Automation Active</span>
+            <span class="badge" style="background:rgba(74,222,128,0.2);color:#4ade80;font-size:10px;border:none;">● LIVE</span>
+          </div>
+          <div style="font-size:var(--text-xs);color:rgba(255,255,255,0.7);margin-top:2px;">
+            Seat assignments auto-generate tax invoices & receipts with instant WhatsApp delivery.
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;gap:var(--space-2);">
+        <button class="btn btn-sm" style="background:rgba(255,255,255,0.15);color:white;border:none;" onclick="triggerRunReminders()">
+          ${icons.repeat} Run Reminders
+        </button>
+        <button class="btn btn-sm" style="background:white;color:var(--sf-indigo-950);border:none;font-weight:var(--fw-semibold);" onclick="app.navigate('/notifications')">
+          View Logs
+        </button>
+      </div>
     </div>
 
     <!-- Charts + Lists Row -->

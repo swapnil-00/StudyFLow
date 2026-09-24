@@ -192,6 +192,7 @@ window.openStudentActions = function(event, studentId) {
 
   menu.innerHTML = `
     <button class="dropdown-item" onclick="app.navigate('/student', {id:'${studentId}'}); document.getElementById('student-actions-menu')?.remove()">${icons.eye} View Profile</button>
+    <button class="dropdown-item" onclick="openSendWhatsAppModal('${studentId}'); document.getElementById('student-actions-menu')?.remove()">${icons.bell} Send WhatsApp Message</button>
     ${!assignment ? `<button class="dropdown-item" onclick="openAssignModal(); document.getElementById('student-actions-menu')?.remove()">${icons['map-pin']} Assign Seat</button>` : ''}
     ${assignment ? `<button class="dropdown-item" onclick="openTransferModal('${assignment.seatId}'); document.getElementById('student-actions-menu')?.remove()">${icons['arrow-right']} Transfer Seat</button>` : ''}
     ${membership ? `<button class="dropdown-item" onclick="openPaymentModal('${studentId}', '${membership.id}'); document.getElementById('student-actions-menu')?.remove()">${icons['dollar-sign']} Record Payment</button>` : ''}
@@ -224,8 +225,16 @@ window.openAddStudentModal = function() {
           <input type="text" class="input" id="new-student-name" placeholder="Rahul Sharma">
         </div>
         <div class="form-group">
-          <label class="form-label">Phone <span class="required">*</span></label>
-          <input type="tel" class="input" id="new-student-phone" placeholder="9876543210">
+          <label class="form-label">WhatsApp Phone <span class="required">*</span></label>
+          <div style="display:flex;gap:var(--space-2);">
+            <select class="select" id="new-student-cc" style="width:105px;flex-shrink:0;">
+              <option value="+91" selected>🇮🇳 +91</option>
+              <option value="+1">🇺🇸 +1</option>
+              <option value="+44">🇬🇧 +44</option>
+              <option value="+971">🇦🇪 +971</option>
+            </select>
+            <input type="tel" class="input flex-1" id="new-student-phone" placeholder="9876543210" maxlength="15">
+          </div>
         </div>
       </div>
       <div class="grid-2">
@@ -234,29 +243,39 @@ window.openAddStudentModal = function() {
           <input type="email" class="input" id="new-student-email" placeholder="student@email.com">
         </div>
         <div class="form-group">
-          <label class="form-label">Gender</label>
-          <select class="select" id="new-student-gender">
-            <option>Male</option><option>Female</option><option>Other</option>
+          <label class="form-label">Preferred Notification Language</label>
+          <select class="select" id="new-student-lang">
+            <option value="en" selected>English</option>
+            <option value="hi">हिन्दी (Hindi)</option>
+            <option value="mr">मराठी (Marathi)</option>
           </select>
         </div>
       </div>
       <div class="grid-2">
         <div class="form-group">
+          <label class="form-label">Gender</label>
+          <select class="select" id="new-student-gender">
+            <option>Male</option><option>Female</option><option>Other</option>
+          </select>
+        </div>
+        <div class="form-group">
           <label class="form-label">Course / Exam</label>
           <input type="text" class="input" id="new-student-course" placeholder="UPSC Civil Services">
         </div>
+      </div>
+      <div class="grid-2">
         <div class="form-group">
           <label class="form-label">College / Institution</label>
           <input type="text" class="input" id="new-student-college" placeholder="City College">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Date of Birth</label>
+          <input type="date" class="input" id="new-student-dob">
         </div>
       </div>
       <div class="form-group">
         <label class="form-label">Address</label>
         <input type="text" class="input" id="new-student-address" placeholder="Full address">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Date of Birth</label>
-        <input type="date" class="input" id="new-student-dob">
       </div>
       <div class="grid-2">
         <div class="form-group">
@@ -267,6 +286,19 @@ window.openAddStudentModal = function() {
           <label class="form-label">Emergency Contact Phone</label>
           <input type="tel" class="input" id="new-ec-phone" placeholder="9876543210">
         </div>
+      </div>
+
+      <!-- WhatsApp Consent Disclosure -->
+      <div style="padding:var(--space-3);background:var(--color-bg-secondary);border:1px solid var(--color-border-secondary);border-radius:var(--radius-lg);">
+        <label style="display:flex;align-items:flex-start;gap:var(--space-3);cursor:pointer;font-size:var(--text-sm);margin:0;">
+          <input type="checkbox" id="new-student-optin" checked style="accent-color:var(--sf-success-600);width:16px;height:16px;margin-top:2px;">
+          <div>
+            <span style="font-weight:var(--fw-medium);color:var(--color-text-primary);">Opt-in for WhatsApp Notifications & Digital Receipts</span>
+            <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-top:2px;">
+              Automatically send seat confirmations, invoices, tax receipts, and renewal reminders via WhatsApp to this student.
+            </div>
+          </div>
+        </label>
       </div>
     </div>
   `, `
@@ -279,8 +311,10 @@ window.openAddStudentModal = function() {
 
 window.confirmAddStudent = function(branchId) {
   const name = document.getElementById('new-student-name')?.value?.trim();
-  const phone = document.getElementById('new-student-phone')?.value?.trim();
+  const rawPhone = document.getElementById('new-student-phone')?.value?.trim();
+  const countryCode = document.getElementById('new-student-cc')?.value || '+91';
   const email = document.getElementById('new-student-email')?.value?.trim();
+  const preferredLang = document.getElementById('new-student-lang')?.value || 'en';
   const gender = document.getElementById('new-student-gender')?.value;
   const course = document.getElementById('new-student-course')?.value?.trim();
   const college = document.getElementById('new-student-college')?.value?.trim();
@@ -288,18 +322,44 @@ window.confirmAddStudent = function(branchId) {
   const dob = document.getElementById('new-student-dob')?.value;
   const ecName = document.getElementById('new-ec-name')?.value?.trim();
   const ecPhone = document.getElementById('new-ec-phone')?.value?.trim();
+  const whatsappOptIn = document.getElementById('new-student-optin')?.checked ?? true;
 
   if (!name) { toast.show('Student name is required', 'error'); return; }
-  if (!phone) { toast.show('Phone number is required', 'error'); return; }
-  if (phone.length < 10) { toast.show('Please enter a valid 10-digit phone number', 'error'); return; }
+  if (!rawPhone) { toast.show('Phone number is required', 'error'); return; }
+  if (rawPhone.replace(/\D/g, '').length < 10) { toast.show('Please enter a valid 10-digit phone number', 'error'); return; }
+
+  const normalizedPhone = (window.utils && window.utils.normalizePhone)
+    ? window.utils.normalizePhone(rawPhone, countryCode)
+    : (countryCode + rawPhone.replace(/\D/g, ''));
 
   try {
     const student = store.addStudent({
-      name, phone, email, gender, course, college, address, dob, branchId,
+      name,
+      phone: rawPhone,
+      country_code: countryCode,
+      phone_number: rawPhone.replace(/\D/g, ''),
+      normalized_phone: normalizedPhone,
+      preferred_language: preferredLang,
+      whatsapp_opt_in: whatsappOptIn,
+      whatsapp_opt_in_at: whatsappOptIn ? new Date().toISOString() : null,
+      communication_preferences: {
+        seat_alerts: true,
+        fee_reminders: true,
+        announcements: true
+      },
+      email, gender, course, college, address, dob, branchId,
       emergencyContact: ecName ? { name: ecName, phone: ecPhone } : null
     });
+
+    // Dispatch welcome notification
+    if (window.notificationService && window.NOTIFICATION_EVENTS) {
+      window.notificationService.dispatchEvent(window.NOTIFICATION_EVENTS.STUDENT_REGISTERED, {
+        studentId: student.id
+      });
+    }
+
     modal.close();
-    toast.show(`Student ${name} added successfully!`, 'success');
+    toast.show(`Student ${name} registered successfully! WhatsApp welcome queued.`, 'success');
     app.navigate('/student', { id: student.id });
   } catch (e) {
     toast.show(e.message, 'error');

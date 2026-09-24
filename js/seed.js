@@ -16,6 +16,8 @@ function seedDatabase() {
     reservations: [],
     payments: [],
     receipts: [],
+    documents: [],
+    notificationMessages: [],
     attendance: [],
     expenses: [],
     notifications: [],
@@ -31,7 +33,16 @@ function seedDatabase() {
       phone: '+91 98765 43210',
       email: 'admin@studyflow.in',
       theme: 'light',
-      logo: null
+      logo: null,
+      whatsappProvider: 'mock',
+      reminderRules: {
+        expiry7d: true,
+        expiry3d: true,
+        expiry1d: true,
+        overdue1d: true,
+        overdue3d: true,
+        overdue7d: true
+      }
     }
   };
 
@@ -169,9 +180,27 @@ function seedDatabase() {
 
   // Create students
   studentData.forEach((s, i) => {
+    const rawPhone = s.phone;
+    const normPhone = `+91${rawPhone}`;
     const student = {
       id: `STU-${String(10001 + i).padStart(5, '0')}`,
       ...s,
+      country_code: '+91',
+      phone_number: rawPhone,
+      normalized_phone: normPhone,
+      phone: normPhone,
+      whatsapp_opt_in: true,
+      whatsapp_opt_in_at: new Date(Date.now() - 60 * 86400000).toISOString(),
+      whatsapp_opt_out_at: null,
+      preferred_language: i % 5 === 0 ? 'hi' : (i % 7 === 0 ? 'mr' : 'en'),
+      communication_preferences: {
+        whatsapp: true,
+        payment_reminders: true,
+        membership_reminders: true,
+        booking_notifications: true,
+        receipt_notifications: true,
+        announcements: true
+      },
       status: 'active',
       avatar: getAvatarColor(s.name),
       emergencyContact: { name: s.name.split(' ')[0] + ' Sr.', phone: '9' + String(Math.floor(Math.random() * 900000000) + 100000000) },
@@ -434,6 +463,157 @@ function seedDatabase() {
       timestamp: new Date(Date.now() - i * 1800000).toISOString()
     });
   });
+
+  // ── Seed Sample Documents & WhatsApp Logs ───────────────────────
+  const student1 = db.students[0]; // Rahul Sharma
+  const mem1 = db.memberships[0];
+  const pay1 = db.payments[0];
+
+  const doc1 = {
+    id: 'DOC-INV-1001',
+    documentType: 'invoice',
+    documentNumber: 'INV-2026-00129',
+    date: '2026-09-02',
+    createdAt: '2026-09-02T10:00:00.000Z',
+    studentId: student1.id,
+    studentName: student1.name,
+    studentPhone: student1.normalized_phone,
+    branchId: 'BR-001',
+    branchName: 'Andheri West',
+    branchAddress: 'Shop 12, Andheri West, Mumbai',
+    branchPhone: '+91 98765 43210',
+    membershipId: mem1?.id,
+    planName: 'Monthly Pass',
+    startDate: mem1?.startDate || '2026-09-02',
+    endDate: mem1?.endDate || '2026-10-02',
+    seatNumber: 'A01',
+    roomName: 'General Study Hall',
+    floorName: 'Ground Floor',
+    baseAmount: 2500,
+    discount: 0,
+    finalAmount: 2500,
+    paidAmount: 2500,
+    pendingAmount: 0,
+    paymentMethod: 'UPI',
+    paymentRef: 'UPI-984219412',
+    paymentDate: '2026-09-02',
+    status: 'PAID',
+    currency: 'INR'
+  };
+
+  const doc2 = {
+    id: 'DOC-REC-1001',
+    documentType: 'receipt',
+    documentNumber: 'REC-2026-00441',
+    date: '2026-09-02',
+    createdAt: '2026-09-02T10:05:00.000Z',
+    studentId: student1.id,
+    studentName: student1.name,
+    studentPhone: student1.normalized_phone,
+    branchId: 'BR-001',
+    branchName: 'Andheri West',
+    branchAddress: 'Shop 12, Andheri West, Mumbai',
+    branchPhone: '+91 98765 43210',
+    membershipId: mem1?.id,
+    planName: 'Monthly Pass',
+    startDate: mem1?.startDate,
+    endDate: mem1?.endDate,
+    seatNumber: 'A01',
+    roomName: 'General Study Hall',
+    amount: 2500,
+    paymentMethod: 'UPI',
+    paymentRef: 'UPI-984219412',
+    status: 'SUCCESS',
+    currency: 'INR'
+  };
+
+  db.documents.push(doc1, doc2);
+
+  db.notificationMessages.push(
+    {
+      id: 'NOTIF-MSG-001',
+      studentId: student1.id,
+      studentName: student1.name,
+      phoneNumber: student1.normalized_phone,
+      eventType: 'SEAT_ASSIGNED',
+      templateName: 'seat_assignment_confirmation',
+      language: 'en',
+      bodyText: `Hello Rahul Sharma,\n\nYour StudyFlow library membership has been successfully activated.\n\nSeat: A01\nBranch: Andheri West\nRoom: General Study Hall\n\nMembership: Monthly Pass\nStart Date: ${mem1?.startDate}\nExpiry Date: ${mem1?.endDate}\n\nAmount: ₹2,500\nPayment Status: Paid\n\nYour invoice/receipt is attached.\n\nThank you,\nAndheri West — StudyFlow`,
+      variables: {
+        student_name: student1.name,
+        seat_number: 'A01',
+        branch_name: 'Andheri West',
+        room_name: 'General Study Hall',
+        membership_name: 'Monthly Pass',
+        start_date: mem1?.startDate,
+        expiry_date: mem1?.endDate,
+        amount: 2500,
+        payment_status: 'Paid'
+      },
+      documentId: doc1.id,
+      documentNumber: doc1.documentNumber,
+      documentType: 'invoice',
+      idempotencyKey: `seat_assignment_confirmation:${mem1?.id}:initial`,
+      status: 'READ',
+      retryCount: 0,
+      createdAt: '2026-09-02T10:00:00.000Z',
+      sentAt: '2026-09-02T10:00:02.000Z',
+      deliveredAt: '2026-09-02T10:00:04.000Z',
+      readAt: '2026-09-02T10:02:15.000Z'
+    },
+    {
+      id: 'NOTIF-MSG-002',
+      studentId: student1.id,
+      studentName: student1.name,
+      phoneNumber: student1.normalized_phone,
+      eventType: 'PAYMENT_RECEIVED',
+      templateName: 'payment_receipt',
+      language: 'en',
+      bodyText: `Hello Rahul Sharma,\n\nWe have received your payment.\n\nAmount: ₹2,500\nPayment Method: UPI\nReceipt: REC-2026-00441\nDate: 2026-09-02\n\nYour official receipt is attached.\n\nThank you,\nAndheri West — StudyFlow`,
+      variables: {
+        student_name: student1.name,
+        amount: 2500,
+        payment_method: 'UPI',
+        receipt_number: 'REC-2026-00441',
+        payment_date: '2026-09-02',
+        branch_name: 'Andheri West'
+      },
+      documentId: doc2.id,
+      documentNumber: doc2.documentNumber,
+      documentType: 'receipt',
+      idempotencyKey: `payment_receipt:${pay1?.id}:initial`,
+      status: 'DELIVERED',
+      retryCount: 0,
+      createdAt: '2026-09-02T10:05:00.000Z',
+      sentAt: '2026-09-02T10:05:01.000Z',
+      deliveredAt: '2026-09-02T10:05:03.000Z',
+      readAt: null
+    },
+    {
+      id: 'NOTIF-MSG-003',
+      studentId: db.students[1].id,
+      studentName: db.students[1].name,
+      phoneNumber: db.students[1].normalized_phone,
+      eventType: 'MEMBERSHIP_EXPIRING',
+      templateName: 'membership_expiring_reminder',
+      language: 'en',
+      bodyText: `Hello Priya Patel,\n\nYour StudyFlow membership is expiring soon.\n\nSeat: A02\nExpiry Date: 2026-09-25\n\nRenew your membership in advance to retain your dedicated seat.\n\nPlease visit the front desk for seamless renewal.\n\nThank you,\nAndheri West`,
+      variables: {
+        student_name: db.students[1].name,
+        seat_number: 'A02',
+        expiry_date: '2026-09-25',
+        branch_name: 'Andheri West'
+      },
+      documentId: null,
+      idempotencyKey: `membership_expiring:${db.memberships[1]?.id}:3d`,
+      status: 'DELIVERED',
+      retryCount: 0,
+      createdAt: '2026-09-22T08:00:00.000Z',
+      sentAt: '2026-09-22T08:00:02.000Z',
+      deliveredAt: '2026-09-22T08:00:05.000Z',
+      readAt: null
+    }
+  );
 
   return db;
 }
