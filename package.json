@@ -15,9 +15,6 @@
     "dotenv": "^16.4.7",
     "pg": "^8.13.3"
   },
-  "devDependencies": {
-    "vercel": "^37.0.0"
-  },
   "keywords": [
     "library-management",
     "study-hall",
