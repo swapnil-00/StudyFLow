@@ -157,8 +157,7 @@ export function renderFloors(container) {
       });
 
       // Generate seats with initial coordinates
-      const coordGenerator = window.generateInitialSeatCoordinates || generateInitialSeatCoordinates;
-      const seatsList = coordGenerator(room.id, branchId, seatCount, startNum, preset);
+      const seatsList = generateInitialSeatCoordinates(room.id, branchId, seatCount, startNum, preset);
       await store.batchInsertSeats(seatsList);
 
       modal.close();
@@ -193,7 +192,7 @@ export function renderFloors(container) {
 }
 
 // ── Floor Plan Blueprint Layout Coordinates Generator ─────────────
-export function generateInitialSeatCoordinates(roomId, branchId, count, startNum = 1, preset = 'blueprint') {
+function generateInitialSeatCoordinates(roomId, branchId, count, startNum = 1, preset = 'blueprint') {
   const seats = [];
 
   for (let i = 0; i < count; i++) {
@@ -261,7 +260,12 @@ export function generateInitialSeatCoordinates(roomId, branchId, count, startNum
 
   return seats;
 }
+
 window.generateInitialSeatCoordinates = generateInitialSeatCoordinates;
+window.Pages = window.Pages || {};
+window.Pages.generateInitialSeatCoordinates = generateInitialSeatCoordinates;
+
+export { generateInitialSeatCoordinates };
 
 // ── Interactive Drag & Drop Floor Plan Canvas Editor ──────────────
 window.openSeatLayoutEditor = function(roomId) {
