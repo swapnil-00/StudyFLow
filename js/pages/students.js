@@ -351,15 +351,24 @@ window.confirmAddStudent = function(branchId) {
       emergencyContact: ecName ? { name: ecName, phone: ecPhone } : null
     });
 
-    // Dispatch welcome notification
-    if (window.notificationService && window.NOTIFICATION_EVENTS) {
-      window.notificationService.dispatchEvent(window.NOTIFICATION_EVENTS.STUDENT_REGISTERED, {
-        studentId: student.id
-      });
+    // Dispatch welcome notification safely
+    try {
+      if (window.notificationService && typeof window.notificationService.dispatchEvent === 'function') {
+        const branchObj = store.getBranch ? store.getBranch(branchId) : null;
+        window.notificationService.dispatchEvent(window.NOTIFICATION_EVENTS.STUDENT_REGISTERED, {
+          studentId: student.id,
+          variables: {
+            student_name: student.name,
+            branch_name: branchObj?.name || 'StudyFlow'
+          }
+        });
+      }
+    } catch (notifErr) {
+      console.warn('Welcome notification dispatch failed:', notifErr);
     }
 
     modal.close();
-    toast.show(`Student ${name} registered successfully! WhatsApp welcome queued.`, 'success');
+    toast.show(`Student ${name} registered successfully!`, 'success');
     app.navigate('/student', { id: student.id });
   } catch (e) {
     toast.show(e.message, 'error');

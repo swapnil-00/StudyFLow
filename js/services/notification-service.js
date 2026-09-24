@@ -2,17 +2,20 @@
 // Manages Event Bus, Safe Template Engine, Multi-language Support, Idempotency & Queue
 
 const NOTIFICATION_EVENTS = {
+  STUDENT_REGISTERED: 'STUDENT_REGISTERED',
   SEAT_ASSIGNED: 'SEAT_ASSIGNED',
   SEAT_TRANSFERRED: 'SEAT_TRANSFERRED',
   SEAT_RELEASED: 'SEAT_RELEASED',
   PAYMENT_RECEIVED: 'PAYMENT_RECEIVED',
   PAYMENT_DUE: 'PAYMENT_DUE',
   PAYMENT_OVERDUE: 'PAYMENT_OVERDUE',
+  PAYMENT_REMINDER: 'PAYMENT_REMINDER',
   MEMBERSHIP_CREATED: 'MEMBERSHIP_CREATED',
   MEMBERSHIP_RENEWED: 'MEMBERSHIP_RENEWED',
   MEMBERSHIP_EXPIRING: 'MEMBERSHIP_EXPIRING',
   MEMBERSHIP_EXPIRED: 'MEMBERSHIP_EXPIRED',
   RESERVATION_CREATED: 'RESERVATION_CREATED',
+  RESERVATION_CONFIRMED: 'RESERVATION_CONFIRMED',
   IMPORTANT_ANNOUNCEMENT: 'IMPORTANT_ANNOUNCEMENT'
 };
 
@@ -258,6 +261,52 @@ Time Slot: {{start_time}} to {{end_time}}
 We look forward to hosting your study session.
 
 Thank you,
+{{branch_name}} — StudyFlow`
+  },
+
+  // 8. Student Registration Welcome
+  'student_welcome_en': {
+    name: 'student_welcome',
+    event: 'STUDENT_REGISTERED',
+    language: 'en',
+    category: 'Onboarding',
+    text: `Hello {{student_name}},
+
+Welcome to StudyFlow! Your library account has been successfully created.
+
+Branch: {{branch_name}}
+
+You can now reserve your dedicated seat and track your study hours seamlessly.
+
+Thank you,
+{{branch_name}} — StudyFlow`
+  },
+  'student_welcome_hi': {
+    name: 'student_welcome',
+    event: 'STUDENT_REGISTERED',
+    language: 'hi',
+    category: 'Onboarding',
+    text: `नमस्ते {{student_name}},
+
+StudyFlow लाइब्रेरी में आपका स्वागत है! आपका खाता सफलतापूर्वक बना दिया गया है।
+
+शाखा: {{branch_name}}
+
+धन्यवाद,
+{{branch_name}} — StudyFlow`
+  },
+  'student_welcome_mr': {
+    name: 'student_welcome',
+    event: 'STUDENT_REGISTERED',
+    language: 'mr',
+    category: 'Onboarding',
+    text: `नमस्कार {{student_name}},
+
+StudyFlow लायब्ररीमध्ये आपले स्वागत आहे! आपले खाते यशस्वीरित्या तयार झाले आहे.
+
+शाखा: {{branch_name}}
+
+धन्यवाद,
 {{branch_name}} — StudyFlow`
   }
 };
@@ -522,16 +571,30 @@ class NotificationService {
     return { processed: activeMemberships.length, dispatched: reminderCount };
   }
 
+  async dispatchEvent(eventType, payload = {}, options = {}) {
+    try {
+      return await this.dispatch(eventType, payload, options);
+    } catch (err) {
+      console.error('[NotificationService] Error in dispatchEvent:', err);
+      return { queued: false, error: err.message };
+    }
+  }
+
   _getTemplateNameForEvent(eventType) {
     switch (eventType) {
+      case NOTIFICATION_EVENTS.STUDENT_REGISTERED: return 'student_welcome';
       case NOTIFICATION_EVENTS.SEAT_ASSIGNED: return 'seat_assignment_confirmation';
       case NOTIFICATION_EVENTS.SEAT_TRANSFERRED: return 'seat_transfer_notification';
       case NOTIFICATION_EVENTS.PAYMENT_RECEIVED: return 'payment_receipt';
       case NOTIFICATION_EVENTS.PAYMENT_DUE: return 'payment_due_reminder';
       case NOTIFICATION_EVENTS.PAYMENT_OVERDUE: return 'payment_overdue_notice';
+      case NOTIFICATION_EVENTS.PAYMENT_REMINDER: return 'payment_due_reminder';
+      case NOTIFICATION_EVENTS.MEMBERSHIP_CREATED: return 'seat_assignment_confirmation';
+      case NOTIFICATION_EVENTS.MEMBERSHIP_RENEWED: return 'seat_assignment_confirmation';
       case NOTIFICATION_EVENTS.MEMBERSHIP_EXPIRING: return 'membership_expiring_reminder';
       case NOTIFICATION_EVENTS.RESERVATION_CREATED: return 'reservation_confirmation';
-      default: return 'seat_assignment_confirmation';
+      case NOTIFICATION_EVENTS.RESERVATION_CONFIRMED: return 'reservation_confirmation';
+      default: return 'student_welcome';
     }
   }
 }

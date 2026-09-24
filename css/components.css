@@ -250,19 +250,52 @@
 
 .form-error { font-size: var(--text-xs); color: var(--sf-error-600); }
 
-.input-group { position: relative; }
+.input-group {
+  position: relative;
+  display: block;
+}
 .input-group-prefix, .input-group-suffix {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  color: var(--color-text-tertiary);
+  color: var(--color-icon-secondary, #94a3b8);
   font-size: var(--text-sm);
   pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  border: none !important;
+  background: transparent !important;
+  padding: 0 !important;
+  width: 16px;
+  height: 16px;
 }
-.input-group-prefix { left: var(--space-3); }
-.input-group-suffix { right: var(--space-3); }
-.input-group .input { padding-left: var(--space-8); }
-.input-group.has-suffix .input { padding-right: var(--space-8); }
+.input-group-prefix {
+  left: 12px;
+}
+.input-group-prefix svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+  stroke: currentColor;
+}
+.input-group-suffix {
+  right: 12px;
+}
+.input-group-suffix svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+  stroke: currentColor;
+}
+.input-group .input {
+  padding-left: 38px !important;
+  width: 100%;
+}
+.input-group.has-suffix .input {
+  padding-right: 38px !important;
+}
 
 .select {
   appearance: none;
