@@ -3159,11 +3159,12 @@ window.openSeatDrawer = function(seatId) {
 
   const status = store.getSeatStatus(seatId);
   const assignment = store.getActiveAssignment(seatId);
-  const student = assignment ? store.getStudent(assignment.studentId) : null;
-  const membership = assignment ? store.getMembership(assignment.membershipId) : null;
+  const student = assignment ? store.getStudent(assignment.studentId || assignment.student_id) : (seat.currentStudentId ? store.getStudent(seat.currentStudentId) : null);
+  const membership = assignment ? store.getMembership(assignment.membershipId || assignment.membership_id) : (student ? store.getActiveMembership(student.id) : null);
   const paymentStatus = membership ? store.getPaymentStatus(membership.id) : null;
   const paidAmount = membership ? store.getPaidAmount(membership.id) : 0;
-  const plan = membership ? store.getMembershipPlan(membership.planId) : null;
+  const pendingAmount = membership ? store.getPendingAmount(membership.id) : 0;
+  const plan = membership ? store.getMembershipPlan(membership.planId || membership.plan_id) : null;
   const room = store.getRoom(seat.roomId);
   const floor = room ? store.getFloor(room.floorId) : null;
 
@@ -3194,7 +3195,7 @@ window.openSeatDrawer = function(seatId) {
   document.getElementById(`seat-${seatId}`)?.classList.add('selected');
 }
 
-function renderStudentSection(student, membership, plan, paymentStatus, paidAmount, pendingAmount, todayAtt) {
+function renderStudentSection(student, membership, plan, paymentStatus, paidAmount, pendingAmount) {
   const daysLeft = membership ? utils.daysUntil(membership.endDate) : null;
 
   return `
