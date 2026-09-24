@@ -700,87 +700,112 @@ tbody td {
   font-weight: 500;
   flex: 1;
   color: inherit;
+  line-height: 1.4;
 }
 
 /* Light Mode Defaults */
 .toast.success {
-  background: #f0fdf4;
-  border-color: #bbf7d0;
-  color: #15803d;
+  background: #f0fdf4 !important;
+  border-color: #bbf7d0 !important;
+  color: #15803d !important;
 }
 .toast.success .toast-icon {
-  color: #16a34a;
+  color: #16a34a !important;
+}
+.toast.success .toast-msg {
+  color: #15803d !important;
 }
 
 .toast.error {
-  background: #fef2f2;
-  border-color: #fecaca;
-  color: #b91c1c;
+  background: #fef2f2 !important;
+  border-color: #fecaca !important;
+  color: #b91c1c !important;
 }
 .toast.error .toast-icon {
-  color: #dc2626;
+  color: #dc2626 !important;
+}
+.toast.error .toast-msg {
+  color: #b91c1c !important;
 }
 
 .toast.warning {
-  background: #fffbeb;
-  border-color: #fde68a;
-  color: #b45309;
+  background: #fffbeb !important;
+  border-color: #fde68a !important;
+  color: #b45309 !important;
 }
 .toast.warning .toast-icon {
-  color: #d97706;
+  color: #d97706 !important;
+}
+.toast.warning .toast-msg {
+  color: #b45309 !important;
 }
 
 .toast.info {
-  background: #eff6ff;
-  border-color: #bfdbfe;
-  color: #1d4ed8;
+  background: #eff6ff !important;
+  border-color: #bfdbfe !important;
+  color: #1d4ed8 !important;
 }
 .toast.info .toast-icon {
-  color: #2563eb;
+  color: #2563eb !important;
+}
+.toast.info .toast-msg {
+  color: #1d4ed8 !important;
 }
 
 /* Dark Mode Theme */
 [data-theme="dark"] .toast {
-  background: #1e293b;
-  color: #f8fafc;
-  border: 1px solid #334155;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.55), 0 8px 10px -6px rgba(0, 0, 0, 0.45);
+  background: #1e293b !important;
+  color: #f8fafc !important;
+  border: 1px solid #334155 !important;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.55), 0 8px 10px -6px rgba(0, 0, 0, 0.45) !important;
 }
 
 [data-theme="dark"] .toast.success {
-  background: #062e1c;
-  border-color: #166534;
-  color: #dcfce7;
+  background: #062e1c !important;
+  border-color: #166534 !important;
+  color: #dcfce7 !important;
 }
 [data-theme="dark"] .toast.success .toast-icon {
-  color: #4ade80;
+  color: #4ade80 !important;
+}
+[data-theme="dark"] .toast.success .toast-msg {
+  color: #dcfce7 !important;
 }
 
 [data-theme="dark"] .toast.error {
-  background: #3f1015;
-  border-color: #991b1b;
-  color: #fee2e2;
+  background: #3f1015 !important;
+  border-color: #991b1b !important;
+  color: #fee2e2 !important;
 }
 [data-theme="dark"] .toast.error .toast-icon {
-  color: #f87171;
+  color: #f87171 !important;
+}
+[data-theme="dark"] .toast.error .toast-msg {
+  color: #fee2e2 !important;
 }
 
 [data-theme="dark"] .toast.warning {
-  background: #3d2008;
-  border-color: #9a3412;
-  color: #ffedd5;
+  background: #3d2008 !important;
+  border-color: #9a3412 !important;
+  color: #ffedd5 !important;
 }
 [data-theme="dark"] .toast.warning .toast-icon {
-  color: #fb923c;
+  color: #fb923c !important;
+}
+[data-theme="dark"] .toast.warning .toast-msg {
+  color: #ffedd5 !important;
 }
 
 [data-theme="dark"] .toast.info {
-  background: #112240;
-  border-color: #1d4ed8;
-  color: #dbeafe;
+  background: #112240 !important;
+  border-color: #1d4ed8 !important;
+  color: #dbeafe !important;
 }
 [data-theme="dark"] .toast.info .toast-icon {
-  color: #60a5fa;
+  color: #60a5fa !important;
+}
+[data-theme="dark"] .toast.info .toast-msg {
+  color: #dbeafe !important;
 }
 
 @keyframes slideInToast {

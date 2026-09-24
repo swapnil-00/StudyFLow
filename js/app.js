@@ -58,8 +58,15 @@ class App {
   }
 
   _themeInit() {
-    const theme = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+    let theme = localStorage.getItem('sf_theme');
+    if (!theme && store.getSettings) {
+      theme = store.getSettings()?.theme;
+    }
+    if (!theme) {
+      theme = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+    }
     document.documentElement.dataset.theme = theme;
+    document.documentElement.setAttribute('data-theme', theme);
   }
 
   _render() {
@@ -595,10 +602,53 @@ const toast = {
     const t = document.createElement('div');
     t.className = `toast ${type}`;
 
+    const isDark = document.documentElement.dataset.theme === 'dark' ||
+                   document.documentElement.getAttribute('data-theme') === 'dark' ||
+                   (!document.documentElement.dataset.theme && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+
     const iconMap = { success: icons.checkCircle, error: icons['alert-circle'], warning: icons['alert-triangle'] };
     const icon = iconMap[type] || icons.info;
 
-    t.innerHTML = `<div class="toast-icon">${icon}</div><div class="toast-msg">${msg}</div>`;
+    // Apply explicit inline styles so text is 100% visible regardless of CSS cache
+    if (isDark) {
+      if (type === 'success') {
+        t.style.background = '#062e1c';
+        t.style.borderColor = '#166534';
+        t.style.color = '#dcfce7';
+      } else if (type === 'error') {
+        t.style.background = '#3f1015';
+        t.style.borderColor = '#991b1b';
+        t.style.color = '#fee2e2';
+      } else if (type === 'warning') {
+        t.style.background = '#3d2008';
+        t.style.borderColor = '#9a3412';
+        t.style.color = '#ffedd5';
+      } else {
+        t.style.background = '#1e293b';
+        t.style.borderColor = '#334155';
+        t.style.color = '#f8fafc';
+      }
+    } else {
+      if (type === 'success') {
+        t.style.background = '#f0fdf4';
+        t.style.borderColor = '#bbf7d0';
+        t.style.color = '#15803d';
+      } else if (type === 'error') {
+        t.style.background = '#fef2f2';
+        t.style.borderColor = '#fecaca';
+        t.style.color = '#b91c1c';
+      } else if (type === 'warning') {
+        t.style.background = '#fffbeb';
+        t.style.borderColor = '#fde68a';
+        t.style.color = '#b45309';
+      } else {
+        t.style.background = '#ffffff';
+        t.style.borderColor = '#e5e7eb';
+        t.style.color = '#111827';
+      }
+    }
+
+    t.innerHTML = `<div class="toast-icon">${icon}</div><div class="toast-msg" style="color:inherit !important;font-weight:500;">${msg}</div>`;
     container.appendChild(t);
 
     setTimeout(() => {
