@@ -315,9 +315,9 @@ module.exports = async function handler(req, res) {
         const { seatId, reason, userId } = data || {};
         return await withTransaction(async client => {
           await client.query(
-            `UPDATE seat_assignments SET status = 'released', released_at = NOW(), release_reason = $1, released_by = $2
-             WHERE seat_id = $3 AND status = 'active'`,
-            [reason || 'Released', userId || 'admin', seatId]
+            `UPDATE seat_assignments SET status = 'released'
+             WHERE seat_id = $1 AND status = 'active'`,
+            [seatId]
           );
           await client.query(
             `UPDATE seats SET status = 'available', current_student_id = NULL WHERE id = $1`,
@@ -361,8 +361,8 @@ module.exports = async function handler(req, res) {
 
           // 1. Mark old assignment transferred
           await client.query(
-            `UPDATE seat_assignments SET status = 'transferred', transferred_at = NOW(), transfer_reason = $1 WHERE id = $2`,
-            [reason || 'Seat transfer', old.id]
+            `UPDATE seat_assignments SET status = 'transferred' WHERE id = $1`,
+            [old.id]
           );
 
           // 2. Free old seat
@@ -396,7 +396,7 @@ module.exports = async function handler(req, res) {
 
       if (action === 'update') {
         const a = data;
-        const map = { seatId: 'seat_id', studentId: 'student_id', membershipId: 'membership_id', branchId: 'branch_id', startDate: 'start_date', endDate: 'end_date', slotType: 'slot_type', status: 'status', releasedAt: 'released_at', releaseReason: 'release_reason', releasedBy: 'released_by', transferredAt: 'transferred_at', transferReason: 'transfer_reason' };
+        const map = { seatId: 'seat_id', studentId: 'student_id', membershipId: 'membership_id', branchId: 'branch_id', startDate: 'start_date', endDate: 'end_date', slotType: 'slot_type', status: 'status' };
         const fields = [], vals = [];
         for (const [k, col] of Object.entries(map)) {
           if (a[k] !== undefined) { fields.push(`${col}=$${fields.length + 1}`); vals.push(a[k] || null); }
