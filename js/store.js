@@ -218,6 +218,30 @@ class Store {
     this._notify();
   }
 
+  async batchInsertSeats(seatsList) {
+    if (!seatsList || seatsList.length === 0) return [];
+    await apiWrite('seats', 'batch_insert', seatsList);
+    for (const s of seatsList) {
+      this._db.seats.push(s);
+    }
+    this._notify();
+    return seatsList;
+  }
+
+  async batchUpdateSeatPositions(positionUpdates) {
+    if (!positionUpdates || positionUpdates.length === 0) return;
+    await apiWrite('seats', 'batch_update_positions', positionUpdates);
+    for (const update of positionUpdates) {
+      const seat = this._db.seats.find(s => s.id === update.id);
+      if (seat) {
+        seat.position = { x: update.x, y: update.y };
+        seat.position_x = update.x;
+        seat.position_y = update.y;
+      }
+    }
+    this._notify();
+  }
+
   // ── Students ──────────────────────────────────────────────────────
   getStudents(branchId) {
     const students = this._db?.students || [];

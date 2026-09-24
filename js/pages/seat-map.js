@@ -28,13 +28,18 @@ export function renderSeatMap(container) {
             <h1 class="page-title">Seat Map</h1>
             <p class="page-subtitle">${branch?.name} · Visual seat management</p>
           </div>
-          <div style="display:flex;gap:var(--space-2);">
+          <div style="display:flex;gap:var(--space-2);flex-wrap:wrap;">
             <button class="btn btn-secondary" onclick="seatMapState.zoom=Math.max(0.6,seatMapState.zoom-0.1);updateZoom()">
               ${icons.zoomOut}
             </button>
             <button class="btn btn-secondary" onclick="seatMapState.zoom=Math.min(1.8,seatMapState.zoom+0.1);updateZoom()">
               ${icons.zoomIn}
             </button>
+            ${activeRoom ? `
+              <button class="btn btn-secondary" onclick="if(window.openSeatLayoutEditor){window.openSeatLayoutEditor('${activeRoom.id}');}else{app.navigate('/floors');}">
+                📐 Arrange Layout
+              </button>
+            ` : ''}
             <button class="btn btn-primary" onclick="openAssignModal()">
               ${icons.plus} Assign Seat
             </button>
@@ -165,6 +170,98 @@ function renderRoom(room, seats, state) {
     `;
   }
 
+  const hasBlueprintPositions = seats.some(s => s.position && (s.position.x > 0 || s.position.y > 0));
+  if (hasBlueprintPositions) {
+    return renderBlueprintRoom(room, seats, state);
+  }
+  return renderStandardRoom(room, seats, state);
+}
+
+function renderBlueprintRoom(room, seats, state) {
+  const q = state.searchQuery?.toLowerCase();
+  
+  let maxX = 880;
+  let maxY = 620;
+  seats.forEach(s => {
+    if (s.position) {
+      if (s.position.x + 90 > maxX) maxX = Math.ceil(s.position.x + 90);
+      if (s.position.y + 90 > maxY) maxY = Math.ceil(s.position.y + 90);
+    }
+  });
+
+  let html = `
+    <div class="room-section" style="padding:var(--space-4);">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-4);flex-wrap:wrap;gap:8px;">
+        <div class="room-label" style="margin-bottom:0;">
+          ${room.name}${room.acAvailable ? ' · AC' : ''} · ${room.type.toUpperCase()} · ${seats.length} seats (Visual Blueprint)
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="if(window.openSeatLayoutEditor){window.openSeatLayoutEditor('${room.id}');}else{app.navigate('/floors');}">
+          📐 Drag & Rearrange
+        </button>
+      </div>
+
+      <div class="floor-plan-canvas-wrap" style="min-height:560px;background:var(--color-bg-secondary);border:1px solid var(--color-border-secondary);border-radius:var(--radius-xl);overflow:auto;padding:24px;position:relative;">
+        <div class="floor-plan-canvas" style="position:relative;width:${maxX}px;height:${maxY}px;min-height:520px;">
+          <!-- Cluster outlines if matching layout -->
+          <div class="floor-plan-cluster" style="left:20px;top:20px;width:340px;height:240px;" data-label="Cluster A (Top Left · 4x9)"></div>
+          <div class="floor-plan-cluster" style="left:390px;top:20px;width:290px;height:240px;" data-label="Cluster B (Top Right · 2x8)"></div>
+          <div class="floor-plan-cluster" style="left:20px;top:290px;width:260px;height:260px;" data-label="Cluster C (Bottom Left · 8 Pods)"></div>
+          <div class="floor-plan-cluster" style="left:390px;top:290px;width:360px;height:260px;" data-label="Cluster D (Bottom Right · 8 Booths)"></div>
+  `;
+
+  seats.forEach(seat => {
+    const status = store.getSeatStatus(seat.id);
+    const assignment = store.getActiveAssignment(seat.id);
+    const student = assignment ? store.getStudent(assignment.studentId) : null;
+
+    if (state.filter !== 'all' && status !== state.filter) {
+      return;
+    }
+
+    let highlighted = false;
+    let dimmed = false;
+    if (q) {
+      const matchesSeat = seat.label.toLowerCase().includes(q);
+      const matchesStudent = student?.name.toLowerCase().includes(q);
+      if (!matchesSeat && !matchesStudent) {
+        dimmed = true;
+      } else {
+        highlighted = true;
+      }
+    }
+
+    const posX = seat.position?.x ?? 20;
+    const posY = seat.position?.y ?? 20;
+    const statusClass = `status-${status}`;
+    const selected = state.selectedSeatId === seat.id;
+
+    html += `
+      <div class="floor-plan-seat ${statusClass} ${selected ? 'selected' : ''} ${highlighted ? 'highlighted' : ''}"
+        id="seat-${seat.id}"
+        style="left:${posX}px;top:${posY}px;cursor:pointer;${dimmed ? 'opacity:0.2;pointer-events:none;' : ''}"
+        onclick="openSeatDrawer('${seat.id}')"
+        title="${seat.label}${student ? ' · ' + student.name : ''} · ${capitalizeFirst(status)}"
+        role="button"
+        tabindex="0"
+        onkeydown="if(event.key==='Enter'||event.key===' ')openSeatDrawer('${seat.id}')"
+      >
+        <div class="seat-dot"></div>
+        <div class="seat-num">${seat.label}</div>
+        ${student ? `<div style="font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:44px;color:rgba(255,255,255,0.85);">${student.name.split(' ')[0]}</div>` : ''}
+      </div>
+    `;
+  });
+
+  html += `
+        </div>
+      </div>
+    </div>
+  `;
+
+  return html;
+}
+
+function renderStandardRoom(room, seats, state) {
   // Group by row
   const rows = {};
   seats.forEach(seat => {

@@ -74,6 +74,39 @@ module.exports = async function handler(req, res) {
 
     // ── Seats ─────────────────────────────────────────────────────
     if (table === 'seats') {
+      if (action === 'batch_update_positions') {
+        const updates = Array.isArray(data) ? data : [];
+        if (updates.length > 0) {
+          await withTransaction(async (client) => {
+            for (const item of updates) {
+              await client.query(
+                `UPDATE seats SET position_x=$1, position_y=$2 WHERE id=$3`,
+                [parseFloat(item.x) || 0, parseFloat(item.y) || 0, item.id]
+              );
+            }
+          });
+        }
+        return res.json({ ok: true, count: updates.length });
+      }
+
+      if (action === 'batch_insert') {
+        const seatsList = Array.isArray(data) ? data : [];
+        if (seatsList.length > 0) {
+          await withTransaction(async (client) => {
+            for (const s of seatsList) {
+              const newId = s.id || uid('SEAT');
+              await client.query(
+                `INSERT INTO seats (id,room_id,branch_id,seat_number,row_label,seat_type,amenities,status,position_x,position_y)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (id) DO NOTHING`,
+                [newId, s.roomId, s.branchId || null, s.label || s.number || newId, s.row || '', s.type || 'standard',
+                 JSON.stringify(s.amenities || []), s.status || 'available', s.position?.x || s.position_x || 0, s.position?.y || s.position_y || 0]
+              );
+            }
+          });
+        }
+        return res.json({ ok: true, count: seatsList.length });
+      }
+
       if (action === 'insert') {
         const s = data;
         const newId = s.id || uid('SEAT');
@@ -81,7 +114,7 @@ module.exports = async function handler(req, res) {
           `INSERT INTO seats (id,room_id,branch_id,seat_number,row_label,seat_type,amenities,status,position_x,position_y)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (id) DO NOTHING`,
           [newId, s.roomId, s.branchId || null, s.label || s.number || newId, s.row || '', s.type || 'standard',
-           JSON.stringify(s.amenities || []), s.status || 'available', s.position?.x || 0, s.position?.y || 0]
+           JSON.stringify(s.amenities || []), s.status || 'available', s.position?.x || s.position_x || 0, s.position?.y || s.position_y || 0]
         );
         return res.json({ ok: true, id: newId });
       }
@@ -94,6 +127,12 @@ module.exports = async function handler(req, res) {
         if (s.amenities !== undefined) { fields.push(`amenities=$${fields.length + 1}`); vals.push(JSON.stringify(s.amenities)); }
         if (s.row !== undefined) { fields.push(`row_label=$${fields.length + 1}`); vals.push(s.row); }
         if (s.currentStudentId !== undefined) { fields.push(`current_student_id=$${fields.length + 1}`); vals.push(s.currentStudentId || null); }
+        if (s.position !== undefined) {
+          if (s.position.x !== undefined) { fields.push(`position_x=$${fields.length + 1}`); vals.push(parseFloat(s.position.x) || 0); }
+          if (s.position.y !== undefined) { fields.push(`position_y=$${fields.length + 1}`); vals.push(parseFloat(s.position.y) || 0); }
+        }
+        if (s.position_x !== undefined) { fields.push(`position_x=$${fields.length + 1}`); vals.push(parseFloat(s.position_x) || 0); }
+        if (s.position_y !== undefined) { fields.push(`position_y=$${fields.length + 1}`); vals.push(parseFloat(s.position_y) || 0); }
         if (fields.length === 0) return res.json({ ok: true });
         vals.push(id);
         await query(`UPDATE seats SET ${fields.join(',')} WHERE id=$${vals.length}`, vals);
