@@ -119,6 +119,16 @@ class Store {
     return floor;
   }
 
+  async deleteFloor(id) {
+    await apiWrite('floors', 'delete', {}, id);
+    const deletedRooms = (this._db?.rooms || []).filter(r => r.floorId === id);
+    const roomIds = deletedRooms.map(r => r.id);
+    this._db.floors = (this._db?.floors || []).filter(f => f.id !== id);
+    this._db.rooms = (this._db?.rooms || []).filter(r => r.floorId !== id);
+    this._db.seats = (this._db?.seats || []).filter(s => !roomIds.includes(s.roomId));
+    this._notify();
+  }
+
   // ── Rooms ─────────────────────────────────────────────────────────
   getRooms(floorId) {
     const rooms = this._db?.rooms || [];

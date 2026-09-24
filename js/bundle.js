@@ -184,6 +184,16 @@ class Store {
     return floor;
   }
 
+  async deleteFloor(id) {
+    await apiWrite('floors', 'delete', {}, id);
+    const deletedRooms = (this._db?.rooms || []).filter(r => r.floorId === id);
+    const roomIds = deletedRooms.map(r => r.id);
+    this._db.floors = (this._db?.floors || []).filter(f => f.id !== id);
+    this._db.rooms = (this._db?.rooms || []).filter(r => r.floorId !== id);
+    this._db.seats = (this._db?.seats || []).filter(s => !roomIds.includes(s.roomId));
+    this._notify();
+  }
+
   // ── Rooms ─────────────────────────────────────────────────────────
   getRooms(floorId) {
     const rooms = this._db?.rooms || [];
@@ -6019,6 +6029,28 @@ window.Pages.renderFloors = function renderFloors(container) {
     }
   };
 
+  window.confirmDeleteFloor = async function(floorId) {
+    const floor = store.getFloor(floorId);
+    if (!floor) return;
+    const rooms = store.getRooms(floorId);
+    const totalSeats = rooms.reduce((acc, r) => acc + store.getSeats(r.id).length, 0);
+
+    let msg = `Are you sure you want to delete floor "${floor.name}"?`;
+    if (rooms.length > 0) {
+      msg += `\n\nThis will also delete ${rooms.length} room(s) and ${totalSeats} seat(s) on this floor.`;
+    }
+
+    if (!confirm(msg)) return;
+
+    try {
+      await store.deleteFloor(floorId);
+      toast.show(`Floor "${floor.name}" deleted successfully`, 'success');
+      render();
+    } catch (e) {
+      toast.show('Failed to delete floor: ' + e.message, 'error');
+    }
+  };
+
   // ── Room Modals ───────────────────────────────────────────────────
   window.openAddRoomModal = function(floorId) {
     const floors_ = store.getFloors(branchId);
@@ -6497,9 +6529,14 @@ function renderFloorSection(floor) {
           <div class="card-title">${floor.name}</div>
           <div class="card-subtitle">${rooms.length} room${rooms.length !== 1 ? 's' : ''}</div>
         </div>
-        <button class="btn btn-secondary btn-sm" onclick="openAddRoomModal('${floor.id}')">
-          ${icons.plus} Add Room
-        </button>
+        <div style="display:flex;gap:var(--space-2);align-items:center;">
+          <button class="btn btn-secondary btn-sm" onclick="openAddRoomModal('${floor.id}')">
+            ${icons.plus} Add Room
+          </button>
+          <button class="btn btn-ghost btn-sm" style="color:var(--sf-error-600);" onclick="confirmDeleteFloor('${floor.id}')" title="Delete Floor">
+            ${icons.trash} Delete Floor
+          </button>
+        </div>
       </div>
       <div class="card-body">
         ${rooms.length ? `

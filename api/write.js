@@ -48,6 +48,15 @@ module.exports = async function handler(req, res) {
         );
         return res.json({ ok: true, id: newId });
       }
+      if (action === 'update') {
+        const f = data;
+        await query(`UPDATE floors SET name=$1,floor_number=$2 WHERE id=$3`, [f.name, f.floorNumber || f.level || 1, id]);
+        return res.json({ ok: true });
+      }
+      if (action === 'delete') {
+        await query('DELETE FROM floors WHERE id=$1', [id]);
+        return res.json({ ok: true });
+      }
     }
 
     // ── Rooms ─────────────────────────────────────────────────────
