@@ -138,6 +138,13 @@ export function renderSeatMap(container) {
     };
   }
 
+  // Live subscription so changes show instantly without requiring page reload
+  const unsubscribe = store.subscribe(() => {
+    if (container && container.isConnected) {
+      render();
+    }
+  });
+
   render();
 }
 
@@ -193,7 +200,7 @@ function renderBlueprintRoom(room, seats, state) {
     <div class="room-section" style="padding:var(--space-4);">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-4);flex-wrap:wrap;gap:8px;">
         <div class="room-label" style="margin-bottom:0;">
-          ${room.name}${room.acAvailable ? ' · AC' : ''} · ${room.type.toUpperCase()} · ${seats.length} seats (Visual Blueprint)
+          ${room.name} · ${seats.length} seats (Visual Blueprint)
         </div>
         <button class="btn btn-secondary btn-sm" onclick="if(window.openSeatLayoutEditor){window.openSeatLayoutEditor('${room.id}');}else{app.navigate('/floors');}">
           📐 Drag & Rearrange
@@ -273,7 +280,7 @@ function renderStandardRoom(room, seats, state) {
   const q = state.searchQuery?.toLowerCase();
 
   let html = `<div class="room-section">`;
-  html += `<div class="room-label">${room.name}${room.acAvailable ? ' · AC' : ''} · ${room.type.toUpperCase()} · ${seats.length} seats</div>`;
+  html += `<div class="room-label">${room.name} · ${seats.length} seats</div>`;
 
   Object.entries(rows).sort(([a],[b]) => a.localeCompare(b)).forEach(([rowLabel, rowSeats]) => {
     html += `<div class="seat-row"><div class="row-label">${rowLabel}</div>`;

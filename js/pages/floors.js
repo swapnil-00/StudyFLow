@@ -2,39 +2,50 @@
 
 export function renderFloors(container) {
   const branchId = store.getActiveBranchId();
-  const branch = store.getBranch(branchId);
-  const floors = store.getFloors(branchId);
 
-  container.innerHTML = `
-    <div class="page-header">
-      <div class="page-header-row">
-        <div>
-          <h1 class="page-title">Floors & Rooms</h1>
-          <p class="page-subtitle">${branch?.name || 'StudyFlow'} — Physical space & seat layout configuration</p>
-        </div>
-        <div style="display:flex;gap:var(--space-2);">
-          <button class="btn btn-secondary" onclick="openAddFloorModal()">
-            ${icons.layers} Add Floor
-          </button>
-          <button class="btn btn-primary" onclick="openAddRoomModal()">
-            ${icons.plus} Add Room
-          </button>
+  function render() {
+    const branch = store.getBranch(branchId);
+    const floors = store.getFloors(branchId);
+
+    container.innerHTML = `
+      <div class="page-header">
+        <div class="page-header-row">
+          <div>
+            <h1 class="page-title">Floors & Rooms</h1>
+            <p class="page-subtitle">${branch?.name || 'StudyFlow'} — Physical space & seat layout configuration</p>
+          </div>
+          <div style="display:flex;gap:var(--space-2);">
+            <button class="btn btn-secondary" onclick="openAddFloorModal()">
+              ${icons.layers} Add Floor
+            </button>
+            <button class="btn btn-primary" onclick="openAddRoomModal()">
+              ${icons.plus} Add Room
+            </button>
+          </div>
         </div>
       </div>
-    </div>
 
-    ${floors.length ? floors.map(floor => renderFloorSection(floor)).join('') : `
-      <div class="empty-state" style="margin-top:var(--space-8);">
-        <div class="empty-icon">${icons.layers}</div>
-        <div class="empty-title">No floors configured</div>
-        <div class="empty-desc">Start by adding a floor to this branch.</div>
-        <button class="btn btn-primary" onclick="openAddFloorModal()">Add First Floor</button>
-      </div>
-    `}
-  `;
+      ${floors.length ? floors.map(floor => renderFloorSection(floor)).join('') : `
+        <div class="empty-state" style="margin-top:var(--space-8);">
+          <div class="empty-icon">${icons.layers}</div>
+          <div class="empty-title">No floors configured</div>
+          <div class="empty-desc">Start by adding a floor to this branch.</div>
+          <button class="btn btn-primary" onclick="openAddFloorModal()">Add First Floor</button>
+        </div>
+      `}
+    `;
+  }
+
+  // Live subscription so changes show instantly without requiring page reload
+  const unsubscribe = store.subscribe(() => {
+    if (container && container.isConnected) {
+      render();
+    }
+  });
 
   // ── Floor Modals ──────────────────────────────────────────────────
   window.openAddFloorModal = function() {
+    const currentFloors = store.getFloors(branchId);
     modal.open('Add Floor', `
       <div style="display:flex;flex-direction:column;gap:var(--space-4);">
         <div class="form-group">
@@ -43,7 +54,7 @@ export function renderFloors(container) {
         </div>
         <div class="form-group">
           <label class="form-label">Level / Floor Number</label>
-          <input type="number" class="input" id="floor-level" value="${floors.length + 1}" min="0">
+          <input type="number" class="input" id="floor-level" value="${currentFloors.length + 1}" min="0">
         </div>
       </div>
     `, `
@@ -60,7 +71,7 @@ export function renderFloors(container) {
       await store.addFloor({ branchId: bId, name, level, floorNumber: level });
       modal.close();
       toast.show(`Floor "${name}" added successfully!`, 'success');
-      app._navigate();
+      render();
     } catch (e) {
       toast.show(e.message, 'error');
     }
@@ -88,31 +99,13 @@ export function renderFloors(container) {
           <label class="form-label">Room Name <span class="required">*</span></label>
           <input type="text" class="input" id="room-name" placeholder="e.g. Main Hall / Reading Room">
         </div>
-        <div class="grid-2">
-          <div class="form-group">
-            <label class="form-label">Room Type</label>
-            <select class="select" id="room-type">
-              <option value="general">General Hall</option>
-              <option value="silent">Silent Study</option>
-              <option value="premium">AC Premium</option>
-              <option value="discussion">Discussion Room</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Air Conditioned (AC)</label>
-            <select class="select" id="room-ac">
-              <option value="true">Yes (AC)</option>
-              <option value="false">No (Non-AC)</option>
-            </select>
-          </div>
-        </div>
 
         <div class="grid-2">
           <div class="form-group">
             <label class="form-label">Total Seats in Room <span class="required">*</span></label>
             <input type="number" class="input" id="room-seat-count" value="68" min="1" max="500">
             <span style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-top:2px;display:block;">
-              Direct seat capacity (no row/column formula needed)
+              Direct seat capacity (no formula needed)
             </span>
           </div>
           <div class="form-group">
@@ -146,8 +139,6 @@ export function renderFloors(container) {
   window.confirmAddRoom = async function() {
     const floorId = document.getElementById('room-floor')?.value;
     const name = document.getElementById('room-name')?.value?.trim();
-    const type = document.getElementById('room-type')?.value;
-    const ac = document.getElementById('room-ac')?.value === 'true';
     const seatCount = parseInt(document.getElementById('room-seat-count')?.value || 68);
     const startNum = parseInt(document.getElementById('room-seat-start')?.value || 1);
     const preset = document.getElementById('room-layout-preset')?.value || 'blueprint';
@@ -160,23 +151,26 @@ export function renderFloors(container) {
         floorId,
         branchId,
         name,
-        type,
-        acAvailable: ac,
+        type: 'hall',
+        acAvailable: false,
         capacity: seatCount
       });
 
       // Generate seats with initial coordinates
-      const seatsList = generateInitialSeatCoordinates(room.id, branchId, seatCount, startNum, preset);
+      const coordGenerator = window.generateInitialSeatCoordinates || generateInitialSeatCoordinates;
+      const seatsList = coordGenerator(room.id, branchId, seatCount, startNum, preset);
       await store.batchInsertSeats(seatsList);
 
       modal.close();
       toast.show(`Room "${name}" created with ${seatCount} seats! Opening layout editor...`, 'success');
-      app._navigate();
+      render();
 
       // Open the visual layout canvas immediately
       setTimeout(() => {
-        openSeatLayoutEditor(room.id);
-      }, 300);
+        if (window.openSeatLayoutEditor) {
+          window.openSeatLayoutEditor(room.id);
+        }
+      }, 250);
     } catch (e) {
       toast.show(e.message, 'error');
     }
@@ -188,11 +182,14 @@ export function renderFloors(container) {
     try {
       await store.deleteRoom(roomId);
       toast.show('Room deleted', 'success');
-      app._navigate();
+      render();
     } catch (e) {
       toast.show(e.message, 'error');
     }
   };
+
+  // Initial render
+  render();
 }
 
 // ── Floor Plan Blueprint Layout Coordinates Generator ─────────────
@@ -264,6 +261,7 @@ export function generateInitialSeatCoordinates(roomId, branchId, count, startNum
 
   return seats;
 }
+window.generateInitialSeatCoordinates = generateInitialSeatCoordinates;
 
 // ── Interactive Drag & Drop Floor Plan Canvas Editor ──────────────
 window.openSeatLayoutEditor = function(roomId) {
@@ -592,7 +590,7 @@ function renderRoomCard(room) {
         <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:var(--space-3);">
           <div>
             <div style="font-weight:var(--fw-semibold);color:var(--color-text-primary);font-size:var(--text-base);">${room.name}</div>
-            <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);">${capitalizeFirst(room.type)} · ${room.acAvailable ? 'AC' : 'Non-AC'}</div>
+            <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);">${seats.length} seats configured</div>
           </div>
           <span class="badge badge-${occupancyPct >= 80 ? 'error' : occupancyPct >= 50 ? 'warning' : 'success'}">
             ${occupancyPct}%

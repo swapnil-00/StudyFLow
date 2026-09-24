@@ -1,13 +1,13 @@
 // Students Page
 export function renderStudents(container) {
   const branchId = store.getActiveBranchId();
-  let students = store.getStudents(branchId);
   let filter = 'all';
   let search = '';
   let page = 1;
   const perPage = 15;
 
   function getFilteredStudents() {
+    const students = store.getStudents(branchId);
     let result = [...students];
     if (search) {
       const q = search.toLowerCase();
@@ -44,6 +44,7 @@ export function renderStudents(container) {
   }
 
   function render() {
+    const allStudents = store.getStudents(branchId);
     const filtered = getFilteredStudents();
     const totalPages = Math.ceil(filtered.length / perPage);
     const pageStudents = filtered.slice((page - 1) * perPage, page * perPage);
@@ -53,7 +54,7 @@ export function renderStudents(container) {
         <div class="page-header-row">
           <div>
             <h1 class="page-title">Students</h1>
-            <p class="page-subtitle">${students.length} students registered</p>
+            <p class="page-subtitle">${allStudents.length} students registered</p>
           </div>
           <button class="btn btn-primary" id="add-student-btn" onclick="openAddStudentModal()">
             ${icons['user-plus']} Add Student
@@ -133,6 +134,13 @@ export function renderStudents(container) {
     window.setStudentFilter = (f) => { filter = f; page = 1; render(); };
     window.setPage = (p) => { page = p; render(); };
   }
+
+  // Live subscription so changes show instantly without requiring page reload
+  const unsubscribe = store.subscribe(() => {
+    if (container && container.isConnected) {
+      render();
+    }
+  });
 
   render();
 }
@@ -309,7 +317,7 @@ window.openAddStudentModal = function() {
   `, { size: 'lg' });
 };
 
-window.confirmAddStudent = function(branchId) {
+window.confirmAddStudent = async function(branchId) {
   const name = document.getElementById('new-student-name')?.value?.trim();
   const rawPhone = document.getElementById('new-student-phone')?.value?.trim();
   const countryCode = document.getElementById('new-student-cc')?.value || '+91';
@@ -333,7 +341,7 @@ window.confirmAddStudent = function(branchId) {
     : (countryCode + rawPhone.replace(/\D/g, ''));
 
   try {
-    const student = store.addStudent({
+    const student = await store.addStudent({
       name,
       phone: rawPhone,
       country_code: countryCode,
@@ -369,7 +377,9 @@ window.confirmAddStudent = function(branchId) {
 
     modal.close();
     toast.show(`Student ${name} registered successfully!`, 'success');
-    app.navigate('/student', { id: student.id });
+    if (student && student.id) {
+      app.navigate('/student', { id: student.id });
+    }
   } catch (e) {
     toast.show(e.message, 'error');
   }

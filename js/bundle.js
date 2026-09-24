@@ -2828,6 +2828,13 @@ window.Pages.renderSeatMap = function renderSeatMap(container) {
     };
   }
 
+  // Live subscription so changes show instantly without requiring page reload
+  const unsubscribe = store.subscribe(() => {
+    if (container && container.isConnected) {
+      render();
+    }
+  });
+
   render();
 }
 
@@ -2883,7 +2890,7 @@ function renderBlueprintRoom(room, seats, state) {
     <div class="room-section" style="padding:var(--space-4);">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-4);flex-wrap:wrap;gap:8px;">
         <div class="room-label" style="margin-bottom:0;">
-          ${room.name}${room.acAvailable ? ' · AC' : ''} · ${room.type.toUpperCase()} · ${seats.length} seats (Visual Blueprint)
+          ${room.name} · ${seats.length} seats (Visual Blueprint)
         </div>
         <button class="btn btn-secondary btn-sm" onclick="if(window.openSeatLayoutEditor){window.openSeatLayoutEditor('${room.id}');}else{app.navigate('/floors');}">
           📐 Drag & Rearrange
@@ -2963,7 +2970,7 @@ function renderStandardRoom(room, seats, state) {
   const q = state.searchQuery?.toLowerCase();
 
   let html = `<div class="room-section">`;
-  html += `<div class="room-label">${room.name}${room.acAvailable ? ' · AC' : ''} · ${room.type.toUpperCase()} · ${seats.length} seats</div>`;
+  html += `<div class="room-label">${room.name} · ${seats.length} seats</div>`;
 
   Object.entries(rows).sort(([a],[b]) => a.localeCompare(b)).forEach(([rowLabel, rowSeats]) => {
     html += `<div class="seat-row"><div class="row-label">${rowLabel}</div>`;
@@ -4133,13 +4140,13 @@ window.confirmReservation = function(seatId) {
 // Students Page
 window.Pages.renderStudents = function renderStudents(container) {
   const branchId = store.getActiveBranchId();
-  let students = store.getStudents(branchId);
   let filter = 'all';
   let search = '';
   let page = 1;
   const perPage = 15;
 
   function getFilteredStudents() {
+    const students = store.getStudents(branchId);
     let result = [...students];
     if (search) {
       const q = search.toLowerCase();
@@ -4176,6 +4183,7 @@ window.Pages.renderStudents = function renderStudents(container) {
   }
 
   function render() {
+    const allStudents = store.getStudents(branchId);
     const filtered = getFilteredStudents();
     const totalPages = Math.ceil(filtered.length / perPage);
     const pageStudents = filtered.slice((page - 1) * perPage, page * perPage);
@@ -4185,7 +4193,7 @@ window.Pages.renderStudents = function renderStudents(container) {
         <div class="page-header-row">
           <div>
             <h1 class="page-title">Students</h1>
-            <p class="page-subtitle">${students.length} students registered</p>
+            <p class="page-subtitle">${allStudents.length} students registered</p>
           </div>
           <button class="btn btn-primary" id="add-student-btn" onclick="openAddStudentModal()">
             ${icons['user-plus']} Add Student
@@ -4265,6 +4273,13 @@ window.Pages.renderStudents = function renderStudents(container) {
     window.setStudentFilter = (f) => { filter = f; page = 1; render(); };
     window.setPage = (p) => { page = p; render(); };
   }
+
+  // Live subscription so changes show instantly without requiring page reload
+  const unsubscribe = store.subscribe(() => {
+    if (container && container.isConnected) {
+      render();
+    }
+  });
 
   render();
 }
@@ -4441,7 +4456,7 @@ window.openAddStudentModal = function() {
   `, { size: 'lg' });
 };
 
-window.confirmAddStudent = function(branchId) {
+window.confirmAddStudent = async function(branchId) {
   const name = document.getElementById('new-student-name')?.value?.trim();
   const rawPhone = document.getElementById('new-student-phone')?.value?.trim();
   const countryCode = document.getElementById('new-student-cc')?.value || '+91';
@@ -4465,7 +4480,7 @@ window.confirmAddStudent = function(branchId) {
     : (countryCode + rawPhone.replace(/\D/g, ''));
 
   try {
-    const student = store.addStudent({
+    const student = await store.addStudent({
       name,
       phone: rawPhone,
       country_code: countryCode,
@@ -4501,7 +4516,9 @@ window.confirmAddStudent = function(branchId) {
 
     modal.close();
     toast.show(`Student ${name} registered successfully!`, 'success');
-    app.navigate('/student', { id: student.id });
+    if (student && student.id) {
+      app.navigate('/student', { id: student.id });
+    }
   } catch (e) {
     toast.show(e.message, 'error');
   }
@@ -5927,39 +5944,50 @@ function renderAttStat(label, count, color) {
 
 window.Pages.renderFloors = function renderFloors(container) {
   const branchId = store.getActiveBranchId();
-  const branch = store.getBranch(branchId);
-  const floors = store.getFloors(branchId);
 
-  container.innerHTML = `
-    <div class="page-header">
-      <div class="page-header-row">
-        <div>
-          <h1 class="page-title">Floors & Rooms</h1>
-          <p class="page-subtitle">${branch?.name || 'StudyFlow'} — Physical space & seat layout configuration</p>
-        </div>
-        <div style="display:flex;gap:var(--space-2);">
-          <button class="btn btn-secondary" onclick="openAddFloorModal()">
-            ${icons.layers} Add Floor
-          </button>
-          <button class="btn btn-primary" onclick="openAddRoomModal()">
-            ${icons.plus} Add Room
-          </button>
+  function render() {
+    const branch = store.getBranch(branchId);
+    const floors = store.getFloors(branchId);
+
+    container.innerHTML = `
+      <div class="page-header">
+        <div class="page-header-row">
+          <div>
+            <h1 class="page-title">Floors & Rooms</h1>
+            <p class="page-subtitle">${branch?.name || 'StudyFlow'} — Physical space & seat layout configuration</p>
+          </div>
+          <div style="display:flex;gap:var(--space-2);">
+            <button class="btn btn-secondary" onclick="openAddFloorModal()">
+              ${icons.layers} Add Floor
+            </button>
+            <button class="btn btn-primary" onclick="openAddRoomModal()">
+              ${icons.plus} Add Room
+            </button>
+          </div>
         </div>
       </div>
-    </div>
 
-    ${floors.length ? floors.map(floor => renderFloorSection(floor)).join('') : `
-      <div class="empty-state" style="margin-top:var(--space-8);">
-        <div class="empty-icon">${icons.layers}</div>
-        <div class="empty-title">No floors configured</div>
-        <div class="empty-desc">Start by adding a floor to this branch.</div>
-        <button class="btn btn-primary" onclick="openAddFloorModal()">Add First Floor</button>
-      </div>
-    `}
-  `;
+      ${floors.length ? floors.map(floor => renderFloorSection(floor)).join('') : `
+        <div class="empty-state" style="margin-top:var(--space-8);">
+          <div class="empty-icon">${icons.layers}</div>
+          <div class="empty-title">No floors configured</div>
+          <div class="empty-desc">Start by adding a floor to this branch.</div>
+          <button class="btn btn-primary" onclick="openAddFloorModal()">Add First Floor</button>
+        </div>
+      `}
+    `;
+  }
+
+  // Live subscription so changes show instantly without requiring page reload
+  const unsubscribe = store.subscribe(() => {
+    if (container && container.isConnected) {
+      render();
+    }
+  });
 
   // ── Floor Modals ──────────────────────────────────────────────────
   window.openAddFloorModal = function() {
+    const currentFloors = store.getFloors(branchId);
     modal.open('Add Floor', `
       <div style="display:flex;flex-direction:column;gap:var(--space-4);">
         <div class="form-group">
@@ -5968,7 +5996,7 @@ window.Pages.renderFloors = function renderFloors(container) {
         </div>
         <div class="form-group">
           <label class="form-label">Level / Floor Number</label>
-          <input type="number" class="input" id="floor-level" value="${floors.length + 1}" min="0">
+          <input type="number" class="input" id="floor-level" value="${currentFloors.length + 1}" min="0">
         </div>
       </div>
     `, `
@@ -5985,7 +6013,7 @@ window.Pages.renderFloors = function renderFloors(container) {
       await store.addFloor({ branchId: bId, name, level, floorNumber: level });
       modal.close();
       toast.show(`Floor "${name}" added successfully!`, 'success');
-      app._navigate();
+      render();
     } catch (e) {
       toast.show(e.message, 'error');
     }
@@ -6013,31 +6041,13 @@ window.Pages.renderFloors = function renderFloors(container) {
           <label class="form-label">Room Name <span class="required">*</span></label>
           <input type="text" class="input" id="room-name" placeholder="e.g. Main Hall / Reading Room">
         </div>
-        <div class="grid-2">
-          <div class="form-group">
-            <label class="form-label">Room Type</label>
-            <select class="select" id="room-type">
-              <option value="general">General Hall</option>
-              <option value="silent">Silent Study</option>
-              <option value="premium">AC Premium</option>
-              <option value="discussion">Discussion Room</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Air Conditioned (AC)</label>
-            <select class="select" id="room-ac">
-              <option value="true">Yes (AC)</option>
-              <option value="false">No (Non-AC)</option>
-            </select>
-          </div>
-        </div>
 
         <div class="grid-2">
           <div class="form-group">
             <label class="form-label">Total Seats in Room <span class="required">*</span></label>
             <input type="number" class="input" id="room-seat-count" value="68" min="1" max="500">
             <span style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-top:2px;display:block;">
-              Direct seat capacity (no row/column formula needed)
+              Direct seat capacity (no formula needed)
             </span>
           </div>
           <div class="form-group">
@@ -6071,8 +6081,6 @@ window.Pages.renderFloors = function renderFloors(container) {
   window.confirmAddRoom = async function() {
     const floorId = document.getElementById('room-floor')?.value;
     const name = document.getElementById('room-name')?.value?.trim();
-    const type = document.getElementById('room-type')?.value;
-    const ac = document.getElementById('room-ac')?.value === 'true';
     const seatCount = parseInt(document.getElementById('room-seat-count')?.value || 68);
     const startNum = parseInt(document.getElementById('room-seat-start')?.value || 1);
     const preset = document.getElementById('room-layout-preset')?.value || 'blueprint';
@@ -6085,23 +6093,26 @@ window.Pages.renderFloors = function renderFloors(container) {
         floorId,
         branchId,
         name,
-        type,
-        acAvailable: ac,
+        type: 'hall',
+        acAvailable: false,
         capacity: seatCount
       });
 
       // Generate seats with initial coordinates
-      const seatsList = generateInitialSeatCoordinates(room.id, branchId, seatCount, startNum, preset);
+      const coordGenerator = window.generateInitialSeatCoordinates || generateInitialSeatCoordinates;
+      const seatsList = coordGenerator(room.id, branchId, seatCount, startNum, preset);
       await store.batchInsertSeats(seatsList);
 
       modal.close();
       toast.show(`Room "${name}" created with ${seatCount} seats! Opening layout editor...`, 'success');
-      app._navigate();
+      render();
 
       // Open the visual layout canvas immediately
       setTimeout(() => {
-        openSeatLayoutEditor(room.id);
-      }, 300);
+        if (window.openSeatLayoutEditor) {
+          window.openSeatLayoutEditor(room.id);
+        }
+      }, 250);
     } catch (e) {
       toast.show(e.message, 'error');
     }
@@ -6113,11 +6124,14 @@ window.Pages.renderFloors = function renderFloors(container) {
     try {
       await store.deleteRoom(roomId);
       toast.show('Room deleted', 'success');
-      app._navigate();
+      render();
     } catch (e) {
       toast.show(e.message, 'error');
     }
   };
+
+  // Initial render
+  render();
 }
 
 // ── Floor Plan Blueprint Layout Coordinates Generator ─────────────
@@ -6189,6 +6203,7 @@ window.Pages.generateInitialSeatCoordinates = function generateInitialSeatCoordi
 
   return seats;
 }
+window.generateInitialSeatCoordinates = generateInitialSeatCoordinates;
 
 // ── Interactive Drag & Drop Floor Plan Canvas Editor ──────────────
 window.openSeatLayoutEditor = function(roomId) {
@@ -6517,7 +6532,7 @@ function renderRoomCard(room) {
         <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:var(--space-3);">
           <div>
             <div style="font-weight:var(--fw-semibold);color:var(--color-text-primary);font-size:var(--text-base);">${room.name}</div>
-            <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);">${capitalizeFirst(room.type)} · ${room.acAvailable ? 'AC' : 'Non-AC'}</div>
+            <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);">${seats.length} seats configured</div>
           </div>
           <span class="badge badge-${occupancyPct >= 80 ? 'error' : occupancyPct >= 50 ? 'warning' : 'success'}">
             ${occupancyPct}%
