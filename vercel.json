@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "name": "studyflow",
+  "name": "studyflow-app",
   "buildCommand": "node build.js",
   "outputDirectory": ".",
   "functions": {
