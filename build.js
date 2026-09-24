@@ -110,3 +110,45 @@ bundleContent += `// ─── APP CORE ───\n${appContent}\n`;
 
 fs.writeFileSync(bundlePath, bundleContent, 'utf8');
 console.log(`Bundle built successfully at ${bundlePath} (${(bundleContent.length / 1024).toFixed(1)} KB)`);
+
+// ─── 6. EXPORT STATIC DISTRIBUTION (public/) FOR VERCEL ───
+const publicDir = path.join(rootDir, 'public');
+const publicJsDir = path.join(publicDir, 'js');
+const publicCssDir = path.join(publicDir, 'css');
+const publicAssetsDir = path.join(publicDir, 'assets');
+
+[publicDir, publicJsDir, publicCssDir, publicAssetsDir].forEach(dir => {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+});
+
+// Copy bundle.js
+fs.writeFileSync(path.join(publicJsDir, 'bundle.js'), bundleContent, 'utf8');
+
+// Copy index.html
+const indexHtmlPath = path.join(rootDir, 'index.html');
+if (fs.existsSync(indexHtmlPath)) {
+  fs.copyFileSync(indexHtmlPath, path.join(publicDir, 'index.html'));
+}
+
+// Copy CSS directory
+const cssDir = path.join(rootDir, 'css');
+if (fs.existsSync(cssDir)) {
+  const cssFiles = fs.readdirSync(cssDir);
+  for (const f of cssFiles) {
+    fs.copyFileSync(path.join(cssDir, f), path.join(publicCssDir, f));
+  }
+}
+
+// Copy Assets directory
+const assetsDir = path.join(rootDir, 'assets');
+if (fs.existsSync(assetsDir)) {
+  const assetFiles = fs.readdirSync(assetsDir);
+  for (const f of assetFiles) {
+    const src = path.join(assetsDir, f);
+    if (fs.statSync(src).isFile()) {
+      fs.copyFileSync(src, path.join(publicAssetsDir, f));
+    }
+  }
+}
+
+console.log('Static distribution compiled to public/ directory for Vercel deployment.');

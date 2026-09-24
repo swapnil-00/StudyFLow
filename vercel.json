@@ -2,7 +2,7 @@
   "version": 2,
   "name": "studyflow-app",
   "buildCommand": "node build.js",
-  "outputDirectory": ".",
+  "outputDirectory": "public",
   "functions": {
     "api/**/*.js": {
       "maxDuration": 30

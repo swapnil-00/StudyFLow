@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <base href="/" />
+  <title>StudyFlow — Library Management</title>
+  <meta name="description" content="StudyFlow is a production-quality Study Library Management SaaS for owners to manage seats, students, memberships, payments, and attendance." />
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="theme-color" content="#6172f3" />
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;450;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="/css/tokens.css" />
+  <link rel="stylesheet" href="/css/base.css" />
+  <link rel="stylesheet" href="/css/layout.css" />
+  <link rel="stylesheet" href="/css/components.css" />
+  <link rel="stylesheet" href="/css/pages.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Loading screen -->
+    <div id="app-loader" style="
+      position:fixed;inset:0;
+      background:var(--color-bg-primary, #0f172a);
+      display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;
+      z-index:9999;
+      transition:opacity 0.3s;
+    ">
+      <div style="
+        width:56px;height:56px;
+        background:linear-gradient(135deg, #6172f3 0%, #4338ca 100%);
+        border-radius:16px;
+        display:flex;align-items:center;justify-content:center;
+        font-size:22px;font-weight:800;color:white;letter-spacing:-0.5px;
+        box-shadow: 0 8px 24px rgba(97,114,243,0.4);
+      ">SF</div>
+      <div style="text-align:center;">
+        <div style="font-size:22px;font-weight:700;color:#f8fafc;letter-spacing:-0.5px;">StudyFlow</div>
+        <div id="app-loader-msg" style="font-size:13px;color:#94a3b8;margin-top:4px;">Loading your library...</div>
+      </div>
+      <div id="app-loader-spinner" class="spinner" style="border-color:rgba(97,114,243,0.2);border-top-color:#6172f3;"></div>
+
+      <div id="app-error-box" style="display:none;max-width:440px;margin-top:16px;padding:16px 20px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:12px;text-align:center;">
+        <div style="font-size:14px;font-weight:600;color:#f87171;margin-bottom:6px;">Unable to initialize application</div>
+        <div id="app-error-detail" style="font-size:12px;color:#cbd5e1;line-height:1.5;margin-bottom:14px;"></div>
+        <div style="display:flex;gap:8px;justify-content:center;">
+          <button onclick="location.reload()" style="padding:8px 16px;background:#6172f3;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;">Retry</button>
+          <a href="/api/data" target="_blank" style="padding:8px 16px;background:rgba(255,255,255,0.08);color:#cbd5e1;border:1px solid rgba(255,255,255,0.15);border-radius:8px;font-size:12px;font-weight:600;text-decoration:none;display:inline-block;">Inspect API</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Global Error & Recovery Handler
+    window.__appLoaded = false;
+    function showAppError(msg) {
+      if (window.__appLoaded) return;
+      const loaderMsg = document.getElementById('app-loader-msg');
+      const spinner = document.getElementById('app-loader-spinner');
+      const errorBox = document.getElementById('app-error-box');
+      const errorDetail = document.getElementById('app-error-detail');
+      if (spinner) spinner.style.display = 'none';
+      if (loaderMsg) loaderMsg.textContent = 'Startup error encountered';
+      if (errorDetail) errorDetail.textContent = msg || 'An unexpected script or database connection error occurred.';
+      if (errorBox) errorBox.style.display = 'block';
+    }
+
+    window.addEventListener('error', function(e) {
+      if (!window.__appLoaded) {
+        showAppError(e.message || 'Script loading failure. Check browser console.');
+      }
+    });
+
+    window.addEventListener('unhandledrejection', function(e) {
+      if (!window.__appLoaded) {
+        showAppError(e.reason?.message || 'Database request rejected.');
+      }
+    });
+
+    // Boot timeout safeguard (15 seconds)
+    setTimeout(function() {
+      if (!window.__appLoaded && document.getElementById('app-loader')) {
+        showAppError('Connection timed out. Verify your Neon database connection and Vercel environment configuration.');
+      }
+    }, 15000);
+
+    // Dismiss loader function
+    function dismissAppLoader() {
+      window.__appLoaded = true;
+      const loader = document.getElementById('app-loader');
+      if (loader) {
+        loader.style.opacity = '0';
+        loader.style.pointerEvents = 'none';
+        setTimeout(() => { if (loader.parentNode) loader.remove(); }, 300);
+      }
+    }
+  </script>
+
+  <!-- Single self-contained production bundle -->
+  <script src="/js/bundle.js" onerror="showAppError('Failed to load application script (/js/bundle.js)')" defer></script>
+</body>
+</html>
