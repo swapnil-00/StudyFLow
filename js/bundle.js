@@ -2970,7 +2970,7 @@ function renderBlueprintRoom(room, seats, state) {
 
     const posX = seat.position?.x ?? 20;
     const posY = seat.position?.y ?? 20;
-    const statusClass = `status-${status}`;
+    const statusClass = status;
     const selected = state.selectedSeatId === seat.id;
 
     html += `
@@ -2983,9 +2983,9 @@ function renderBlueprintRoom(room, seats, state) {
         tabindex="0"
         onkeydown="if(event.key==='Enter'||event.key===' ')openSeatDrawer('${seat.id}')"
       >
-        <div class="seat-dot"></div>
-        <div class="seat-num">${seat.label}</div>
-        ${student ? `<div style="font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:44px;color:rgba(255,255,255,0.85);">${student.name.split(' ')[0]}</div>` : ''}
+        <span class="seat-led"></span>
+        <span>${seat.label}</span>
+        ${student ? `<div style="font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:50px;color:rgba(255,255,255,0.85);margin-top:-2px;">${student.name.split(' ')[0]}</div>` : ''}
       </div>
     `;
   });
