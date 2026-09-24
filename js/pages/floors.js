@@ -289,167 +289,102 @@ window.Pages.generateInitialSeatCoordinates = generateInitialSeatCoordinates;
 
 export { generateInitialSeatCoordinates };
 
-// ── Draw.io-Grade Precision Seat Layout Sheet Editor ──────────────────
+// ── Genuine Draw.io Full Drawing Sheet Layout Editor ──────────────────
 window.openSeatLayoutEditor = function(roomId) {
   const room = store.getRoom(roomId);
   if (!room) { toast.show('Room not found', 'error'); return; }
   const floor = store.getFloor(room.floorId);
   const seats = store.getSeats(roomId);
 
-  // ── Canvas state (Draw.io pan, zoom & grid) ──
-  let canvasZoom = 1;
-  let panX = 40, panY = 40;
-  let isPanning = false;
-  let panStartX = 0, panStartY = 0;
-  let panStartPanX = 0, panStartPanY = 0;
-  let spaceHeld = false;
-  let snapGridSize = 10; // 5, 10, 20 or 0 (off)
+  // Generate mxGraph XML for Draw.io
+  function generateDrawioXml(currentSeats) {
+    const seatCells = currentSeats.map(s => {
+      const x = Math.max(40, s.position?.x || s.position_x || 60);
+      const y = Math.max(40, s.position?.y || s.position_y || 60);
+      const status = store.getSeatStatus(s.id);
 
-  // Selection state
-  const selectedSeatIds = new Set();
-  const localPositions = {};
+      // Status color styles matching StudyFlow palette
+      let style = "rounded=1;whiteSpace=wrap;html=1;arcSize=16;strokeWidth=2;fillColor=#14532d;strokeColor=#22c55e;fontColor=#ffffff;fontSize=13;fontStyle=1;shadow=1;";
+      if (status === 'occupied') {
+        style = "rounded=1;whiteSpace=wrap;html=1;arcSize=16;strokeWidth=2;fillColor=#1e1b4b;strokeColor=#6366f1;fontColor=#ffffff;fontSize=13;fontStyle=1;shadow=1;";
+      } else if (status === 'reserved') {
+        style = "rounded=1;whiteSpace=wrap;html=1;arcSize=16;strokeWidth=2;fillColor=#431407;strokeColor=#f97316;fontColor=#ffffff;fontSize=13;fontStyle=1;shadow=1;";
+      } else if (status === 'payment-due') {
+        style = "rounded=1;whiteSpace=wrap;html=1;arcSize=16;strokeWidth=2;fillColor=#450a0a;strokeColor=#ef4444;fontColor=#ffffff;fontSize=13;fontStyle=1;shadow=1;";
+      } else if (status === 'expiring') {
+        style = "rounded=1;whiteSpace=wrap;html=1;arcSize=16;strokeWidth=2;fillColor=#422006;strokeColor=#eab308;fontColor=#ffffff;fontSize=13;fontStyle=1;shadow=1;";
+      } else if (status === 'maintenance' || status === 'blocked') {
+        style = "rounded=1;whiteSpace=wrap;html=1;arcSize=16;strokeWidth=2;fillColor=#1f2937;strokeColor=#64748b;fontColor=#94a3b8;fontSize=13;fontStyle=1;";
+      }
 
-  // Initialize local coordinates map
-  seats.forEach(s => {
-    localPositions[s.id] = {
-      x: s.position?.x || s.position_x || 50,
-      y: s.position?.y || s.position_y || 50
-    };
-  });
+      return `<mxCell id="seat_${s.id}" value="${s.label}" style="${style}" vertex="1" parent="1">
+        <mxGeometry x="${x}" y="${y}" width="62" height="40" as="geometry"/>
+      </mxCell>`;
+    }).join('\n    ');
+
+    return `<mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="0" arrows="0" fold="1" page="1" pageScale="1" pageWidth="2400" pageHeight="1600" background="#121417">
+  <root>
+    <mxCell id="0"/>
+    <mxCell id="1" parent="0"/>
+    <mxCell id="room_boundary" value="📍 ${room.name} · ${floor?.name || 'Floor Plan'} Boundary" style="rounded=1;whiteSpace=wrap;html=1;arcSize=2;fillColor=#181a1d;strokeColor=#36393f;strokeWidth=2;fontColor=#72767d;fontSize=14;fontStyle=1;align=left;verticalAlign=top;spacingLeft=18;spacingTop=14;dashed=1;" vertex="1" parent="1">
+      <mxGeometry x="20" y="20" width="2300" height="1500" as="geometry"/>
+    </mxCell>
+    ${seatCells}
+  </root>
+</mxGraphModel>`;
+  }
+
+  const initialXml = generateDrawioXml(seats);
 
   const editorHtml = `
-    <div class="drawio-editor-shell">
-      <!-- Draw.io Styled Top Control Toolbar -->
-      <div class="drawio-toolbar">
-        <!-- Room Details & Seat Count -->
+    <div style="display:flex;flex-direction:column;flex:1;height:100%;overflow:hidden;background:#181a1b;">
+      <!-- Top Control Bar -->
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:#202225;border-bottom:1px solid #36393f;gap:10px;flex-wrap:wrap;z-index:10;">
         <div style="display:flex;align-items:center;gap:12px;">
           <div>
-            <div style="font-size:13px;font-weight:700;color:#ffffff;display:flex;align-items:center;gap:6px;">
+            <div style="font-size:14px;font-weight:700;color:#ffffff;display:flex;align-items:center;gap:6px;">
               <span>📐 ${room.name}</span>
-              <span style="font-size:11px;font-weight:normal;color:#8e9297;">(${floor?.name || 'Floor Plan'})</span>
+              <span style="font-size:11px;font-weight:normal;color:#8e9297;">(${floor?.name || ''})</span>
             </div>
             <div style="font-size:11px;color:#8e9297;">
-              <span id="editor-seat-count">${seats.length}</span> seats total · <span id="editor-selected-count" style="color:#00c3ff;font-weight:600;">0 selected</span>
+              <span id="drawio-seat-count">${seats.length}</span> seats loaded · Full Draw.io Sheet Engine Active
             </div>
           </div>
         </div>
 
-        <!-- Middle Tools: Zoom, Grid Snap, Alignment, Generators -->
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-          <!-- Zoom Controls -->
-          <div class="drawio-tool-group">
-            <button type="button" class="drawio-btn" onclick="drawioZoom(-0.15)" title="Zoom Out (Ctrl+Minus)">−</button>
-            <span id="drawio-zoom-label" style="font-size:11px;font-family:monospace;min-width:36px;text-align:center;font-weight:600;color:#ffffff;">100%</span>
-            <button type="button" class="drawio-btn" onclick="drawioZoom(0.15)" title="Zoom In (Ctrl+Plus)">+</button>
-            <button type="button" class="drawio-btn" onclick="drawioZoom(0)" title="Fit to Drawing Sheet">Fit</button>
-          </div>
-
-          <!-- Snap to Grid -->
-          <div class="drawio-tool-group">
-            <span style="font-size:11px;color:#8e9297;padding-left:2px;">Snap:</span>
-            <select id="drawio-snap-select" onchange="drawioSetSnap(this.value)" style="background:#202225;color:#dcddde;border:1px solid #36393f;border-radius:4px;font-size:11px;padding:2px 4px;outline:none;cursor:pointer;">
-              <option value="10" selected>10px (Normal)</option>
-              <option value="20">20px (Coarse)</option>
-              <option value="5">5px (Fine)</option>
-              <option value="0">Off (Free)</option>
-            </select>
-          </div>
-
-          <!-- Alignment & Distribution Controls -->
-          <div class="drawio-tool-group" id="drawio-align-group">
-            <button type="button" class="drawio-btn" onclick="drawioAlign('left')" title="Align Left (Select 2+ seats)">⇤ Left</button>
-            <button type="button" class="drawio-btn" onclick="drawioAlign('centerX')" title="Align Center X">⬌ Mid X</button>
-            <button type="button" class="drawio-btn" onclick="drawioAlign('top')" title="Align Top">⤒ Top</button>
-            <button type="button" class="drawio-btn" onclick="drawioAlign('centerY')" title="Align Center Y">⬍ Mid Y</button>
-            <button type="button" class="drawio-btn" onclick="drawioDistribute('horizontal')" title="Distribute Horizontally (Select 3+ seats)">↔ Distribute</button>
-            <button type="button" class="drawio-btn" onclick="drawioDistribute('vertical')" title="Distribute Vertically">↕ Distribute</button>
-          </div>
-
-          <!-- Add Seats / Stencils -->
-          <div class="drawio-tool-group">
-            <button type="button" class="drawio-btn btn-primary-action" onclick="drawioAddSingleSeat('${roomId}')" title="Add Single Seat with Custom Number">
-              + Add Seat
-            </button>
-            <button type="button" class="drawio-btn" onclick="drawioAddSeatRow('${roomId}')" title="Add Row of Multiple Seats">
-              + Add Row
-            </button>
-          </div>
-        </div>
-
-        <!-- Actions: Lock & Save -->
-        <div style="display:flex;align-items:center;gap:8px;">
-          <button type="button" class="drawio-btn btn-success-action" id="drawio-save-btn" onclick="drawioSaveLayout('${roomId}')">
-            ${icons.checkCircle || '✓'} Save & Lock
+          <button type="button" class="btn btn-secondary btn-sm" onclick="drawioAddSeatViaPrompt('${roomId}')" title="Add New Seat into Draw.io">
+            + Add Seat
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="drawioAddRowViaPrompt('${roomId}')" title="Add Row of Seats into Draw.io">
+            + Add Row
+          </button>
+          <button type="button" class="btn btn-primary btn-sm" id="drawio-save-button" onclick="drawioTriggerSave('${roomId}')" style="background:#007acc;border-color:#0098ff;">
+            ${icons.checkCircle || '✓'} Save & Lock Layout
           </button>
         </div>
       </div>
 
-      <!-- Quick Hint Bar -->
-      <div style="background:#1e2124;padding:3px 14px;border-bottom:1px solid #2f333a;display:flex;align-items:center;justify-content:space-between;font-size:11px;color:#8e9297;flex-shrink:0;">
-        <span>💡 <b>Click & Drag Canvas</b> = Box Select · <b>Space+Drag / Middle-click</b> = Pan · <b>Scroll</b> = Zoom · <b>Drag Seat</b> = Move Selection · <b>Ctrl+D</b> = Duplicate · <b>Del</b> = Delete</span>
-        <span id="drawio-coord-hud" style="font-family:monospace;color:#00ffff;font-weight:bold;"></span>
+      <!-- Hint bar -->
+      <div style="background:#181a1d;padding:4px 14px;border-bottom:1px solid #282b30;display:flex;align-items:center;justify-content:space-between;font-size:11px;color:#8e9297;flex-shrink:0;">
+        <span>🎨 <b>Draw.io Sheet</b>: Full Zoom, Pan, Multi-select, Align, Distribute, Duplicate (Ctrl+D), Snap to Grid & Stencils enabled.</span>
+        <span style="color:#00ffff;font-weight:600;">Click "Save & Lock Layout" when done</span>
       </div>
 
-      <!-- Main Drawing Workspace with Synchronized Rulers -->
-      <div class="drawio-workspace-area" id="drawio-workspace">
-        <!-- Ruler Corner -->
-        <div class="drawio-ruler-corner">px</div>
-
-        <!-- Top Ruler Canvas -->
-        <canvas class="drawio-ruler-top" id="drawio-ruler-top" height="24"></canvas>
-
-        <!-- Left Ruler Canvas -->
-        <canvas class="drawio-ruler-left" id="drawio-ruler-left" width="24"></canvas>
-
-        <!-- Viewport Area -->
-        <div class="drawio-viewport" id="drawio-viewport">
-          <!-- Transformable Drawing Sheet Paper -->
-          <div class="drawio-sheet-paper" id="drawio-sheet">
-            <!-- Dynamic SVG Grid Overlay -->
-            <svg class="drawio-grid-svg" xmlns="http://www.w3.org/2000/svg">
-              <defs>
-                <pattern id="drawioMinorGrid" width="20" height="20" patternUnits="userSpaceOnUse">
-                  <circle cx="10" cy="10" r="0.75" fill="rgba(255,255,255,0.12)" />
-                </pattern>
-                <pattern id="drawioMajorGrid" width="100" height="100" patternUnits="userSpaceOnUse">
-                  <rect width="100" height="100" fill="url(#drawioMinorGrid)" />
-                  <path d="M 100 0 L 0 0 0 100" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="1" />
-                </pattern>
-              </defs>
-              <rect width="100%" height="100%" fill="url(#drawioMajorGrid)" />
-            </svg>
-
-            <!-- Seats Layer -->
-            <div id="drawio-seats-layer" style="position:relative;width:100%;height:100%;z-index:10;"></div>
-
-            <!-- Smart Alignment Guides Layer -->
-            <div id="drawio-guides-layer" style="position:absolute;inset:0;pointer-events:none;z-index:25;"></div>
-
-            <!-- Marquee Selection Box Overlay -->
-            <div id="drawio-selection-box" class="drawio-selection-box" style="display:none;"></div>
-          </div>
-
-          <!-- Bottom-left HUD Overlay -->
-          <div class="drawio-hud-info" id="drawio-hud-info">
-            Zoom: 100% · Origin: (0, 0)
-          </div>
-
-          <!-- Floating Multi-Selection HUD (When 1+ seats selected) -->
-          <div class="drawio-selection-hud" id="drawio-selection-hud" style="display:none;">
-            <span id="drawio-hud-sel-text" style="font-weight:700;color:#00c3ff;">1 seat selected</span>
-            <span style="color:#4f545c;">|</span>
-            <button type="button" class="drawio-btn" onclick="drawioDuplicateSelected('${roomId}')" title="Duplicate selected seats (Ctrl+D)">📋 Duplicate</button>
-            <button type="button" class="drawio-btn btn-danger-action" onclick="drawioDeleteSelected('${roomId}')" title="Delete selected seats (Delete)">🗑️ Delete</button>
-            <button type="button" class="drawio-btn" onclick="drawioClearSelection()" title="Clear Selection (Esc)">✕ Deselect</button>
-          </div>
-        </div>
+      <!-- Embedded Draw.io Iframe -->
+      <div style="flex:1;position:relative;overflow:hidden;background:#1e2022;">
+        <iframe id="drawio-frame"
+          src="drawio/index.html?embed=1&ui=atlas&spin=1&proto=json&configure=1&noExitBtn=1&saveAndExit=0"
+          style="width:100%;height:100%;border:none;display:block;"
+          allow="fullscreen"
+        ></iframe>
       </div>
     </div>
   `;
 
-  modal.open(`Drawing Sheet Layout Editor — ${room.name}`, editorHtml, `
+  modal.open(`Draw.io Sheet Layout Designer — ${room.name}`, editorHtml, `
     <button class="btn btn-secondary" onclick="modal.close()">Close</button>
-    <button class="btn btn-primary" onclick="drawioSaveLayout('${roomId}')">
+    <button class="btn btn-primary" onclick="drawioTriggerSave('${roomId}')">
       ${icons.checkCircle || '✓'} Save & Finish
     </button>
   `, { size: 'full' });
@@ -458,746 +393,202 @@ window.openSeatLayoutEditor = function(roomId) {
   const modalDialog = document.getElementById('modal-dialog');
   if (modalDialog) modalDialog.classList.add('is-resizable');
 
-  // ── Engine DOM Elements ──
-  const viewport = document.getElementById('drawio-viewport');
-  const sheet = document.getElementById('drawio-sheet');
-  const seatsLayer = document.getElementById('drawio-seats-layer');
-  const guidesLayer = document.getElementById('drawio-guides-layer');
-  const selectionBoxEl = document.getElementById('drawio-selection-box');
-  const rulerTopCanvas = document.getElementById('drawio-ruler-top');
-  const rulerLeftCanvas = document.getElementById('drawio-ruler-left');
-  const selectionHud = document.getElementById('drawio-selection-hud');
-  const selCountText = document.getElementById('drawio-hud-sel-text');
-  const topSelCount = document.getElementById('editor-selected-count');
+  const iframe = document.getElementById('drawio-frame');
 
-  // ── Transform & Rulers Renderer ──
-  function applyTransform() {
-    if (!sheet) return;
-    sheet.style.transform = `translate(${panX}px, ${panY}px) scale(${canvasZoom})`;
-    sheet.style.transformOrigin = '0 0';
+  // Fallback to online embed.diagrams.net if local drawio isn't hosted
+  let loaded = false;
+  const loadTimeout = setTimeout(() => {
+    if (!loaded && iframe) {
+      console.log('Falling back to embed.diagrams.net CDN...');
+      iframe.src = `https://embed.diagrams.net/?embed=1&ui=atlas&spin=1&proto=json&configure=1&noExitBtn=1&saveAndExit=0`;
+    }
+  }, 3000);
 
-    const zoomLabel = document.getElementById('drawio-zoom-label');
-    if (zoomLabel) zoomLabel.textContent = `${Math.round(canvasZoom * 100)}%`;
+  // ── Draw.io postMessage Protocol Listener ──
+  async function onDrawioMessage(evt) {
+    if (!evt.data || typeof evt.data !== 'string') return;
 
-    const hud = document.getElementById('drawio-hud-info');
-    if (hud) hud.textContent = `Zoom: ${Math.round(canvasZoom * 100)}% · Pan: (${Math.round(panX)}, ${Math.round(panY)})`;
-
-    drawRulers();
-  }
-
-  function drawRulers() {
-    if (!rulerTopCanvas || !rulerLeftCanvas || !viewport) return;
-
-    const vpRect = viewport.getBoundingClientRect();
-    const width = vpRect.width;
-    const height = vpRect.height;
-
-    // Adjust resolution for high-DPI displays
-    const dpr = window.devicePixelRatio || 1;
-    rulerTopCanvas.width = width * dpr;
-    rulerTopCanvas.height = 24 * dpr;
-    rulerLeftCanvas.width = 24 * dpr;
-    rulerLeftCanvas.height = height * dpr;
-
-    const ctxTop = rulerTopCanvas.getContext('2d');
-    const ctxLeft = rulerLeftCanvas.getContext('2d');
-
-    ctxTop.scale(dpr, dpr);
-    ctxLeft.scale(dpr, dpr);
-
-    // Clear
-    ctxTop.fillStyle = '#202225';
-    ctxTop.fillRect(0, 0, width, 24);
-    ctxLeft.fillStyle = '#202225';
-    ctxLeft.fillRect(0, 0, 24, height);
-
-    ctxTop.fillStyle = '#72767d';
-    ctxTop.font = '9px monospace';
-    ctxTop.strokeStyle = '#36393f';
-    ctxTop.lineWidth = 1;
-
-    ctxLeft.fillStyle = '#72767d';
-    ctxLeft.font = '9px monospace';
-    ctxLeft.strokeStyle = '#36393f';
-    ctxLeft.lineWidth = 1;
-
-    // Calculate visible coordinate range
-    const step = canvasZoom < 0.35 ? 200 : canvasZoom < 0.75 ? 100 : canvasZoom > 1.8 ? 20 : 50;
-    const minorStep = step / 5;
-
-    // Top Ruler (X coordinates)
-    const startX = Math.floor((-panX / canvasZoom) / step) * step;
-    const endX = Math.ceil(((width - panX) / canvasZoom) / step) * step;
-
-    for (let x = startX; x <= endX; x += minorStep) {
-      const screenX = panX + x * canvasZoom;
-      if (screenX < 0 || screenX > width) continue;
-
-      const isMajor = Math.abs(x % step) < 0.01;
-      const tickHeight = isMajor ? 14 : 6;
-
-      ctxTop.beginPath();
-      ctxTop.moveTo(screenX + 0.5, 24 - tickHeight);
-      ctxTop.lineTo(screenX + 0.5, 24);
-      ctxTop.stroke();
-
-      if (isMajor && screenX + 30 < width) {
-        ctxTop.fillText(`${Math.round(x)}`, screenX + 3, 11);
-      }
+    let msg;
+    try {
+      msg = JSON.parse(evt.data);
+    } catch (_) {
+      return;
     }
 
-    // Left Ruler (Y coordinates)
-    const startY = Math.floor((-panY / canvasZoom) / step) * step;
-    const endY = Math.ceil(((height - panY) / canvasZoom) / step) * step;
+    if (!msg.event && !msg.action) return;
 
-    for (let y = startY; y <= endY; y += minorStep) {
-      const screenY = panY + y * canvasZoom;
-      if (screenY < 0 || screenY > height) continue;
-
-      const isMajor = Math.abs(y % step) < 0.01;
-      const tickWidth = isMajor ? 14 : 6;
-
-      ctxLeft.beginPath();
-      ctxLeft.moveTo(24 - tickWidth, screenY + 0.5);
-      ctxLeft.lineTo(24, screenY + 0.5);
-      ctxLeft.stroke();
-
-      if (isMajor && screenY + 15 < height) {
-        ctxLeft.save();
-        ctxLeft.translate(10, screenY + 12);
-        ctxLeft.rotate(-Math.PI / 2);
-        ctxLeft.fillText(`${Math.round(y)}`, 0, 0);
-        ctxLeft.restore();
-      }
+    // 1. Draw.io Init event -> Load diagram XML
+    if (msg.event === 'init') {
+      loaded = true;
+      clearTimeout(loadTimeout);
+      iframe.contentWindow.postMessage(JSON.stringify({
+        action: 'load',
+        autosave: 1,
+        xml: initialXml,
+        title: `${room.name} - Seat Layout`
+      }), '*');
     }
-  }
 
-  // ── Snap Configuration ──
-  window.drawioSetSnap = function(val) {
-    snapGridSize = parseInt(val, 10) || 0;
-  };
-
-  // ── Zoom Handler ──
-  window.drawioZoom = function(delta) {
-    if (delta === 0) {
-      // Fit to sheet or center
-      canvasZoom = 1;
-      panX = 50;
-      panY = 50;
-    } else {
-      canvasZoom = Math.min(3.5, Math.max(0.15, Math.round((canvasZoom + delta) * 100) / 100));
-    }
-    applyTransform();
-  };
-
-  // ── Viewport Panning & Marquee Drag Box ──
-  let isMarqueeSelecting = false;
-  let marqueeStartX = 0, marqueeStartY = 0;
-
-  if (viewport) {
-    // Wheel Zoom towards pointer
-    viewport.addEventListener('wheel', (e) => {
-      e.preventDefault();
-      const rect = viewport.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
-
-      const oldZoom = canvasZoom;
-      const delta = e.deltaY > 0 ? -0.08 : 0.08;
-      canvasZoom = Math.min(3.5, Math.max(0.15, Math.round((canvasZoom + delta) * 100) / 100));
-
-      const zoomRatio = canvasZoom / oldZoom;
-      panX = mouseX - (mouseX - panX) * zoomRatio;
-      panY = mouseY - (mouseY - panY) * zoomRatio;
-
-      applyTransform();
-    }, { passive: false });
-
-    // Pointer down on Viewport
-    viewport.addEventListener('pointerdown', (e) => {
-      if (e.target.closest('.floor-plan-seat')) return; // handled by seat drag
-
-      const rect = viewport.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
-
-      // Middle click (button 1) or Space + Left click = Pan
-      if (e.button === 1 || (spaceHeld && e.button === 0)) {
-        e.preventDefault();
-        isPanning = true;
-        panStartX = e.clientX;
-        panStartY = e.clientY;
-        panStartPanX = panX;
-        panStartPanY = panY;
-        viewport.style.cursor = 'grabbing';
-        viewport.setPointerCapture(e.pointerId);
-        return;
-      }
-
-      // Left click on background = Start Marquee Box Selection
-      if (e.button === 0) {
-        if (!e.shiftKey && !e.ctrlKey && !e.metaKey) {
-          selectedSeatIds.clear();
-          updateSelectionVisuals();
+    // 2. Draw.io Configure event -> Setup dark theme and default grid
+    else if (msg.event === 'configure') {
+      iframe.contentWindow.postMessage(JSON.stringify({
+        action: 'configure',
+        config: {
+          defaultGridEnabled: true,
+          defaultGridColor: '#36393f',
+          defaultPageVisible: true,
+          defaultPageBackgroundColor: '#121417',
+          dark: true
         }
-        isMarqueeSelecting = true;
-        marqueeStartX = mouseX;
-        marqueeStartY = mouseY;
+      }), '*');
+    }
 
-        if (selectionBoxEl) {
-          selectionBoxEl.style.display = 'block';
-          // Place relative to sheet coords
-          const sheetX = (mouseX - panX) / canvasZoom;
-          const sheetY = (mouseY - panY) / canvasZoom;
-          selectionBoxEl.style.left = `${sheetX}px`;
-          selectionBoxEl.style.top = `${sheetY}px`;
-          selectionBoxEl.style.width = '0px';
-          selectionBoxEl.style.height = '0px';
-        }
-        viewport.setPointerCapture(e.pointerId);
-      }
-    });
+    // 3. Draw.io Export / Save event -> Parse XML and save coordinates to store
+    else if (msg.event === 'export' || msg.event === 'save') {
+      const xmlString = msg.data || msg.xml;
+      if (!xmlString) return;
 
-    viewport.addEventListener('pointermove', (e) => {
-      const rect = viewport.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
+      const saveBtn = document.getElementById('drawio-save-button');
+      if (saveBtn) saveBtn.textContent = 'Saving...';
 
-      if (isPanning) {
-        panX = panStartPanX + (e.clientX - panStartX);
-        panY = panStartPanY + (e.clientY - panStartY);
-        applyTransform();
-        return;
-      }
+      try {
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(xmlString, 'text/xml');
+        const cells = xmlDoc.querySelectorAll('mxCell');
 
-      if (isMarqueeSelecting && selectionBoxEl) {
-        const sheetStartX = (marqueeStartX - panX) / canvasZoom;
-        const sheetStartY = (marqueeStartY - panY) / canvasZoom;
-        const currentSheetX = (mouseX - panX) / canvasZoom;
-        const currentSheetY = (mouseY - panY) / canvasZoom;
-
-        const left = Math.min(sheetStartX, currentSheetX);
-        const top = Math.min(sheetStartY, currentSheetY);
-        const width = Math.abs(currentSheetX - sheetStartX);
-        const height = Math.abs(currentSheetY - sheetStartY);
-
-        selectionBoxEl.style.left = `${left}px`;
-        selectionBoxEl.style.top = `${top}px`;
-        selectionBoxEl.style.width = `${width}px`;
-        selectionBoxEl.style.height = `${height}px`;
-
-        // Live check intersection with all seats
-        const right = left + width;
-        const bottom = top + height;
         const currentSeats = store.getSeats(roomId);
+        const seatMapById = new Map(currentSeats.map(s => [s.id, s]));
+        const seatMapByLabel = new Map(currentSeats.map(s => [s.label, s]));
 
-        currentSeats.forEach(seat => {
-          const pos = localPositions[seat.id] || { x: 50, y: 50 };
-          const sRight = pos.x + 62;
-          const sBottom = pos.y + 40;
+        const updates = [];
+        const addedSeats = [];
 
-          // Box intersection
-          const isInside = !(pos.x > right || sRight < left || pos.y > bottom || sBottom < top);
-          if (isInside) {
-            selectedSeatIds.add(seat.id);
-          } else if (!e.shiftKey) {
-            selectedSeatIds.delete(seat.id);
+        cells.forEach(cell => {
+          const rawId = cell.getAttribute('id') || '';
+          if (!rawId || rawId === '0' || rawId === '1' || rawId === 'room_boundary') return;
+
+          const geo = cell.querySelector('mxGeometry');
+          if (!geo) return;
+
+          const x = Math.round(parseFloat(geo.getAttribute('x') || 40));
+          const y = Math.round(parseFloat(geo.getAttribute('y') || 40));
+          const label = (cell.getAttribute('value') || '').trim();
+
+          const realId = rawId.startsWith('seat_') ? rawId.replace('seat_', '') : rawId;
+
+          if (seatMapById.has(realId)) {
+            updates.push({ id: realId, x, y });
+          } else if (label && seatMapByLabel.has(label)) {
+            const existingSeat = seatMapByLabel.get(label);
+            updates.push({ id: existingSeat.id, x, y });
+          } else if (label) {
+            // User created a new seat inside Draw.io
+            addedSeats.push({ label, x, y });
           }
         });
 
-        updateSelectionVisuals();
-      }
-    });
+        // 1. Batch update all existing seat coordinates
+        if (updates.length > 0) {
+          await store.batchUpdateSeatPositions(updates);
+        }
 
-    viewport.addEventListener('pointerup', (e) => {
-      if (isPanning) {
-        isPanning = false;
-        viewport.style.cursor = spaceHeld ? 'grab' : 'default';
-        try { viewport.releasePointerCapture(e.pointerId); } catch (_) {}
-      }
-      if (isMarqueeSelecting) {
-        isMarqueeSelecting = false;
-        if (selectionBoxEl) selectionBoxEl.style.display = 'none';
-        try { viewport.releasePointerCapture(e.pointerId); } catch (_) {}
-      }
-    });
-
-    viewport.addEventListener('pointercancel', () => {
-      isPanning = false;
-      isMarqueeSelecting = false;
-      if (selectionBoxEl) selectionBoxEl.style.display = 'none';
-      viewport.style.cursor = 'default';
-    });
-  }
-
-  // ── Keyboard Shortcuts ──
-  function onKeyDown(e) {
-    const isInputFocused = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
-    if (isInputFocused) return;
-
-    if (e.code === 'Space' && !e.repeat && document.getElementById('drawio-viewport')) {
-      e.preventDefault();
-      spaceHeld = true;
-      if (viewport && !isPanning) viewport.style.cursor = 'grab';
-    }
-
-    // Ctrl+A = Select All
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
-      e.preventDefault();
-      store.getSeats(roomId).forEach(s => selectedSeatIds.add(s.id));
-      updateSelectionVisuals();
-    }
-
-    // Ctrl+D = Duplicate Selected
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
-      e.preventDefault();
-      drawioDuplicateSelected(roomId);
-    }
-
-    // Delete / Backspace = Delete Selected
-    if (e.key === 'Delete' || e.key === 'Backspace') {
-      if (selectedSeatIds.size > 0) {
-        e.preventDefault();
-        drawioDeleteSelected(roomId);
-      }
-    }
-
-    // Escape = Deselect All
-    if (e.key === 'Escape') {
-      drawioClearSelection();
-    }
-
-    // Arrow keys nudge
-    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && selectedSeatIds.size > 0) {
-      e.preventDefault();
-      const step = e.shiftKey ? (snapGridSize || 10) : 1;
-      let dx = 0, dy = 0;
-      if (e.key === 'ArrowUp') dy = -step;
-      if (e.key === 'ArrowDown') dy = step;
-      if (e.key === 'ArrowLeft') dx = -step;
-      if (e.key === 'ArrowRight') dx = step;
-
-      selectedSeatIds.forEach(id => {
-        if (localPositions[id]) {
-          localPositions[id].x = Math.max(0, localPositions[id].x + dx);
-          localPositions[id].y = Math.max(0, localPositions[id].y + dy);
-          const el = document.getElementById(`drawio-seat-${id}`);
-          if (el) {
-            el.style.left = `${localPositions[id].x}px`;
-            el.style.top = `${localPositions[id].y}px`;
+        // 2. Add any newly drawn seats
+        for (const newS of addedSeats) {
+          try {
+            await store.addSeat({
+              roomId,
+              branchId: store.getActiveBranchId(),
+              label: newS.label,
+              number: newS.label,
+              status: 'available',
+              position: { x: newS.x, y: newS.y },
+              position_x: newS.x,
+              position_y: newS.y
+            });
+          } catch (err) {
+            console.error('Add seat from draw.io error:', err);
           }
         }
-      });
+
+        toast.show(`🎉 Layout saved! Updated ${updates.length} seats.`, 'success');
+        modal.close();
+        app._navigate();
+      } catch (err) {
+        console.error('Save Draw.io layout error:', err);
+        toast.show('Failed to save layout: ' + err.message, 'error');
+        if (saveBtn) saveBtn.textContent = 'Save & Lock Layout';
+      }
     }
   }
 
-  function onKeyUp(e) {
-    if (e.code === 'Space') {
-      spaceHeld = false;
-      if (viewport && !isPanning) viewport.style.cursor = 'default';
-    }
-  }
+  window.addEventListener('message', onDrawioMessage);
 
-  document.addEventListener('keydown', onKeyDown);
-  document.addEventListener('keyup', onKeyUp);
-
-  // Clean up on modal close
+  // Clean up listener on modal close
   const originalClose = modal.close.bind(modal);
   modal.close = function() {
-    document.removeEventListener('keydown', onKeyDown);
-    document.removeEventListener('keyup', onKeyUp);
+    clearTimeout(loadTimeout);
+    window.removeEventListener('message', onDrawioMessage);
     originalClose();
     modal.close = originalClose;
   };
 
-  // ── Selection Visuals Update ──
-  function updateSelectionVisuals() {
-    const seatEls = seatsLayer ? seatsLayer.querySelectorAll('.floor-plan-seat') : [];
-    seatEls.forEach(el => {
-      const id = el.dataset.seatId;
-      if (selectedSeatIds.has(id)) {
-        el.classList.add('is-selected');
-      } else {
-        el.classList.remove('is-selected');
-      }
-    });
-
-    const count = selectedSeatIds.size;
-    if (topSelCount) topSelCount.textContent = `${count} selected`;
-
-    if (count > 0) {
-      if (selectionHud) selectionHud.style.display = 'flex';
-      if (selCountText) selCountText.textContent = `${count} seat${count > 1 ? 's' : ''} selected`;
-    } else {
-      if (selectionHud) selectionHud.style.display = 'none';
-    }
-  }
-
-  window.drawioClearSelection = function() {
-    selectedSeatIds.clear();
-    updateSelectionVisuals();
+  // Trigger Save
+  window.drawioTriggerSave = function() {
+    if (!iframe || !iframe.contentWindow) return;
+    iframe.contentWindow.postMessage(JSON.stringify({ action: 'export', format: 'xml' }), '*');
   };
 
-  // ── Smart Alignment Guides Computation ──
-  function showSmartGuides(draggingIds, currentBounds) {
-    if (!guidesLayer) return;
-    guidesLayer.innerHTML = '';
-
-    const tolerance = 6;
-    let guidesHtml = '';
-
-    // Check against all other unselected seats
-    const otherSeats = store.getSeats(roomId).filter(s => !draggingIds.has(s.id));
-    for (const other of otherSeats) {
-      const oPos = localPositions[other.id];
-      if (!oPos) continue;
-
-      const oLeft = oPos.x;
-      const oCenterX = oPos.x + 31;
-      const oRight = oPos.x + 62;
-      const oTop = oPos.y;
-      const oCenterY = oPos.y + 20;
-      const oBottom = oPos.y + 40;
-
-      // X-axis alignments (vertical lines)
-      if (Math.abs(currentBounds.x - oLeft) < tolerance) {
-        guidesHtml += `<div class="drawio-smart-guide vertical" style="left:${oLeft}px;"></div>`;
-      } else if (Math.abs(currentBounds.x + 31 - oCenterX) < tolerance) {
-        guidesHtml += `<div class="drawio-smart-guide vertical" style="left:${oCenterX}px;"></div>`;
-      }
-
-      // Y-axis alignments (horizontal lines)
-      if (Math.abs(currentBounds.y - oTop) < tolerance) {
-        guidesHtml += `<div class="drawio-smart-guide horizontal" style="top:${oTop}px;"></div>`;
-      } else if (Math.abs(currentBounds.y + 20 - oCenterY) < tolerance) {
-        guidesHtml += `<div class="drawio-smart-guide horizontal" style="top:${oCenterY}px;"></div>`;
-      }
-    }
-
-    guidesLayer.innerHTML = guidesHtml;
-  }
-
-  function clearSmartGuides() {
-    if (guidesLayer) guidesLayer.innerHTML = '';
-  }
-
-  // ── Render Seats on Drawing Sheet ──
-  function renderCanvasSeats() {
-    if (!seatsLayer) return;
-    const currentSeats = store.getSeats(roomId);
-    const countEl = document.getElementById('editor-seat-count');
-    if (countEl) countEl.textContent = currentSeats.length;
-
-    seatsLayer.innerHTML = currentSeats.map(seat => {
-      const pos = localPositions[seat.id] || { x: seat.position?.x || seat.position_x || 50, y: seat.position?.y || seat.position_y || 60 };
-      const status = store.getSeatStatus(seat.id);
-      const isSelected = selectedSeatIds.has(seat.id);
-
-      return `
-        <div class="floor-plan-seat ${status} is-arrange-mode ${isSelected ? 'is-selected' : ''}"
-          id="drawio-seat-${seat.id}"
-          data-seat-id="${seat.id}"
-          style="left:${pos.x}px;top:${pos.y}px;"
-        >
-          <span class="seat-led"></span>
-          <span>${seat.label}</span>
-          <button type="button" class="seat-delete-btn"
-            title="Delete Seat ${seat.label}"
-            onpointerdown="event.stopPropagation();"
-            onmousedown="event.stopPropagation();"
-            onclick="event.stopPropagation(); event.preventDefault(); window.drawioDeleteSeat('${seat.id}', '${roomId}');"
-          >✕</button>
-        </div>
-      `;
-    }).join('');
-
-    attachMultiDragListeners();
-    updateSelectionVisuals();
-  }
-
-  // ── Group Multi-Drag Listeners ──
-  function attachMultiDragListeners() {
-    if (!seatsLayer) return;
-    const coordHud = document.getElementById('drawio-coord-hud');
-
-    seatsLayer.querySelectorAll('.floor-plan-seat').forEach(el => {
-      let isDragging = false;
-      let startMouseX = 0, startMouseY = 0;
-      const initialPositions = {};
-
-      el.onpointerdown = (e) => {
-        if (spaceHeld) return;
-        if (e.target.closest('.seat-delete-btn')) {
-          e.stopPropagation();
-          return;
-        }
-        if (e.button !== 0) return;
-
-        e.stopPropagation();
-        const seatId = el.dataset.seatId;
-
-        // Shift or Ctrl click toggles selection
-        if (e.shiftKey || e.ctrlKey || e.metaKey) {
-          if (selectedSeatIds.has(seatId)) {
-            selectedSeatIds.delete(seatId);
-          } else {
-            selectedSeatIds.add(seatId);
-          }
-          updateSelectionVisuals();
-          return;
-        }
-
-        // If clicking a seat not in current selection, select only this seat
-        if (!selectedSeatIds.has(seatId)) {
-          selectedSeatIds.clear();
-          selectedSeatIds.add(seatId);
-          updateSelectionVisuals();
-        }
-
-        // Begin dragging all selected seats
-        isDragging = true;
-        startMouseX = e.clientX;
-        startMouseY = e.clientY;
-
-        selectedSeatIds.forEach(id => {
-          const seatEl = document.getElementById(`drawio-seat-${id}`);
-          if (seatEl) {
-            seatEl.classList.add('dragging');
-            initialPositions[id] = {
-              x: parseFloat(seatEl.style.left) || 0,
-              y: parseFloat(seatEl.style.top) || 0
-            };
-          }
-        });
-
-        el.setPointerCapture(e.pointerId);
-      };
-
-      el.onpointermove = (e) => {
-        if (!isDragging) return;
-
-        // Delta accounting for zoom scale
-        let dx = (e.clientX - startMouseX) / (canvasZoom || 1);
-        let dy = (e.clientY - startMouseY) / (canvasZoom || 1);
-
-        // Apply grid snap
-        if (snapGridSize > 0) {
-          dx = Math.round(dx / snapGridSize) * snapGridSize;
-          dy = Math.round(dy / snapGridSize) * snapGridSize;
-        }
-
-        let primarySeatPos = null;
-
-        selectedSeatIds.forEach(id => {
-          const init = initialPositions[id];
-          if (!init) return;
-
-          let targetX = Math.max(0, init.x + dx);
-          let targetY = Math.max(0, init.y + dy);
-
-          if (snapGridSize > 0) {
-            targetX = Math.round(targetX / snapGridSize) * snapGridSize;
-            targetY = Math.round(targetY / snapGridSize) * snapGridSize;
-          }
-
-          const seatEl = document.getElementById(`drawio-seat-${id}`);
-          if (seatEl) {
-            seatEl.style.left = `${targetX}px`;
-            seatEl.style.top = `${targetY}px`;
-          }
-
-          if (localPositions[id]) {
-            localPositions[id].x = targetX;
-            localPositions[id].y = targetY;
-          }
-
-          if (id === el.dataset.seatId) {
-            primarySeatPos = { x: targetX, y: targetY };
-          }
-        });
-
-        // Show smart guide lines
-        if (primarySeatPos) {
-          showSmartGuides(selectedSeatIds, primarySeatPos);
-          if (coordHud) {
-            coordHud.textContent = `X: ${primarySeatPos.x}px, Y: ${primarySeatPos.y}px (${selectedSeatIds.size} moving)`;
-          }
-        }
-      };
-
-      el.onpointerup = (e) => {
-        if (isDragging) {
-          isDragging = false;
-          selectedSeatIds.forEach(id => {
-            const seatEl = document.getElementById(`drawio-seat-${id}`);
-            if (seatEl) seatEl.classList.remove('dragging');
-          });
-          clearSmartGuides();
-          if (coordHud) coordHud.textContent = '';
-          try { el.releasePointerCapture(e.pointerId); } catch (_) {}
-        }
-      };
-
-      el.onpointercancel = () => {
-        isDragging = false;
-        clearSmartGuides();
-        if (coordHud) coordHud.textContent = '';
-      };
-    });
-  }
-
-  // ── Draw.io Alignment & Distribution Operations ──
-  window.drawioAlign = function(type) {
-    if (selectedSeatIds.size < 2) {
-      toast.show('Select at least 2 seats to align', 'info');
-      return;
-    }
-
-    const selIds = Array.from(selectedSeatIds);
-    const xs = selIds.map(id => localPositions[id].x);
-    const ys = selIds.map(id => localPositions[id].y);
-
-    if (type === 'left') {
-      const minX = Math.min(...xs);
-      selIds.forEach(id => { localPositions[id].x = minX; });
-    } else if (type === 'right') {
-      const maxX = Math.max(...xs);
-      selIds.forEach(id => { localPositions[id].x = maxX; });
-    } else if (type === 'top') {
-      const minY = Math.min(...ys);
-      selIds.forEach(id => { localPositions[id].y = minY; });
-    } else if (type === 'bottom') {
-      const maxY = Math.max(...ys);
-      selIds.forEach(id => { localPositions[id].y = maxY; });
-    } else if (type === 'centerX') {
-      const avgX = snapGridSize > 0
-        ? Math.round((xs.reduce((a, b) => a + b, 0) / xs.length) / snapGridSize) * snapGridSize
-        : Math.round(xs.reduce((a, b) => a + b, 0) / xs.length);
-      selIds.forEach(id => { localPositions[id].x = avgX; });
-    } else if (type === 'centerY') {
-      const avgY = snapGridSize > 0
-        ? Math.round((ys.reduce((a, b) => a + b, 0) / ys.length) / snapGridSize) * snapGridSize
-        : Math.round(ys.reduce((a, b) => a + b, 0) / ys.length);
-      selIds.forEach(id => { localPositions[id].y = avgY; });
-    }
-
-    renderCanvasSeats();
-    toast.show(`Aligned ${selIds.length} seats (${type})`, 'success');
-  };
-
-  window.drawioDistribute = function(axis) {
-    if (selectedSeatIds.size < 3) {
-      toast.show('Select at least 3 seats to distribute evenly', 'info');
-      return;
-    }
-
-    const selIds = Array.from(selectedSeatIds);
-
-    if (axis === 'horizontal') {
-      // Sort by X coordinate
-      selIds.sort((a, b) => localPositions[a].x - localPositions[b].x);
-      const minX = localPositions[selIds[0]].x;
-      const maxX = localPositions[selIds[selIds.length - 1]].x;
-      const step = (maxX - minX) / (selIds.length - 1);
-
-      selIds.forEach((id, index) => {
-        let posX = minX + index * step;
-        if (snapGridSize > 0) posX = Math.round(posX / snapGridSize) * snapGridSize;
-        localPositions[id].x = Math.round(posX);
-      });
-    } else if (axis === 'vertical') {
-      // Sort by Y coordinate
-      selIds.sort((a, b) => localPositions[a].y - localPositions[b].y);
-      const minY = localPositions[selIds[0]].y;
-      const maxY = localPositions[selIds[selIds.length - 1]].y;
-      const step = (maxY - minY) / (selIds.length - 1);
-
-      selIds.forEach((id, index) => {
-        let posY = minY + index * step;
-        if (snapGridSize > 0) posY = Math.round(posY / snapGridSize) * snapGridSize;
-        localPositions[id].y = Math.round(posY);
-      });
-    }
-
-    renderCanvasSeats();
-    toast.show(`Distributed ${selIds.length} seats ${axis}ly`, 'success');
-  };
-
-  // ── Add Single Seat (with custom numbering & duplicate check) ──
-  window.drawioAddSingleSeat = async function(rId) {
+  // Add Seat helper
+  window.drawioAddSeatViaPrompt = async function(rId) {
     const currentSeats = store.getSeats(rId);
-
-    // Compute next suggested integer
     let maxNum = 0;
     currentSeats.forEach(s => {
       const parsed = parseInt(s.label || s.number, 10);
       if (!isNaN(parsed) && parsed > maxNum) maxNum = parsed;
     });
-    const suggestedNum = maxNum + 1;
 
-    const input = prompt(
-      `Enter seat number/label:\n(Existing: ${currentSeats.map(s => s.label).join(', ') || 'none'})`,
-      String(suggestedNum)
-    );
-    if (input === null) return;
-    const seatLabel = input.trim();
-    if (!seatLabel) { toast.show('Seat label cannot be empty', 'error'); return; }
+    const input = prompt('Enter new seat label/number:', String(maxNum + 1));
+    if (!input) return;
+    const label = input.trim();
+    if (!label) return;
 
-    // Duplicate check
-    const duplicate = currentSeats.find(s => s.label === seatLabel || s.number === seatLabel);
-    if (duplicate) {
-      toast.show(`Seat "${seatLabel}" already exists! Choose a unique number.`, 'error');
+    if (currentSeats.some(s => s.label === label || s.number === label)) {
+      toast.show(`Seat "${label}" already exists!`, 'error');
       return;
     }
-
-    // Find clean non-overlapping coordinate
-    const seatWidth = 62, seatHeight = 40;
-    const stepX = 76, stepY = 54;
-    const existingPositions = Object.values(localPositions);
-
-    function isOccupied(x, y) {
-      return existingPositions.some(p => Math.abs(p.x - x) < (seatWidth + 6) && Math.abs(p.y - y) < (seatHeight + 6));
-    }
-
-    let freeSpot = null;
-    for (let y = 60; y <= 2200 && !freeSpot; y += stepY) {
-      for (let x = 60; x <= 3000; x += stepX) {
-        if (!isOccupied(x, y)) { freeSpot = { x, y }; break; }
-      }
-    }
-    if (!freeSpot) freeSpot = { x: 60 + ((currentSeats.length * 30) % 700), y: 60 };
 
     try {
       const newSeat = await store.addSeat({
         roomId: rId,
         branchId: store.getActiveBranchId(),
-        label: seatLabel,
-        number: seatLabel,
+        label,
+        number: label,
         status: 'available',
-        position: freeSpot,
-        position_x: freeSpot.x,
-        position_y: freeSpot.y
+        position: { x: 80, y: 80 },
+        position_x: 80,
+        position_y: 80
       });
-      localPositions[newSeat.id] = { x: freeSpot.x, y: freeSpot.y };
-      selectedSeatIds.clear();
-      selectedSeatIds.add(newSeat.id);
-      renderCanvasSeats();
-      toast.show(`Seat "${seatLabel}" created!`, 'success');
+
+      // Reload XML in Draw.io
+      const updatedSeats = store.getSeats(rId);
+      const newXml = generateDrawioXml(updatedSeats);
+      if (iframe && iframe.contentWindow) {
+        iframe.contentWindow.postMessage(JSON.stringify({ action: 'load', autosave: 1, xml: newXml }), '*');
+      }
+      const countEl = document.getElementById('drawio-seat-count');
+      if (countEl) countEl.textContent = updatedSeats.length;
+      toast.show(`Seat "${label}" added to sheet!`, 'success');
     } catch (e) {
-      console.error('Add seat error:', e);
       toast.show('Failed to add seat: ' + e.message, 'error');
     }
   };
 
-  // ── Quick Row Generator (Draw.io stencil pattern) ──
-  window.drawioAddSeatRow = async function(rId) {
-    const countInput = prompt('How many seats to add in this row?', '5');
+  // Add Row helper
+  window.drawioAddRowViaPrompt = async function(rId) {
+    const countInput = prompt('How many seats in this row?', '5');
     if (!countInput) return;
     const count = parseInt(countInput.trim(), 10);
-    if (isNaN(count) || count <= 0 || count > 50) {
-      toast.show('Please enter a valid count between 1 and 50', 'error');
-      return;
-    }
+    if (isNaN(count) || count <= 0) return;
 
     const currentSeats = store.getSeats(rId);
     let maxNum = 0;
@@ -1210,161 +601,32 @@ window.openSeatLayoutEditor = function(roomId) {
     if (!startNumInput) return;
     const startNum = parseInt(startNumInput.trim(), 10) || 1;
 
-    // Find starting Y row
-    let startY = 60;
-    const existingYs = Object.values(localPositions).map(p => p.y);
-    if (existingYs.length > 0) {
-      startY = Math.max(...existingYs) + 54;
-    }
-
-    let addedCount = 0;
-    const newIds = [];
-
     for (let i = 0; i < count; i++) {
       const label = String(startNum + i);
-      const posX = 60 + i * 76;
-      const posY = startY;
-
-      // Duplicate check
-      if (currentSeats.some(s => s.label === label || s.number === label)) {
-        continue;
-      }
-
+      if (currentSeats.some(s => s.label === label || s.number === label)) continue;
       try {
-        const newSeat = await store.addSeat({
+        await store.addSeat({
           roomId: rId,
           branchId: store.getActiveBranchId(),
           label,
           number: label,
           status: 'available',
-          position: { x: posX, y: posY },
-          position_x: posX,
-          position_y: posY
+          position: { x: 80 + i * 76, y: 120 },
+          position_x: 80 + i * 76,
+          position_y: 120
         });
-        localPositions[newSeat.id] = { x: posX, y: posY };
-        newIds.push(newSeat.id);
-        addedCount++;
-      } catch (err) {
-        console.error('Error in batch add:', err);
-      }
+      } catch (_) {}
     }
 
-    selectedSeatIds.clear();
-    newIds.forEach(id => selectedSeatIds.add(id));
-    renderCanvasSeats();
-    toast.show(`Added row of ${addedCount} seats!`, 'success');
+    const updatedSeats = store.getSeats(rId);
+    const newXml = generateDrawioXml(updatedSeats);
+    if (iframe && iframe.contentWindow) {
+      iframe.contentWindow.postMessage(JSON.stringify({ action: 'load', autosave: 1, xml: newXml }), '*');
+    }
+    const countEl = document.getElementById('drawio-seat-count');
+    if (countEl) countEl.textContent = updatedSeats.length;
+    toast.show(`Added row of seats to sheet!`, 'success');
   };
-
-  // ── Duplicate Selected Seats (Ctrl+D) ──
-  window.drawioDuplicateSelected = async function(rId) {
-    if (selectedSeatIds.size === 0) {
-      toast.show('Select seat(s) to duplicate', 'info');
-      return;
-    }
-
-    const currentSeats = store.getSeats(rId);
-    let maxNum = 0;
-    currentSeats.forEach(s => {
-      const parsed = parseInt(s.label || s.number, 10);
-      if (!isNaN(parsed) && parsed > maxNum) maxNum = parsed;
-    });
-
-    const newSelected = new Set();
-    const selArray = Array.from(selectedSeatIds);
-
-    for (let i = 0; i < selArray.length; i++) {
-      const srcId = selArray[i];
-      const origPos = localPositions[srcId] || { x: 50, y: 50 };
-      const nextNum = maxNum + 1 + i;
-      const newPos = { x: origPos.x + 30, y: origPos.y + 30 };
-
-      try {
-        const newSeat = await store.addSeat({
-          roomId: rId,
-          branchId: store.getActiveBranchId(),
-          label: String(nextNum),
-          number: String(nextNum),
-          status: 'available',
-          position: newPos,
-          position_x: newPos.x,
-          position_y: newPos.y
-        });
-        localPositions[newSeat.id] = newPos;
-        newSelected.add(newSeat.id);
-      } catch (err) {
-        console.error('Duplicate error:', err);
-      }
-    }
-
-    selectedSeatIds.clear();
-    newSelected.forEach(id => selectedSeatIds.add(id));
-    renderCanvasSeats();
-    toast.show(`Duplicated ${newSelected.size} seats!`, 'success');
-  };
-
-  // ── Delete Seat Operations ──
-  window.drawioDeleteSeat = async function(seatId, rId) {
-    const seat = store.getSeat(seatId);
-    const label = seat?.label || seat?.number || seatId;
-    if (!confirm(`Delete seat "${label}"?`)) return;
-
-    try {
-      await store.deleteSeat(seatId);
-      delete localPositions[seatId];
-      selectedSeatIds.delete(seatId);
-      renderCanvasSeats();
-      toast.show(`Seat "${label}" deleted`, 'success');
-    } catch (e) {
-      toast.show('Failed to delete seat: ' + e.message, 'error');
-    }
-  };
-
-  window.drawioDeleteSelected = async function(rId) {
-    if (selectedSeatIds.size === 0) return;
-    const count = selectedSeatIds.size;
-    if (!confirm(`Delete all ${count} selected seats?`)) return;
-
-    const ids = Array.from(selectedSeatIds);
-    let deleted = 0;
-
-    for (const id of ids) {
-      try {
-        await store.deleteSeat(id);
-        delete localPositions[id];
-        selectedSeatIds.delete(id);
-        deleted++;
-      } catch (e) {
-        console.error('Delete error for', id, e);
-      }
-    }
-
-    renderCanvasSeats();
-    toast.show(`Deleted ${deleted} seats`, 'success');
-  };
-
-  // ── Save Layout & Lock Coordinates ──
-  window.drawioSaveLayout = async function(rId) {
-    const saveBtn = document.getElementById('drawio-save-btn');
-    if (saveBtn) saveBtn.textContent = 'Saving...';
-
-    const updates = Object.entries(localPositions).map(([id, pos]) => ({
-      id, x: pos.x, y: pos.y
-    }));
-
-    try {
-      await store.batchUpdateSeatPositions(updates);
-      toast.show('🎉 Seat layout saved and locked successfully!', 'success');
-      modal.close();
-      app._navigate();
-    } catch (e) {
-      toast.show('Failed to save layout: ' + e.message, 'error');
-      if (saveBtn) saveBtn.textContent = 'Save & Lock';
-    }
-  };
-
-  // ── Initial Setup & Draw ──
-  applyTransform();
-  renderCanvasSeats();
 };
 
 function renderFloorSection(floor) {

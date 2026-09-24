@@ -151,4 +151,25 @@ if (fs.existsSync(assetsDir)) {
   }
 }
 
+// Copy Draw.io directory
+const drawioDir = path.join(rootDir, 'drawio');
+const publicDrawioDir = path.join(publicDir, 'drawio');
+if (fs.existsSync(drawioDir)) {
+  function copyRecursiveSync(src, dest) {
+    if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
+    const entries = fs.readdirSync(src, { withFileTypes: true });
+    for (const entry of entries) {
+      const srcPath = path.join(src, entry.name);
+      const destPath = path.join(dest, entry.name);
+      if (entry.isDirectory()) {
+        copyRecursiveSync(srcPath, destPath);
+      } else {
+        fs.copyFileSync(srcPath, destPath);
+      }
+    }
+  }
+  copyRecursiveSync(drawioDir, publicDrawioDir);
+}
+
 console.log('Static distribution compiled to public/ directory for Vercel deployment.');
+
