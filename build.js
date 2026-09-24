@@ -31,8 +31,10 @@ const pageFiles = [
   'notifications.js',
   'activity.js',
   'settings.js',
-  'reservations.js'
+  'reservations.js',
+  'layout-editor.js'
 ];
+
 
 let bundleContent = `// StudyFlow Bundled Application Scripts\nwindow.Pages = window.Pages || {};\n\n`;
 
@@ -93,7 +95,8 @@ const routeReplacements = {
   "'/notifications': () => import('./pages/notifications.js').then(m => m.renderNotifications)": "'/notifications': () => Promise.resolve(window.Pages.renderNotifications)",
   "'/activity': () => import('./pages/activity.js').then(m => m.renderActivity)": "'/activity': () => Promise.resolve(window.Pages.renderActivity)",
   "'/settings': () => import('./pages/settings.js').then(m => m.renderSettings)": "'/settings': () => Promise.resolve(window.Pages.renderSettings)",
-  "'/reservations': () => import('./pages/reservations.js').then(m => m.renderReservations)": "'/reservations': () => Promise.resolve(window.Pages.renderReservations)"
+  "'/reservations': () => import('./pages/reservations.js').then(m => m.renderReservations)": "'/reservations': () => Promise.resolve(window.Pages.renderReservations)",
+  "'/layout-editor': () => import('./pages/layout-editor.js').then(m => m.renderLayoutEditor)": "'/layout-editor': () => Promise.resolve(window.Pages.renderLayoutEditor)"
 };
 
 for (const [search, replace] of Object.entries(routeReplacements)) {

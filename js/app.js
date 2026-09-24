@@ -17,6 +17,7 @@ const routes = {
   '/activity': () => import('./pages/activity.js').then(m => m.renderActivity),
   '/settings': () => import('./pages/settings.js').then(m => m.renderSettings),
   '/reservations': () => import('./pages/reservations.js').then(m => m.renderReservations),
+  '/layout-editor': () => import('./pages/layout-editor.js').then(m => m.renderLayoutEditor),
 };
 
 class App {
@@ -212,6 +213,15 @@ class App {
 
     this.currentRoute = path;
     this._updateActiveNav(path);
+
+    const appEl = document.getElementById('app');
+    if (appEl) {
+      if (path === '/layout-editor') {
+        appEl.classList.add('full-screen-mode');
+      } else {
+        appEl.classList.remove('full-screen-mode');
+      }
+    }
 
     const content = document.getElementById('page-content');
     content.innerHTML = `
