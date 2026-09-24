@@ -1241,3 +1241,249 @@ tbody td {
   transform: scale(1.15);
 }
 
+/* ── Draw.io Drawing Sheet & Layout Editor Styles ─────────────────── */
+.drawio-editor-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  height: 100%;
+  overflow: hidden;
+  background: #181a1b;
+  color: #e8e6e3;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  user-select: none;
+}
+
+.drawio-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: #23272a;
+  border-bottom: 1px solid #36393f;
+  gap: 8px;
+  flex-wrap: wrap;
+  z-index: 20;
+}
+
+.drawio-tool-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #2c2f33;
+  padding: 3px 6px;
+  border-radius: 6px;
+  border: 1px solid #3a3e44;
+}
+
+.drawio-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #dcddde;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  height: 28px;
+  line-height: 1;
+}
+
+.drawio-btn:hover {
+  background: #3c4046;
+  color: #ffffff;
+  border-color: #4f545c;
+}
+
+.drawio-btn:active, .drawio-btn.active {
+  background: #007acc;
+  color: #ffffff;
+  border-color: #0098ff;
+}
+
+.drawio-btn.btn-primary-action {
+  background: #007acc;
+  color: #ffffff;
+  border-color: #0098ff;
+}
+.drawio-btn.btn-primary-action:hover {
+  background: #0098ff;
+}
+
+.drawio-btn.btn-success-action {
+  background: #15803d;
+  color: #ffffff;
+  border-color: #22c55e;
+}
+.drawio-btn.btn-success-action:hover {
+  background: #16a34a;
+}
+
+.drawio-btn.btn-danger-action {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+.drawio-btn.btn-danger-action:hover {
+  background: #ef4444;
+  color: #ffffff;
+}
+
+.drawio-workspace-area {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.drawio-ruler-corner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 24px;
+  height: 24px;
+  background: #202225;
+  border-right: 1px solid #36393f;
+  border-bottom: 1px solid #36393f;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  color: #72767d;
+  font-family: monospace;
+}
+
+.drawio-ruler-top {
+  position: absolute;
+  top: 0;
+  left: 24px;
+  right: 0;
+  height: 24px;
+  background: #202225;
+  border-bottom: 1px solid #36393f;
+  z-index: 14;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.drawio-ruler-left {
+  position: absolute;
+  top: 24px;
+  left: 0;
+  bottom: 0;
+  width: 24px;
+  background: #202225;
+  border-right: 1px solid #36393f;
+  z-index: 14;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.drawio-viewport {
+  position: absolute;
+  top: 24px;
+  left: 24px;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  background: #121417;
+  cursor: default;
+}
+
+.drawio-sheet-paper {
+  position: absolute;
+  width: 3200px;
+  height: 2400px;
+  background: #1a1d21;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8), 0 0 0 1px #2f333a;
+  border-radius: 4px;
+}
+
+/* Draw.io Grid Overlay */
+.drawio-grid-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* Marquee Selection Box */
+.drawio-selection-box {
+  position: absolute;
+  border: 1.5px dashed #00aaff;
+  background: rgba(0, 170, 255, 0.12);
+  pointer-events: none;
+  z-index: 200;
+}
+
+/* Smart Alignment Guide Lines */
+.drawio-smart-guide {
+  position: absolute;
+  pointer-events: none;
+  z-index: 150;
+}
+.drawio-smart-guide.vertical {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: #00ffff;
+  box-shadow: 0 0 6px #00ffff;
+}
+.drawio-smart-guide.horizontal {
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: #00ffff;
+  box-shadow: 0 0 6px #00ffff;
+}
+
+/* Selected Seat Appearance */
+.floor-plan-seat.is-selected {
+  outline: 2.5px solid #00c3ff !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 16px rgba(0, 195, 255, 0.7), 0 8px 20px rgba(0,0,0,0.6) !important;
+  z-index: 80 !important;
+}
+
+/* Floating Multi-Selection Action Pill */
+.drawio-selection-hud {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #23272a;
+  border: 1px solid #4f545c;
+  border-radius: 8px;
+  padding: 6px 12px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 100;
+  font-size: 12px;
+}
+
+.drawio-hud-info {
+  position: absolute;
+  bottom: 12px;
+  left: 36px;
+  background: rgba(18, 20, 23, 0.85);
+  border: 1px solid #36393f;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-family: monospace;
+  color: #8e9297;
+  z-index: 50;
+  pointer-events: none;
+}
+
+
