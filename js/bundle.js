@@ -3013,8 +3013,7 @@ function renderBlueprintRoom(room, seats, state) {
         onkeydown="if(event.key==='Enter'||event.key===' ')openSeatDrawer('${seat.id}')"
       >
         <span class="seat-led"></span>
-        <span>${seat.label}</span>
-        ${student ? `<div style="font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:50px;color:rgba(255,255,255,0.85);margin-top:-2px;">${student.name.split(' ')[0]}</div>` : ''}
+        <span class="seat-label-text">${seat.label}</span>
       </div>
     `;
   });
@@ -3074,7 +3073,6 @@ function renderStandardRoom(room, seats, state) {
       }
 
       const statusClass = `seat-${status}`;
-      const initials_ = student ? utils.initials(student.name) : '';
       const selected = state.selectedSeatId === seat.id;
 
       html += `
@@ -3089,7 +3087,6 @@ function renderStandardRoom(room, seats, state) {
         >
           <span class="seat-status-dot"></span>
           <span class="seat-number">${seat.label}</span>
-          ${initials_ ? `<span class="seat-initials">${initials_}</span>` : ''}
         </div>
       `;
     });
