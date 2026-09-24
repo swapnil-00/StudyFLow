@@ -4,6 +4,8 @@ const path = require('path');
 const rootDir = __dirname;
 const pagesDir = path.join(rootDir, 'js', 'pages');
 const appJsPath = path.join(rootDir, 'js', 'app.js');
+const iconsJsPath = path.join(rootDir, 'js', 'icons.js');
+const storeJsPath = path.join(rootDir, 'js', 'store.js');
 const bundlePath = path.join(rootDir, 'js', 'bundle.js');
 
 const servicesDir = path.join(rootDir, 'js', 'services');
@@ -34,7 +36,19 @@ const pageFiles = [
 
 let bundleContent = `// StudyFlow Bundled Application Scripts\nwindow.Pages = window.Pages || {};\n\n`;
 
-// ─── SERVICES ───
+// ─── 1. ICONS ───
+if (fs.existsSync(iconsJsPath)) {
+  const iconsContent = fs.readFileSync(iconsJsPath, 'utf8');
+  bundleContent += `// ─── ICONS ───\n${iconsContent}\n\n`;
+}
+
+// ─── 2. STORE & UTILITIES ───
+if (fs.existsSync(storeJsPath)) {
+  const storeContent = fs.readFileSync(storeJsPath, 'utf8');
+  bundleContent += `// ─── STORE & UTILS ───\n${storeContent}\n\n`;
+}
+
+// ─── 3. SERVICES ───
 for (const file of serviceFiles) {
   const filePath = path.join(servicesDir, file);
   if (fs.existsSync(filePath)) {
@@ -43,6 +57,7 @@ for (const file of serviceFiles) {
   }
 }
 
+// ─── 4. PAGES ───
 for (const file of pageFiles) {
   const filePath = path.join(pagesDir, file);
   if (!fs.existsSync(filePath)) {
@@ -53,17 +68,16 @@ for (const file of pageFiles) {
 
   // Transform export function name(...) -> window.Pages.name = function name(...)
   content = content.replace(/export\s+function\s+([a-zA-Z0-9_]+)\s*\(/g, 'window.Pages.$1 = function $1(');
-  // Transform export default or other export statements if any
   content = content.replace(/export\s+default\s+/g, '');
   content = content.replace(/export\s*\{[^}]*\};?/g, '');
 
   bundleContent += `// ─── PAGE: ${file} ───\n(function() {\n${content}\n})();\n\n`;
 }
 
-// Now read app.js
+// ─── 5. APP CORE ───
 let appContent = fs.readFileSync(appJsPath, 'utf8');
 
-// Replace dynamic routes with sync page lookups
+// Replace dynamic imports with sync window.Pages lookup
 const routeReplacements = {
   "'/dashboard': () => import('./pages/dashboard.js').then(m => m.renderDashboard)": "'/dashboard': () => Promise.resolve(window.Pages.renderDashboard)",
   "'/seat-map': () => import('./pages/seat-map.js').then(m => m.renderSeatMap)": "'/seat-map': () => Promise.resolve(window.Pages.renderSeatMap)",
