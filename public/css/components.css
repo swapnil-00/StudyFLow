@@ -463,7 +463,11 @@ tbody td {
 
 .modal-lg { max-width: 720px; }
 .modal-xl { max-width: 900px; }
+.modal-2xl { width: 92vw; max-width: 1300px; height: 90vh; max-height: 90vh; }
+.modal-full { width: 96vw !important; max-width: 96vw !important; height: 94vh !important; max-height: 94vh !important; }
 .modal-sm { max-width: 400px; }
+.modal.is-resizable { resize: both; overflow: auto; min-width: 600px; min-height: 480px; }
+.modal-full .modal-body, .modal-2xl .modal-body { flex: 1; overflow: hidden; display: flex; flex-direction: column; padding: var(--space-4) var(--space-6); }
 
 .modal-header {
   padding: var(--space-5) var(--space-6);

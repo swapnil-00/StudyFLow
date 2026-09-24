@@ -179,7 +179,14 @@ module.exports = async function handler(req, res) {
         return res.json({ ok: true });
       }
       if (action === 'delete') {
-        await query('DELETE FROM seats WHERE id=$1', [id]);
+        await withTransaction(async (client) => {
+          await client.query('UPDATE memberships SET seat_id=NULL WHERE seat_id=$1', [id]);
+          await client.query('DELETE FROM seat_assignments WHERE seat_id=$1', [id]);
+          await client.query('DELETE FROM reservations WHERE seat_id=$1', [id]);
+          await client.query('UPDATE seat_transfers SET from_seat_id=NULL WHERE from_seat_id=$1', [id]);
+          await client.query('UPDATE seat_transfers SET to_seat_id=NULL WHERE to_seat_id=$1', [id]);
+          await client.query('DELETE FROM seats WHERE id=$1', [id]);
+        });
         return res.json({ ok: true });
       }
     }

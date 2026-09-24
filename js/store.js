@@ -241,7 +241,21 @@ class Store {
 
   async deleteSeat(id) {
     await apiWrite('seats', 'delete', {}, id);
-    this._db.seats = this._db.seats.filter(s => s.id !== id);
+    this._db.seats = (this._db.seats || []).filter(s => s.id !== id);
+    if (this._db.seatAssignments) {
+      this._db.seatAssignments = this._db.seatAssignments.filter(a => a.seatId !== id && a.seat_id !== id);
+    }
+    if (this._db.reservations) {
+      this._db.reservations = this._db.reservations.filter(r => r.seatId !== id && r.seat_id !== id);
+    }
+    if (this._db.memberships) {
+      this._db.memberships.forEach(m => {
+        if (m.seatId === id || m.seat_id === id) {
+          m.seatId = null;
+          m.seat_id = null;
+        }
+      });
+    }
     this._notify();
   }
 

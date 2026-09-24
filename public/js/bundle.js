@@ -306,7 +306,21 @@ class Store {
 
   async deleteSeat(id) {
     await apiWrite('seats', 'delete', {}, id);
-    this._db.seats = this._db.seats.filter(s => s.id !== id);
+    this._db.seats = (this._db.seats || []).filter(s => s.id !== id);
+    if (this._db.seatAssignments) {
+      this._db.seatAssignments = this._db.seatAssignments.filter(a => a.seatId !== id && a.seat_id !== id);
+    }
+    if (this._db.reservations) {
+      this._db.reservations = this._db.reservations.filter(r => r.seatId !== id && r.seat_id !== id);
+    }
+    if (this._db.memberships) {
+      this._db.memberships.forEach(m => {
+        if (m.seatId === id || m.seat_id === id) {
+          m.seatId = null;
+          m.seat_id = null;
+        }
+      });
+    }
     this._notify();
   }
 
@@ -6266,6 +6280,7 @@ window.openSeatLayoutEditor = function(roomId) {
   const seats = store.getSeats(roomId);
 
   let isArrangeMode = true; // start in Arrange Mode by default
+  let canvasZoom = 1;
   const localPositions = {};
 
   // Initialize local coordinates map
@@ -6279,46 +6294,61 @@ window.openSeatLayoutEditor = function(roomId) {
   const editorHtml = `
     <div class="floor-plan-editor-container">
       <div class="floor-plan-toolbar">
-        <div style="display:flex;align-items:center;gap:var(--space-3);">
+        <div style="display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap;">
           <div>
             <div style="font-size:var(--text-md);font-weight:var(--fw-bold);color:var(--color-text-primary);">
               ${room.name} — Floor Plan Editor
             </div>
             <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);">
-              ${floor?.name || ''} · <span id="editor-seat-count">${seats.length}</span> seats
+              ${floor?.name || ''} · <span id="editor-seat-count">${seats.length}</span> seats · Canvas: 1600 × 1050 px
             </div>
           </div>
         </div>
 
         <div style="display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap;">
-          <button class="btn btn-secondary btn-sm" id="editor-mode-toggle" onclick="toggleEditorMode()">
+          <!-- Canvas Zoom Controls -->
+          <div style="display:flex;align-items:center;gap:3px;background:var(--color-bg-secondary);padding:3px 8px;border-radius:var(--radius-md);border:1px solid var(--color-border-primary);">
+            <span style="font-size:11px;font-weight:600;color:var(--color-text-secondary);margin-right:2px;">Zoom:</span>
+            <button type="button" class="btn btn-ghost btn-xs" style="padding:2px 7px;height:auto;font-weight:bold;" onclick="adjustCanvasZoom(-0.1)" title="Zoom Out">−</button>
+            <span id="canvas-zoom-label" style="font-size:11px;font-family:monospace;min-width:38px;text-align:center;font-weight:600;">100%</span>
+            <button type="button" class="btn btn-ghost btn-xs" style="padding:2px 7px;height:auto;font-weight:bold;" onclick="adjustCanvasZoom(0.1)" title="Zoom In">+</button>
+            <button type="button" class="btn btn-ghost btn-xs" style="padding:2px 7px;height:auto;font-size:10px;" onclick="adjustCanvasZoom(0)" title="Reset Zoom">Reset</button>
+          </div>
+
+          <!-- Window Resize Toggle -->
+          <button type="button" class="btn btn-secondary btn-sm" id="editor-window-expand-btn" onclick="toggleEditorWindowExpand()" title="Toggle Maximum Window Size">
+            ${icons.externalLink} <span id="editor-expand-text">Maximize</span>
+          </button>
+
+          <button type="button" class="btn btn-secondary btn-sm" id="editor-mode-toggle" onclick="toggleEditorMode()">
             ${icons.edit} <span id="editor-mode-text">Arrange Mode: ON</span>
           </button>
-          <button class="btn btn-secondary btn-sm" onclick="applyEditorBlueprint()">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="applyEditorBlueprint()">
             ${icons.grid} Apply Blueprint Layout
           </button>
-          <button class="btn btn-secondary btn-sm" onclick="addSingleSeatToEditor('${roomId}')">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="addSingleSeatToEditor('${roomId}')">
             ${icons.plus} Add Seat
           </button>
-          <button class="btn btn-primary btn-sm" id="editor-save-btn" onclick="saveEditorLayout('${roomId}')">
+          <button type="button" class="btn btn-primary btn-sm" id="editor-save-btn" onclick="saveEditorLayout('${roomId}')">
             ${icons.checkCircle} Lock & Save Layout
           </button>
         </div>
       </div>
 
-      <div style="font-size:12px;color:var(--color-text-secondary);display:flex;align-items:center;justify-content:space-between;padding:0 var(--space-1);">
-        <span>💡 <strong>Tip:</strong> Drag any seat card to reposition. Snaps automatically to 10px grid. Click "Lock & Save Layout" to persist.</span>
-        <span id="drag-coord-display" style="font-family:monospace;color:var(--sf-indigo-400);"></span>
+      <div style="font-size:12px;color:var(--color-text-secondary);display:flex;align-items:center;justify-content:space-between;padding:0 var(--space-1);flex-wrap:wrap;gap:var(--space-2);">
+        <span>💡 <strong>Tip:</strong> Drag any seat card to reposition. Snaps automatically to 10px grid. Hover any seat and click the red ✕ to delete. Window can be resized via bottom-right handle.</span>
+        <span id="drag-coord-display" style="font-family:monospace;color:var(--sf-indigo-400);font-weight:bold;"></span>
       </div>
 
-      <!-- Canvas Area -->
+      <!-- Canvas Area (Spacious 1600x1050 Canvas with horizontal & vertical scroll) -->
       <div class="floor-plan-canvas-wrap" id="editor-canvas-wrap">
-        <div class="floor-plan-canvas" id="editor-canvas" style="width:820px;height:660px;">
+        <div class="floor-plan-canvas" id="editor-canvas" style="width:1600px;height:1050px;transform-origin:top left;transition:transform 0.15s ease-out;">
           <!-- Visual Blueprint Cluster Boundaries -->
-          <div class="floor-plan-cluster" style="left:445px;top:45px;width:320px;height:475px;" title="Right Desk Block (Seats 1-36)"></div>
-          <div class="floor-plan-cluster" style="left:205px;top:45px;width:200px;height:460px;" title="Center Face-to-Face Benches"></div>
-          <div class="floor-plan-cluster" style="left:25px;top:450px;width:315px;height:175px;" title="Bottom Pod"></div>
-          <div class="floor-plan-cluster" style="left:25px;top:195px;width:90px;height:220px;" title="Left Wall Booths"></div>
+          <div class="floor-plan-cluster" style="left:445px;top:45px;width:330px;height:490px;" title="Right Desk Block (Seats 1-36)"></div>
+          <div class="floor-plan-cluster" style="left:200px;top:45px;width:215px;height:490px;" title="Center Face-to-Face Benches"></div>
+          <div class="floor-plan-cluster" style="left:25px;top:450px;width:385px;height:190px;" title="Bottom Pod"></div>
+          <div class="floor-plan-cluster" style="left:25px;top:195px;width:140px;height:230px;" title="Left Wall Booths"></div>
+          <div class="floor-plan-cluster" style="left:25px;top:670px;width:1540px;height:340px;border-style:dashed;opacity:0.35;" title="Expansion & Extra Seats Area"></div>
 
           <!-- Draggable Seats Container -->
           <div id="editor-seats-container"></div>
@@ -6332,17 +6362,63 @@ window.openSeatLayoutEditor = function(roomId) {
     <button class="btn btn-primary" onclick="saveEditorLayout('${roomId}')">
       ${icons.checkCircle} Save & Finish
     </button>
-  `, { size: 'xl' });
+  `, { size: 'full' });
+
+  // Make modal dialog resizable via CSS handle
+  const modalDialog = document.getElementById('modal-dialog');
+  if (modalDialog) {
+    modalDialog.classList.add('is-resizable');
+  }
+
+  // Window Expand / Maximize toggle
+  let isWindowMaximized = false;
+  window.toggleEditorWindowExpand = function() {
+    const dialog = document.getElementById('modal-dialog');
+    const expandText = document.getElementById('editor-expand-text');
+    if (!dialog) return;
+    isWindowMaximized = !isWindowMaximized;
+    if (isWindowMaximized) {
+      dialog.style.width = '99vw';
+      dialog.style.maxWidth = '99vw';
+      dialog.style.height = '98vh';
+      dialog.style.maxHeight = '98vh';
+      dialog.style.margin = '1vh auto';
+      if (expandText) expandText.textContent = 'Restore Window';
+    } else {
+      dialog.style.width = '96vw';
+      dialog.style.maxWidth = '96vw';
+      dialog.style.height = '94vh';
+      dialog.style.maxHeight = '94vh';
+      dialog.style.margin = '3vh auto';
+      if (expandText) expandText.textContent = 'Maximize';
+    }
+  };
+
+  // Canvas Zoom control
+  window.adjustCanvasZoom = function(delta) {
+    if (delta === 0) {
+      canvasZoom = 1;
+    } else {
+      canvasZoom = Math.min(1.8, Math.max(0.4, Math.round((canvasZoom + delta) * 10) / 10));
+    }
+    const canvas = document.getElementById('editor-canvas');
+    if (canvas) {
+      canvas.style.transform = `scale(${canvasZoom})`;
+    }
+    const label = document.getElementById('canvas-zoom-label');
+    if (label) label.textContent = `${Math.round(canvasZoom * 100)}%`;
+  };
 
   // Render seats onto canvas
   function renderCanvasSeats() {
     const containerEl = document.getElementById('editor-seats-container');
     if (!containerEl) return;
     const currentSeats = store.getSeats(roomId);
-    document.getElementById('editor-seat-count').textContent = currentSeats.length;
+    const countEl = document.getElementById('editor-seat-count');
+    if (countEl) countEl.textContent = currentSeats.length;
 
     containerEl.innerHTML = currentSeats.map(seat => {
-      const pos = localPositions[seat.id] || { x: seat.position?.x || 50, y: seat.position?.y || 60 };
+      const pos = localPositions[seat.id] || { x: seat.position?.x || seat.position_x || 50, y: seat.position?.y || seat.position_y || 60 };
       const status = store.getSeatStatus(seat.id);
       return `
         <div class="floor-plan-seat ${status} ${isArrangeMode ? 'is-arrange-mode' : ''}"
@@ -6352,7 +6428,12 @@ window.openSeatLayoutEditor = function(roomId) {
         >
           <span class="seat-led"></span>
           <span>${seat.label}</span>
-          <button class="seat-delete-btn" onclick="event.stopPropagation(); deleteSeatFromEditor('${seat.id}', '${roomId}')" title="Delete Seat">✕</button>
+          <button type="button" class="seat-delete-btn"
+            title="Delete Seat ${seat.label}"
+            onpointerdown="event.stopPropagation();"
+            onmousedown="event.stopPropagation();"
+            onclick="event.stopPropagation(); event.preventDefault(); window.deleteSeatFromEditor('${seat.id}', '${roomId}');"
+          >✕</button>
         </div>
       `;
     }).join('');
@@ -6360,9 +6441,8 @@ window.openSeatLayoutEditor = function(roomId) {
     attachDragListeners();
   }
 
-  // Drag-and-drop listener engine with snap-to-grid
+  // Drag-and-drop listener engine with snap-to-grid and zoom awareness
   function attachDragListeners() {
-    const canvasWrap = document.getElementById('editor-canvas-wrap');
     const canvas = document.getElementById('editor-canvas');
     if (!canvas) return;
 
@@ -6376,7 +6456,10 @@ window.openSeatLayoutEditor = function(roomId) {
     canvas.querySelectorAll('.floor-plan-seat').forEach(el => {
       el.onpointerdown = (e) => {
         if (!isArrangeMode) return;
-        if (e.target.classList.contains('seat-delete-btn')) return;
+        if (e.target.closest('.seat-delete-btn')) {
+          e.stopPropagation();
+          return;
+        }
 
         activeDragEl = el;
         dragSeatId = el.dataset.seatId;
@@ -6391,8 +6474,9 @@ window.openSeatLayoutEditor = function(roomId) {
 
       el.onpointermove = (e) => {
         if (!activeDragEl || activeDragEl !== el) return;
-        const dx = e.clientX - startX;
-        const dy = e.clientY - startY;
+        // Adjust mouse movement delta by canvas zoom factor
+        const dx = (e.clientX - startX) / (canvasZoom || 1);
+        const dy = (e.clientY - startY) / (canvasZoom || 1);
 
         let rawX = initialLeft + dx;
         let rawY = initialTop + dy;
@@ -6402,9 +6486,9 @@ window.openSeatLayoutEditor = function(roomId) {
         let snappedX = Math.round(rawX / snap) * snap;
         let snappedY = Math.round(rawY / snap) * snap;
 
-        // Boundaries
-        snappedX = Math.max(10, Math.min(760, snappedX));
-        snappedY = Math.max(10, Math.min(600, snappedY));
+        // Boundaries across expanded 1600x1050 canvas
+        snappedX = Math.max(10, Math.min(1530, snappedX));
+        snappedY = Math.max(10, Math.min(990, snappedY));
 
         el.style.left = `${snappedX}px`;
         el.style.top = `${snappedY}px`;
@@ -6422,7 +6506,7 @@ window.openSeatLayoutEditor = function(roomId) {
       el.onpointerup = (e) => {
         if (activeDragEl === el) {
           el.classList.remove('dragging');
-          el.releasePointerCapture(e.pointerId);
+          try { el.releasePointerCapture(e.pointerId); } catch (_) {}
           activeDragEl = null;
           dragSeatId = null;
         }
@@ -6432,6 +6516,7 @@ window.openSeatLayoutEditor = function(roomId) {
         if (activeDragEl === el) {
           el.classList.remove('dragging');
           activeDragEl = null;
+          dragSeatId = null;
         }
       };
     });
@@ -6476,9 +6561,73 @@ window.openSeatLayoutEditor = function(roomId) {
     toast.show('Applied blueprint layout to seats! Click "Lock & Save" to persist.', 'success');
   };
 
+  // Add Seat with collision avoidance and sequential non-duplicate numbering
   window.addSingleSeatToEditor = async function(rId) {
     const currentSeats = store.getSeats(rId);
-    const nextNum = currentSeats.length + 1;
+
+    // 1. Calculate non-duplicate next seat number
+    let maxNum = 0;
+    currentSeats.forEach(s => {
+      const parsed = parseInt(s.label || s.number, 10);
+      if (!isNaN(parsed) && parsed > maxNum) maxNum = parsed;
+    });
+    const nextNum = maxNum + 1;
+
+    // 2. Collision-free placement algorithm:
+    // Seat dimension is ~58px x 40px. Scan grid for an open, uncrowded spot.
+    const seatWidth = 60;
+    const seatHeight = 44;
+    const stepX = 74;
+    const stepY = 56;
+    const existingPositions = Object.values(localPositions);
+
+    function isSpotOccupied(x, y) {
+      return existingPositions.some(p => {
+        return Math.abs(p.x - x) < (seatWidth + 6) && Math.abs(p.y - y) < (seatHeight + 6);
+      });
+    }
+
+    let freeSpot = null;
+
+    // Priority 1: Scan expansion zone (y: 710 to 970, x: 40 to 1500)
+    for (let y = 710; y <= 970 && !freeSpot; y += stepY) {
+      for (let x = 40; x <= 1500; x += stepX) {
+        if (!isSpotOccupied(x, y)) {
+          freeSpot = { x, y };
+          break;
+        }
+      }
+    }
+
+    // Priority 2: Scan right-side open canvas area (x: 820 to 1500, y: 50 to 650)
+    if (!freeSpot) {
+      for (let y = 50; y <= 650 && !freeSpot; y += stepY) {
+        for (let x = 820; x <= 1500; x += stepX) {
+          if (!isSpotOccupied(x, y)) {
+            freeSpot = { x, y };
+            break;
+          }
+        }
+      }
+    }
+
+    // Priority 3: Scan any remaining free space across full canvas
+    if (!freeSpot) {
+      for (let y = 50; y <= 1000 && !freeSpot; y += stepY) {
+        for (let x = 40; x <= 1500; x += stepX) {
+          if (!isSpotOccupied(x, y)) {
+            freeSpot = { x, y };
+            break;
+          }
+        }
+      }
+    }
+
+    // Final fallback
+    if (!freeSpot) {
+      freeSpot = { x: 50 + ((currentSeats.length * 25) % 800), y: 720 };
+    }
+
     try {
       const newSeat = await store.addSeat({
         roomId: rId,
@@ -6486,28 +6635,32 @@ window.openSeatLayoutEditor = function(roomId) {
         label: String(nextNum),
         number: String(nextNum),
         status: 'available',
-        position: { x: 50, y: 50 },
-        position_x: 50,
-        position_y: 50
+        position: freeSpot,
+        position_x: freeSpot.x,
+        position_y: freeSpot.y
       });
-      localPositions[newSeat.id] = { x: 50, y: 50 };
+      localPositions[newSeat.id] = { x: freeSpot.x, y: freeSpot.y };
       renderCanvasSeats();
-      toast.show(`Seat ${nextNum} added to canvas!`, 'success');
+      toast.show(`Seat ${nextNum} added at open position (X:${freeSpot.x}, Y:${freeSpot.y})!`, 'success');
     } catch (e) {
-      toast.show(e.message, 'error');
+      console.error('Add seat error:', e);
+      toast.show('Failed to add seat: ' + e.message, 'error');
     }
   };
 
+  // Immediate and reliable seat deletion
   window.deleteSeatFromEditor = async function(seatId, rId) {
     const seat = store.getSeat(seatId);
-    if (!confirm(`Delete seat ${seat?.label || seatId}?`)) return;
+    const seatLabel = seat?.label || seat?.number || seatId;
+    if (!confirm(`Are you sure you want to delete Seat ${seatLabel}?`)) return;
     try {
       await store.deleteSeat(seatId);
       delete localPositions[seatId];
       renderCanvasSeats();
-      toast.show('Seat deleted', 'success');
+      toast.show(`Seat ${seatLabel} deleted successfully`, 'success');
     } catch (e) {
-      toast.show(e.message, 'error');
+      console.error('Delete seat error:', e);
+      toast.show('Failed to delete seat: ' + (e.message || 'Unknown error'), 'error');
     }
   };
 
