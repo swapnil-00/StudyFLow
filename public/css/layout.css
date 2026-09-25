@@ -10,10 +10,11 @@
 
 /* Landing Mode Full-screen */
 #app.landing-mode {
-  overflow-y: auto !important;
+  overflow: visible !important;
   height: auto !important;
   min-height: 100vh;
   display: block !important;
+  background: var(--color-bg-primary);
 }
 #app.landing-mode .sidebar,
 #app.landing-mode .topbar,
