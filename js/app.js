@@ -240,12 +240,19 @@ class App {
     const appEl = document.getElementById('app');
     if (appEl) {
       if (path === '/landing') {
+        document.documentElement.classList.add('landing-html');
+        document.body.classList.add('landing-body');
         appEl.classList.add('landing-mode');
         appEl.classList.remove('full-screen-mode');
+        window.scrollTo(0, 0);
       } else if (path === '/layout-editor') {
+        document.documentElement.classList.remove('landing-html');
+        document.body.classList.remove('landing-body');
         appEl.classList.remove('landing-mode');
         appEl.classList.add('full-screen-mode');
       } else {
+        document.documentElement.classList.remove('landing-html');
+        document.body.classList.remove('landing-body');
         appEl.classList.remove('landing-mode');
         appEl.classList.remove('full-screen-mode');
       }
