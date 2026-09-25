@@ -17,6 +17,7 @@ const serviceFiles = [
 ];
 
 const pageFiles = [
+  'landing.js',
   'dashboard.js',
   'seat-map.js',
   'students.js',
@@ -79,6 +80,7 @@ let appContent = fs.readFileSync(appJsPath, 'utf8');
 
 // Replace dynamic imports with sync window.Pages lookup
 const routeReplacements = {
+  "'/landing': () => import('./pages/landing.js').then(m => m.renderLanding)": "'/landing': () => Promise.resolve(window.Pages.renderLanding)",
   "'/dashboard': () => import('./pages/dashboard.js').then(m => m.renderDashboard)": "'/dashboard': () => Promise.resolve(window.Pages.renderDashboard)",
   "'/seat-map': () => import('./pages/seat-map.js').then(m => m.renderSeatMap)": "'/seat-map': () => Promise.resolve(window.Pages.renderSeatMap)",
   "'/students': () => import('./pages/students.js').then(m => m.renderStudents)": "'/students': () => Promise.resolve(window.Pages.renderStudents)",

@@ -8,6 +8,35 @@
   background: var(--color-bg-app);
 }
 
+/* Landing Mode Full-screen */
+#app.landing-mode {
+  overflow-y: auto !important;
+  height: auto !important;
+  min-height: 100vh;
+  display: block !important;
+}
+#app.landing-mode .sidebar,
+#app.landing-mode .topbar,
+#app.landing-mode .sidebar-overlay {
+  display: none !important;
+}
+#app.landing-mode .main-area {
+  width: 100% !important;
+  height: auto !important;
+  min-height: 100vh;
+  overflow: visible !important;
+}
+#app.landing-mode .page-content {
+  padding: 0 !important;
+  max-width: 100% !important;
+  height: auto !important;
+  overflow: visible !important;
+}
+#app.landing-mode .page-inner {
+  padding: 0 !important;
+  max-width: 100% !important;
+}
+
 /* ── Sidebar ────────────────────────────────────────────────────── */
 .sidebar {
   width: var(--sidebar-width);

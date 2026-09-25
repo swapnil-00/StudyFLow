@@ -2,6 +2,7 @@
 
 // ── Router ─────────────────────────────────────────────────────────
 const routes = {
+  '/landing': () => import('./pages/landing.js').then(m => m.renderLanding),
   '/dashboard': () => import('./pages/dashboard.js').then(m => m.renderDashboard),
   '/seat-map': () => import('./pages/seat-map.js').then(m => m.renderSeatMap),
   '/students': () => import('./pages/students.js').then(m => m.renderStudents),
@@ -182,6 +183,7 @@ class App {
     const navSections = [
       { label: 'OVERVIEW', items: [
         { route: '/dashboard', label: 'Dashboard', icon: 'grid' },
+        { route: '/landing', label: 'Landing Page', icon: 'home' },
       ]},
       { label: 'OPERATIONS', items: [
         { route: '/seat-map', label: 'Seat Map', icon: 'map' },
@@ -225,18 +227,26 @@ class App {
   }
 
   async _navigate() {
-    const hash = location.hash.replace('#', '') || '/dashboard';
-    const path = hash.split('?')[0];
-    const params = new URLSearchParams(hash.split('?')[1] || '');
+    let rawHash = location.hash.replace('#', '');
+    if (!rawHash || rawHash === '/' || rawHash === '') {
+      rawHash = store.isAuthenticated() ? '/dashboard' : '/landing';
+    }
+    const path = rawHash.split('?')[0];
+    const params = new URLSearchParams(rawHash.split('?')[1] || '');
 
     this.currentRoute = path;
     this._updateActiveNav(path);
 
     const appEl = document.getElementById('app');
     if (appEl) {
-      if (path === '/layout-editor') {
+      if (path === '/landing') {
+        appEl.classList.add('landing-mode');
+        appEl.classList.remove('full-screen-mode');
+      } else if (path === '/layout-editor') {
+        appEl.classList.remove('landing-mode');
         appEl.classList.add('full-screen-mode');
       } else {
+        appEl.classList.remove('landing-mode');
         appEl.classList.remove('full-screen-mode');
       }
     }
