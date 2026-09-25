@@ -2165,12 +2165,100 @@ tbody td {
   color: var(--sf-indigo-600);
 }
 
-/* Responsive adjustments */
+/* ── Mobile Page Styles & Media Queries (A to Z) ────────────────────── */
 @media (max-width: 860px) {
-  .sf-nav-links { display: none; }
-  .sf-hero-section { padding: 50px 0 40px 0; }
-  .sf-hero-mockup-body .grid-4 { grid-template-columns: repeat(2, 1fr) !important; }
+  .sf-nav-links { display: none !important; }
+  .sf-hero-section { padding: 48px 0 36px 0; }
+  .sf-hero-title { font-size: clamp(28px, 6vw, 42px); }
+  .sf-hero-subtitle { font-size: 15px; margin-bottom: 24px; }
+  .sf-hero-cta-group { flex-direction: column; width: 100%; max-width: 360px; margin-left: auto; margin-right: auto; }
+  .sf-hero-cta-group .btn { width: 100%; }
+  .sf-hero-trust-badges { flex-direction: column; gap: 10px; align-items: center; margin-bottom: 32px; }
+  .sf-hero-mockup-wrapper { margin: 0 -4px; border-radius: var(--radius-xl); }
+  .sf-hero-mockup-body .grid-4 { grid-template-columns: repeat(2, 1fr) !important; gap: 8px !important; }
+  .sf-hero-mockup-body .grid-2 { grid-template-columns: 1fr !important; gap: 12px !important; }
+  .sf-footer-links-group { gap: 32px; width: 100%; }
+  .sf-footer-col { flex: 1; min-width: 140px; }
+  .sf-section { padding: 50px 0; }
+  .sf-section-header { margin-bottom: 32px; }
 }
+
+@media (max-width: 640px) {
+  /* Seat Map Mobile Navigation */
+  .seat-map-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 12px 14px;
+  }
+  .seat-map-toolbar select,
+  .seat-map-toolbar input,
+  .seat-map-toolbar .btn {
+    width: 100% !important;
+  }
+  .seat-map-legend {
+    padding: 10px 14px;
+    gap: 10px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap;
+  }
+  .legend-item {
+    white-space: nowrap;
+    font-size: 11px;
+  }
+  .seat-map-floor {
+    padding: 16px 12px;
+    min-height: 300px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .seat {
+    width: 44px;
+    height: 44px;
+  }
+  .seat-label {
+    font-size: 11px;
+  }
+
+  /* Student Profile Card */
+  .profile-header-card {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 16px;
+    padding: 16px;
+  }
+  .profile-stats-grid {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px;
+  }
+
+  /* Floor tabs */
+  .floor-tab-bar {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    white-space: nowrap;
+    padding-bottom: 4px;
+  }
+
+  /* Quick Actions Bar */
+  .quick-actions-bar {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Compact top action buttons */
+  .page-header-actions {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .page-header-actions .btn {
+    width: 100%;
+  }
+}
+
 
 
 

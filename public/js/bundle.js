@@ -8681,7 +8681,7 @@ class App {
 
       <div class="main-area" id="main-area">
         <header class="topbar" id="topbar">
-          <button class="topbar-icon-btn" id="mobile-menu-btn" style="display:none;" onclick="app.openMobileSidebar()">
+          <button class="topbar-icon-btn" id="mobile-menu-btn" aria-label="Open mobile menu" onclick="app.openMobileSidebar()">
             ${icons.menu}
           </button>
 
@@ -8805,6 +8805,7 @@ class App {
 
     this.currentRoute = path;
     this._updateActiveNav(path);
+    this.closeMobileSidebar();
 
     const appEl = document.getElementById('app');
     if (appEl) {
@@ -8917,13 +8918,23 @@ class App {
   }
 
   openMobileSidebar() {
-    document.getElementById('sidebar').classList.add('mobile-open');
-    document.getElementById('sidebar-overlay').style.display = 'block';
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebar-overlay');
+    if (sidebar) sidebar.classList.add('mobile-open');
+    if (overlay) {
+      overlay.style.display = 'block';
+      overlay.classList.add('active');
+    }
   }
 
   closeMobileSidebar() {
-    document.getElementById('sidebar').classList.remove('mobile-open');
-    document.getElementById('sidebar-overlay').style.display = 'none';
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebar-overlay');
+    if (sidebar) sidebar.classList.remove('mobile-open');
+    if (overlay) {
+      overlay.style.display = 'none';
+      overlay.classList.remove('active');
+    }
   }
 
   _handleResize() {
