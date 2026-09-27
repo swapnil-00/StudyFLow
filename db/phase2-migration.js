@@ -1,7 +1,7 @@
 // Phase 2 Database Schema Migration
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
-const { query } = require('../api/db');
+const { query } = require('../lib/db');
 
 async function run() {
   console.log('🚀 Running Phase 2 Database Security & Concurrency Migration...');

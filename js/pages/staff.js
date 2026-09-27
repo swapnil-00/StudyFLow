@@ -3,6 +3,9 @@ export function renderStaff(container) {
   const branchId = store.getActiveBranchId();
   const staff = store.getStaff(branchId);
 
+  const esc = (s) => (typeof window !== 'undefined' && window.escapeHtml ? window.escapeHtml(s) : String(s == null ? '' : s));
+  const escAttr = (s) => (typeof window !== 'undefined' && window.escapeAttr ? window.escapeAttr(s) : String(s == null ? '' : s));
+
   container.innerHTML = `
     <div class="page-header">
       <div class="page-header-row">
@@ -29,17 +32,17 @@ export function renderStaff(container) {
                   <div class="student-cell">
                     <div class="avatar" style="background:${utils.getAvatarColor(s.name)};">${utils.initials(s.name)}</div>
                     <div>
-                      <div class="student-name">${s.name}</div>
-                      <div class="student-id">${s.id}</div>
+                      <div class="student-name">${esc(s.name)}</div>
+                      <div class="student-id">${esc(s.id)}</div>
                     </div>
                   </div>
                 </td>
-                <td><span class="badge badge-indigo">${s.role}</span></td>
-                <td style="color:var(--color-text-secondary);">${s.phone || '—'}</td>
-                <td style="color:var(--color-text-secondary);font-size:var(--text-xs);">${s.email || '—'}</td>
+                <td><span class="badge badge-indigo">${esc(s.role)}</span></td>
+                <td style="color:var(--color-text-secondary);">${esc(s.phone || '—')}</td>
+                <td style="color:var(--color-text-secondary);font-size:var(--text-xs);">${esc(s.email || '—')}</td>
                 <td><span class="badge badge-success"><span class="badge-dot"></span>Active</span></td>
                 <td>
-                  <button class="btn btn-ghost btn-sm" style="color:var(--sf-error-600);padding:4px 8px;" title="Delete Staff" onclick="deleteStaffAction('${s.id}', '${(s.name || '').replace(/'/g, "\\'")}')">
+                  <button class="btn btn-ghost btn-sm" style="color:var(--sf-error-600);padding:4px 8px;" title="Delete Staff" onclick="deleteStaffAction(this.dataset.id, this.dataset.name)" data-id="${escAttr(s.id)}" data-name="${escAttr(s.name)}">
                     ${icons.trash} Delete
                   </button>
                 </td>

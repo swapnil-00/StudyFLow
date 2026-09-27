@@ -7,6 +7,9 @@ export function renderMemberships(container) {
     return m ? { ...m, student: s } : null;
   }).filter(Boolean);
 
+  const esc = (s) => (typeof window !== 'undefined' && window.escapeHtml ? window.escapeHtml(s) : String(s == null ? '' : s));
+  const escAttr = (s) => (typeof window !== 'undefined' && window.escapeAttr ? window.escapeAttr(s) : String(s == null ? '' : s));
+
   container.innerHTML = `
     <div class="page-header">
       <div class="page-header-row">
@@ -48,14 +51,14 @@ export function renderMemberships(container) {
               const daysLeft = utils.daysUntil(m.endDate);
               const payStatus = store.getPaymentStatus(m.id);
               return `
-                <tr onclick="app.navigate('/student', {id:'${m.studentId}'})">
+                <tr onclick="app.navigate('/student', {id:'${escAttr(m.studentId)}'})">
                   <td>
                     <div class="student-cell">
-                      <div class="avatar avatar-sm" style="background:${m.student?.avatar};">${utils.initials(m.student?.name || '')}</div>
-                      <div class="student-name">${m.student?.name}</div>
+                      <div class="avatar avatar-sm" style="background:${escAttr(m.student?.avatar)};">${utils.initials(m.student?.name || '')}</div>
+                      <div class="student-name">${esc(m.student?.name)}</div>
                     </div>
                   </td>
-                  <td style="color:var(--color-text-secondary);">${m.planName || '—'}</td>
+                  <td style="color:var(--color-text-secondary);">${esc(m.planName || '—')}</td>
                   <td style="color:var(--color-text-secondary);">${utils.formatDate(m.startDate, {day:'numeric',month:'short'})}</td>
                   <td style="color:${daysLeft <= 7 ? 'var(--sf-warning-600)' : 'var(--color-text-secondary)'};">${utils.formatDate(m.endDate, {day:'numeric',month:'short'})}</td>
                   <td>
@@ -66,7 +69,7 @@ export function renderMemberships(container) {
                   <td>${paymentStatusBadge(payStatus)}</td>
                   <td>${membershipStatusBadge(m.endDate, m.status)}</td>
                   <td>
-                    <button class="btn btn-ghost btn-sm" style="color:var(--sf-error-600);padding:4px 8px;" title="Delete Membership" onclick="event.stopPropagation(); deleteMembershipAction('${m.id}', '${(m.student?.name || '').replace(/'/g, "\\'")}')">
+                    <button class="btn btn-ghost btn-sm" style="color:var(--sf-error-600);padding:4px 8px;" title="Delete Membership" onclick="event.stopPropagation(); deleteMembershipAction(this.dataset.id, this.dataset.name)" data-id="${escAttr(m.id)}" data-name="${escAttr(m.student?.name)}">
                       ${icons.trash} Delete
                     </button>
                   </td>
@@ -175,6 +178,9 @@ export function renderMemberships(container) {
 }
 
 function renderPlanCard(plan) {
+  const esc = (s) => (typeof window !== 'undefined' && window.escapeHtml ? window.escapeHtml(s) : String(s == null ? '' : s));
+  const escAttr = (s) => (typeof window !== 'undefined' && window.escapeAttr ? window.escapeAttr(s) : String(s == null ? '' : s));
+
   const studentCount = (store.db.memberships || []).filter(m => m.planId === plan.id && m.status === 'active').length;
   return `
     <div class="card" style="position:relative;text-align:center;padding:var(--space-5);transition:all var(--transition-fast);"
@@ -183,16 +189,18 @@ function renderPlanCard(plan) {
     >
       <button class="btn btn-ghost btn-sm" style="position:absolute;top:8px;right:8px;padding:4px;color:var(--color-text-tertiary);border-radius:var(--radius-full);"
         title="Delete Plan"
-        onclick="event.stopPropagation(); deletePlanAction('${plan.id}', '${(plan.name || '').replace(/'/g, "\\'")}')"
+        onclick="event.stopPropagation(); deletePlanAction(this.dataset.id, this.dataset.name)"
+        data-id="${escAttr(plan.id)}"
+        data-name="${escAttr(plan.name)}"
         onmouseenter="this.style.color='var(--sf-error-600)'"
         onmouseleave="this.style.color='var(--color-text-tertiary)'"
       >
         ${icons.trash}
       </button>
-      <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:var(--space-2);">${plan.duration} DAYS</div>
-      <div style="font-size:var(--text-lg);font-weight:var(--fw-bold);color:var(--color-text-primary);margin-bottom:var(--space-2);">${plan.name}</div>
+      <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:var(--space-2);">${Number(plan.duration) || 0} DAYS</div>
+      <div style="font-size:var(--text-lg);font-weight:var(--fw-bold);color:var(--color-text-primary);margin-bottom:var(--space-2);">${esc(plan.name)}</div>
       <div style="font-size:var(--text-2xl);font-weight:var(--fw-bold);color:var(--sf-indigo-600);margin-bottom:var(--space-3);">${utils.formatINR(plan.price)}</div>
-      ${plan.accessHours ? `<div style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-bottom:var(--space-3);">${plan.accessHours}</div>` : ''}
+      ${plan.accessHours ? `<div style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-bottom:var(--space-3);">${esc(plan.accessHours)}</div>` : ''}
       <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);">${studentCount} active</div>
     </div>
   `;

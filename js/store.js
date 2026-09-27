@@ -216,7 +216,8 @@ class Store {
 
   async addBranch(data) {
     const branch = { id: uid('BR'), createdAt: now(), ...data };
-    await apiWrite('branches', 'insert', branch);
+    const res = await apiWrite('branches', 'insert', branch);
+    if (res?.id) branch.id = res.id;
     this._db.branches.push(branch);
     this._notify();
     return branch;
@@ -240,7 +241,8 @@ class Store {
 
   async addFloor(data) {
     const floor = { id: uid('FLR'), createdAt: now(), ...data };
-    await apiWrite('floors', 'insert', floor);
+    const res = await apiWrite('floors', 'insert', floor);
+    if (res?.id) floor.id = res.id;
     this._db.floors.push(floor);
     this._notify();
     return floor;
@@ -278,7 +280,8 @@ class Store {
 
   async addRoom(data) {
     const room = { id: uid('RM'), createdAt: now(), ...data };
-    await apiWrite('rooms', 'insert', room);
+    const res = await apiWrite('rooms', 'insert', room);
+    if (res?.id) room.id = res.id;
     this._db.rooms.push(room);
     this._notify();
     return room;
@@ -353,7 +356,8 @@ class Store {
 
   async addSeat(data) {
     const seat = { id: uid('SEAT'), status: 'available', type: 'standard', createdAt: now(), ...data };
-    await apiWrite('seats', 'insert', seat);
+    const res = await apiWrite('seats', 'insert', seat);
+    if (res?.id) seat.id = res.id;
     this._db.seats.push(seat);
     this._notify();
     return seat;
@@ -390,7 +394,12 @@ class Store {
 
   async batchInsertSeats(seatsList) {
     if (!seatsList || seatsList.length === 0) return [];
-    await apiWrite('seats', 'batch_insert', seatsList);
+    const res = await apiWrite('seats', 'batch_insert', seatsList);
+    if (res?.ids && Array.isArray(res.ids)) {
+      res.ids.forEach((id, idx) => {
+        if (seatsList[idx]) seatsList[idx].id = id;
+      });
+    }
     for (const s of seatsList) {
       this._db.seats.push(s);
     }
@@ -456,7 +465,8 @@ class Store {
       phone: normalized_phone || phone
     };
 
-    await apiWrite('students', 'insert', student);
+    const res = await apiWrite('students', 'insert', student);
+    if (res?.id) student.id = res.id;
     this._db.students.push(student);
     this.addActivity({ action: 'student_created', entity: 'student', entityId: student.id, description: `Student ${student.name} added` });
     this._notify();
@@ -494,7 +504,8 @@ class Store {
 
   async addMembershipPlan(data) {
     const plan = { id: uid('PLAN'), active: true, createdAt: now(), ...data };
-    await apiWrite('membership_plans', 'insert', plan);
+    const res = await apiWrite('membership_plans', 'insert', plan);
+    if (res?.id) plan.id = res.id;
     this._db.membershipPlans.push(plan);
     this._notify();
     return plan;
@@ -533,7 +544,8 @@ class Store {
 
   async addMembership(data) {
     const membership = { id: uid('MEM'), status: 'active', createdAt: now(), ...data };
-    await apiWrite('memberships', 'insert', membership);
+    const res = await apiWrite('memberships', 'insert', membership);
+    if (res?.id) membership.id = res.id;
     this._db.memberships.push(membership);
     this._notify();
     return membership;
@@ -807,7 +819,8 @@ class Store {
       recordedAt: now(),
       ...data
     };
-    await apiWrite('payments', 'insert', payment);
+    const res = await apiWrite('payments', 'insert', payment);
+    if (res?.id) payment.id = res.id;
     this._db.payments.push(payment);
 
     // Update membership payment status
@@ -870,7 +883,8 @@ class Store {
 
   async addExpense(data) {
     const expense = { id: uid('EXP'), createdAt: now(), ...data };
-    await apiWrite('expenses', 'insert', expense);
+    const res = await apiWrite('expenses', 'insert', expense);
+    if (res?.id) expense.id = res.id;
     this._db.expenses.push(expense);
     this._notify();
     return expense;
@@ -963,7 +977,8 @@ class Store {
 
   async addToWaitlist(data) {
     const entry = { id: uid('WL'), status: 'waiting', createdAt: now(), priority: 1, ...data };
-    await apiWrite('waitlist', 'insert', entry);
+    const res = await apiWrite('waitlist', 'insert', entry);
+    if (res?.id) entry.id = res.id;
     this._db.waitlist.push(entry);
     this._notify();
     return entry;
@@ -974,7 +989,8 @@ class Store {
 
   async addStaff(data) {
     const staff = { id: uid('STF'), status: 'active', createdAt: now(), ...data };
-    await apiWrite('staff', 'insert', staff);
+    const res = await apiWrite('staff', 'insert', staff);
+    if (res?.id) staff.id = res.id;
     this._db.staff.push(staff);
     this._notify();
     return staff;

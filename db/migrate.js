@@ -68,10 +68,11 @@ async function main() {
     process.exit(1);
   }
 
-  console.log('📡 Connecting to Neon DB...');
+  const isLocal = DATABASE_URL.includes('localhost') || DATABASE_URL.includes('127.0.0.1');
+  const rejectUnauthorized = process.env.DB_REJECT_UNAUTHORIZED !== 'false';
   const pool = new Pool({
     connectionString: DATABASE_URL,
-    ssl: { rejectUnauthorized: false },
+    ssl: isLocal ? false : { rejectUnauthorized },
     connectionTimeoutMillis: 15000,
   });
 

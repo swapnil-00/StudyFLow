@@ -36,14 +36,14 @@ export function renderStudentProfile(container, params) {
 
       <!-- Profile Header -->
       <div class="profile-header">
-        <div class="avatar avatar-xl" style="background:${student.avatar};">${utils.initials(student.name)}</div>
+        <div class="avatar avatar-xl" style="background:${window.escapeAttr ? window.escapeAttr(student.avatar) : student.avatar};">${utils.initials(student.name)}</div>
         <div class="profile-info">
-          <div class="profile-name">${student.name}</div>
-          <div class="profile-id">${student.id}</div>
+          <div class="profile-name">${window.escapeHtml ? window.escapeHtml(student.name) : student.name}</div>
+          <div class="profile-id">${window.escapeHtml ? window.escapeHtml(student.id) : student.id}</div>
           <div class="profile-meta">
             ${membership ? membershipStatusBadge(membership.endDate, membership.status) : `<span class="badge badge-neutral"><span class="badge-dot"></span>No Membership</span>`}
-            ${seat ? `<span class="badge badge-indigo"><span class="badge-dot"></span>Seat ${seat.label}</span>` : ''}
-            <span style="font-size:var(--text-sm);color:var(--color-text-tertiary);">${student.course || '—'}</span>
+            ${seat ? `<span class="badge badge-indigo"><span class="badge-dot"></span>Seat ${window.escapeHtml ? window.escapeHtml(seat.label) : seat.label}</span>` : ''}
+            <span style="font-size:var(--text-sm);color:var(--color-text-tertiary);">${window.escapeHtml ? window.escapeHtml(student.course || '—') : (student.course || '—')}</span>
           </div>
         </div>
         <div class="profile-actions">
@@ -124,15 +124,15 @@ export function renderStudentProfile(container, params) {
           <div class="card-header"><div class="card-title">Personal Information</div></div>
           <div class="card-body">
             <div class="info-grid">
-              <div class="info-item"><div class="info-label">Full Name</div><div class="info-value">${student.name}</div></div>
-              <div class="info-item"><div class="info-label">Phone</div><div class="info-value">${student.phone}</div></div>
-              <div class="info-item"><div class="info-label">Email</div><div class="info-value">${student.email || '—'}</div></div>
-              <div class="info-item"><div class="info-label">Gender</div><div class="info-value">${student.gender || '—'}</div></div>
+              <div class="info-item"><div class="info-label">Full Name</div><div class="info-value">${window.escapeHtml ? window.escapeHtml(student.name) : student.name}</div></div>
+              <div class="info-item"><div class="info-label">Phone</div><div class="info-value">${window.escapeHtml ? window.escapeHtml(student.phone) : student.phone}</div></div>
+              <div class="info-item"><div class="info-label">Email</div><div class="info-value">${window.escapeHtml ? window.escapeHtml(student.email || '—') : (student.email || '—')}</div></div>
+              <div class="info-item"><div class="info-label">Gender</div><div class="info-value">${window.escapeHtml ? window.escapeHtml(student.gender || '—') : (student.gender || '—')}</div></div>
               <div class="info-item"><div class="info-label">Date of Birth</div><div class="info-value">${student.dob ? utils.formatDate(student.dob) : '—'}</div></div>
-              <div class="info-item"><div class="info-label">Course</div><div class="info-value">${student.course || '—'}</div></div>
-              <div class="info-item"><div class="info-label">College</div><div class="info-value">${student.college || '—'}</div></div>
-              <div class="info-item"><div class="info-label">Address</div><div class="info-value">${student.address || '—'}</div></div>
-              <div class="info-item"><div class="info-label">Emergency Contact</div><div class="info-value">${student.emergencyContact?.name || '—'} ${student.emergencyContact?.phone ? '· ' + student.emergencyContact.phone : ''}</div></div>
+              <div class="info-item"><div class="info-label">Course</div><div class="info-value">${window.escapeHtml ? window.escapeHtml(student.course || '—') : (student.course || '—')}</div></div>
+              <div class="info-item"><div class="info-label">College</div><div class="info-value">${window.escapeHtml ? window.escapeHtml(student.college || '—') : (student.college || '—')}</div></div>
+              <div class="info-item"><div class="info-label">Address</div><div class="info-value">${window.escapeHtml ? window.escapeHtml(student.address || '—') : (student.address || '—')}</div></div>
+              <div class="info-item"><div class="info-label">Emergency Contact</div><div class="info-value">${window.escapeHtml ? window.escapeHtml(student.emergencyContact?.name || '—') : (student.emergencyContact?.name || '—')} ${student.emergencyContact?.phone ? '· ' + (window.escapeHtml ? window.escapeHtml(student.emergencyContact.phone) : student.emergencyContact.phone) : ''}</div></div>
               <div class="info-item"><div class="info-label">Member Since</div><div class="info-value">${utils.formatDate(student.createdAt)}</div></div>
             </div>
           </div>
@@ -438,11 +438,11 @@ export function renderStudentProfile(container, params) {
     modal.open('Edit Student', `
       <div style="display:flex;flex-direction:column;gap:var(--space-4);">
         <div class="grid-2">
-          <div class="form-group"><label class="form-label">Full Name</label><input type="text" class="input" id="edit-name" value="${s.name}"></div>
-          <div class="form-group"><label class="form-label">Phone</label><input type="tel" class="input" id="edit-phone" value="${s.phone}"></div>
+          <div class="form-group"><label class="form-label">Full Name</label><input type="text" class="input" id="edit-name" value="${window.escapeAttr ? window.escapeAttr(s.name) : s.name}"></div>
+          <div class="form-group"><label class="form-label">Phone</label><input type="tel" class="input" id="edit-phone" value="${window.escapeAttr ? window.escapeAttr(s.phone) : s.phone}"></div>
         </div>
         <div class="grid-2">
-          <div class="form-group"><label class="form-label">Email</label><input type="email" class="input" id="edit-email" value="${s.email || ''}"></div>
+          <div class="form-group"><label class="form-label">Email</label><input type="email" class="input" id="edit-email" value="${window.escapeAttr ? window.escapeAttr(s.email || '') : (s.email || '')}"></div>
           <div class="form-group">
             <label class="form-label">Notification Language</label>
             <select class="select" id="edit-lang">
@@ -452,12 +452,12 @@ export function renderStudentProfile(container, params) {
             </select>
           </div>
         </div>
-        <div class="form-group"><label class="form-label">Course</label><input type="text" class="input" id="edit-course" value="${s.course || ''}"></div>
-        <div class="form-group"><label class="form-label">Address</label><input type="text" class="input" id="edit-address" value="${s.address || ''}"></div>
+        <div class="form-group"><label class="form-label">Course</label><input type="text" class="input" id="edit-course" value="${window.escapeAttr ? window.escapeAttr(s.course || '') : (s.course || '')}"></div>
+        <div class="form-group"><label class="form-label">Address</label><input type="text" class="input" id="edit-address" value="${window.escapeAttr ? window.escapeAttr(s.address || '') : (s.address || '')}"></div>
       </div>
     `, `
       <button class="btn btn-secondary" onclick="modal.close()">Cancel</button>
-      <button class="btn btn-primary" onclick="confirmEditStudent('${studentId}')">Save Changes</button>
+      <button class="btn btn-primary" onclick="confirmEditStudent('${window.escapeAttr ? window.escapeAttr(studentId) : studentId}')">Save Changes</button>
     `);
   };
 

@@ -1,5 +1,7 @@
 // Activity Log Page
 export function renderActivity(container) {
+  const esc = (s) => (typeof window !== 'undefined' && window.escapeHtml ? window.escapeHtml(s) : String(s == null ? '' : s));
+
   const activities = store.getActivityLogs(100);
 
   container.innerHTML = `
@@ -39,11 +41,11 @@ export function renderActivity(container) {
                   <td>
                     <div style="display:flex;align-items:center;gap:var(--space-2);color:var(--color-text-secondary);">
                       ${icon}
-                      <span style="font-size:var(--text-xs);">${a.action?.replace(/_/g, ' ')}</span>
+                      <span style="font-size:var(--text-xs);">${esc(a.action?.replace(/_/g, ' '))}</span>
                     </div>
                   </td>
-                  <td style="color:var(--color-text-primary);">${a.description}</td>
-                  <td><span class="badge badge-neutral">${a.entity || '—'}</span></td>
+                  <td style="color:var(--color-text-primary);">${esc(a.description)}</td>
+                  <td><span class="badge badge-neutral">${esc(a.entity || '—')}</span></td>
                 </tr>
               `;
             }).join('') || `

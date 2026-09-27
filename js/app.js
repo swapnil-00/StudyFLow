@@ -1154,7 +1154,9 @@ const toast = {
       }
     }
 
-    t.innerHTML = `<div class="toast-icon">${icon}</div><div class="toast-msg" style="color:inherit !important;font-weight:500;">${msg}</div>`;
+    const esc = (s) => (typeof window !== 'undefined' && window.escapeHtml ? window.escapeHtml(s) : String(s || ''));
+    const safeMsg = (typeof msg === 'string') ? esc(msg) : msg;
+    t.innerHTML = `<div class="toast-icon">${icon}</div><div class="toast-msg" style="color:inherit !important;font-weight:500;">${safeMsg}</div>`;
     container.appendChild(t);
 
     setTimeout(() => {
@@ -1170,6 +1172,8 @@ const toast = {
 const modal = {
   open(title, bodyHTML, footerHTML, opts = {}) {
     this.close();
+    const esc = (s) => (typeof window !== 'undefined' && window.escapeHtml ? window.escapeHtml(s) : String(s || ''));
+    const safeTitle = (typeof title === 'string') ? esc(title) : title;
     const backdrop = document.createElement('div');
     backdrop.className = 'modal-backdrop';
     backdrop.id = 'modal-backdrop';
@@ -1178,7 +1182,7 @@ const modal = {
     backdrop.innerHTML = `
       <div class="modal ${sizeClass}" id="modal-dialog">
         <div class="modal-header">
-          <h2 class="modal-title">${title}</h2>
+          <h2 class="modal-title">${safeTitle}</h2>
           <button class="modal-close" onclick="modal.close()" aria-label="Close">
             ${icons.x}
           </button>
@@ -1198,6 +1202,9 @@ const modal = {
 
   confirm({ title = 'Confirm Action', message = 'Are you sure?', confirmText = 'Confirm', cancelText = 'Cancel', type = 'danger' } = {}) {
     return new Promise((resolve) => {
+      const esc = (s) => (typeof window !== 'undefined' && window.escapeHtml ? window.escapeHtml(s) : String(s || ''));
+      const safeTitle = (typeof title === 'string') ? esc(title) : title;
+      const safeMessage = (typeof message === 'string') ? esc(message) : message;
       const isDanger = type === 'danger' || type === 'error';
       const btnClass = isDanger ? 'btn btn-danger' : (type === 'warning' ? 'btn btn-warning' : 'btn btn-primary');
       const iconClass = isDanger ? 'danger' : (type === 'warning' ? 'warning' : 'info');
@@ -1209,7 +1216,7 @@ const modal = {
             ${iconSvg}
           </div>
           <div style="flex:1;">
-            <p style="margin:0;font-size:var(--text-sm);line-height:1.6;color:var(--color-text-secondary);white-space:pre-line;">${message}</p>
+            <p style="margin:0;font-size:var(--text-sm);line-height:1.6;color:var(--color-text-secondary);white-space:pre-line;">${safeMessage}</p>
           </div>
         </div>
       `;
@@ -1219,7 +1226,7 @@ const modal = {
         <button type="button" class="${btnClass}" id="modal-confirm-ok">${confirmText}</button>
       `;
 
-      modal.open(title, bodyHTML, footerHTML, { size: 'sm' });
+      modal.open(safeTitle, bodyHTML, footerHTML, { size: 'sm' });
 
       document.getElementById('modal-confirm-cancel')?.addEventListener('click', () => {
         modal.close();
@@ -1243,6 +1250,8 @@ const drawer = {
   open(title, bodyHTML, footerHTML) {
     this.close();
 
+    const esc = (s) => (typeof window !== 'undefined' && window.escapeHtml ? window.escapeHtml(s) : String(s || ''));
+    const safeTitle = (typeof title === 'string') ? esc(title) : title;
     const backdrop = document.createElement('div');
     backdrop.className = 'drawer-backdrop';
     backdrop.onclick = () => this.close();
@@ -1252,7 +1261,7 @@ const drawer = {
     drawerEl.id = 'main-drawer';
     drawerEl.innerHTML = `
       <div class="drawer-header">
-        <h2 class="drawer-title">${title}</h2>
+        <h2 class="drawer-title">${safeTitle}</h2>
         <button class="drawer-close" onclick="drawer.close()" aria-label="Close">
           ${icons.x}
         </button>

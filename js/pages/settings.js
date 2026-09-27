@@ -1,5 +1,8 @@
 // Settings Page
 export function renderSettings(container) {
+  const esc = (s) => (typeof window !== 'undefined' && window.escapeHtml ? window.escapeHtml(s) : String(s == null ? '' : s));
+  const escAttr = (s) => (typeof window !== 'undefined' && window.escapeAttr ? window.escapeAttr(s) : String(s == null ? '' : s));
+
   const settings = store.getSettings();
   const branches = store.getBranches();
   const org = store.organization || { name: 'StudyFlow Library', plan: 'trial', seatLimit: 75 };
@@ -25,17 +28,17 @@ export function renderSettings(container) {
         <div class="card-header" style="background:rgba(97, 114, 243, 0.04);">
           <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;width:100%;">
             <span>SaaS Plan & Subscription</span>
-            <span class="badge badge-indigo" style="font-size:11px;font-weight:700;text-transform:uppercase;padding:2px 8px;">${org.plan}</span>
+            <span class="badge badge-indigo" style="font-size:11px;font-weight:700;text-transform:uppercase;padding:2px 8px;">${esc(org.plan)}</span>
           </div>
         </div>
         <div class="card-body" style="display:flex;flex-direction:column;gap:var(--space-4);">
           <div style="display:flex;align-items:center;gap:12px;padding-bottom:var(--space-3);border-bottom:1px solid var(--color-border-secondary);">
-            <div style="width:40px;height:40px;border-radius:50%;background:${user.avatarColor || 'var(--color-primary)'};color:white;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:14px;">
+            <div style="width:40px;height:40px;border-radius:50%;background:${escAttr(user.avatarColor || 'var(--color-primary)')};color:white;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:14px;">
               ${utils.initials(user.name || 'Admin')}
             </div>
             <div style="flex:1;overflow:hidden;">
-              <div style="font-weight:var(--fw-bold);font-size:var(--text-sm);color:var(--color-text-primary);" class="truncate">${org.name}</div>
-              <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);">${user.email} · ${(user.role || 'Owner').toUpperCase()}</div>
+              <div style="font-weight:var(--fw-bold);font-size:var(--text-sm);color:var(--color-text-primary);" class="truncate">${esc(org.name)}</div>
+              <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);">${esc(user.email)} · ${esc((user.role || 'Owner').toUpperCase())}</div>
             </div>
           </div>
 
@@ -51,7 +54,7 @@ export function renderSettings(container) {
           </div>
 
           <div style="display:flex;gap:var(--space-2);margin-top:var(--space-2);">
-            <button class="btn btn-primary flex-1" onclick="app.openUpgradeModal()">⚡ Upgrade Plan</button>
+            <button class="btn btn-primary flex-1" onclick="modal.open('Upgrade Plan', '<p style=\\'margin-bottom:var(--space-4);line-height:1.6;\\'>To upgrade your subscription, expand seat capacity, or request dedicated deployment, please reach out to our team at <strong>sales@studyflow.in</strong> or WhatsApp support at <strong>+91 99999 99999</strong>.</p><a href=\\'mailto:sales@studyflow.in?subject=StudyFlow%20Plan%20Upgrade\\' class=\\'btn btn-primary w-full\\' style=\\'display:inline-block;text-align:center;text-decoration:none;\\'>Email Sales</a>', '<button class=\\'btn btn-secondary\\' onclick=\\'modal.close()\\'>Close</button>')">Contact Us</button>
             <button class="btn btn-secondary" onclick="app.openOnboardingModal()">Setup Wizard</button>
             ${isAuth ? `
               <button class="btn btn-secondary" onclick="app.handleLogout()">Sign Out</button>
@@ -68,20 +71,20 @@ export function renderSettings(container) {
         <div class="card-body" style="display:flex;flex-direction:column;gap:var(--space-4);">
           <div class="form-group">
             <label class="form-label">Organization Name</label>
-            <input type="text" class="input" id="set-org-name" value="${org.name || settings.orgName || ''}">
+            <input type="text" class="input" id="set-org-name" value="${escAttr(org.name || settings.orgName || '')}">
           </div>
           <div class="form-group">
             <label class="form-label">Address</label>
-            <input type="text" class="input" id="set-address" value="${settings.address || ''}">
+            <input type="text" class="input" id="set-address" value="${escAttr(settings.address || '')}">
           </div>
           <div class="grid-2">
             <div class="form-group">
               <label class="form-label">Phone</label>
-              <input type="tel" class="input" id="set-phone" value="${settings.phone || ''}">
+              <input type="tel" class="input" id="set-phone" value="${escAttr(settings.phone || '')}">
             </div>
             <div class="form-group">
               <label class="form-label">Email</label>
-              <input type="email" class="input" id="set-email" value="${settings.email || ''}">
+              <input type="email" class="input" id="set-email" value="${escAttr(settings.email || '')}">
             </div>
           </div>
           <button class="btn btn-primary w-full" onclick="saveOrgSettings()">Save Changes</button>
@@ -112,10 +115,10 @@ export function renderSettings(container) {
             ${branches.map(b => `
               <div style="display:flex;align-items:center;justify-content:space-between;padding:var(--space-3) 0;border-bottom:1px solid var(--color-border-secondary);">
                 <div>
-                  <div style="font-weight:var(--fw-medium);">${b.name}</div>
-                  <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);">${b.city} · ${b.phone}</div>
+                  <div style="font-weight:var(--fw-medium);">${esc(b.name)}</div>
+                  <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);">${esc(b.city)} · ${esc(b.phone)}</div>
                 </div>
-                <span class="badge badge-success"><span class="badge-dot"></span>${b.status}</span>
+                <span class="badge badge-success"><span class="badge-dot"></span>${esc(b.status)}</span>
               </div>
             `).join('')}
           </div>
@@ -143,17 +146,17 @@ export function renderSettings(container) {
             <div class="grid-2">
               <div class="form-group">
                 <label class="form-label">WhatsApp Business Phone ID</label>
-                <input type="text" class="input" id="set-wa-phone-id" placeholder="e.g. 109384729384729" value="${settings.waPhoneId || ''}">
+                <input type="text" class="input" id="set-wa-phone-id" placeholder="e.g. 109384729384729" value="${escAttr(settings.waPhoneId || '')}">
               </div>
               <div class="form-group">
                 <label class="form-label">WhatsApp Account ID / Namespace</label>
-                <input type="text" class="input" id="set-wa-acc-id" placeholder="e.g. studyflow_notifications" value="${settings.waAccId || ''}">
+                <input type="text" class="input" id="set-wa-acc-id" placeholder="e.g. studyflow_notifications" value="${escAttr(settings.waAccId || '')}">
               </div>
             </div>
 
             <div class="form-group">
               <label class="form-label">Permanent Access Token</label>
-              <input type="password" class="input" id="set-wa-token" placeholder="Bearer EAAG..." value="${settings.waToken || ''}">
+              <input type="password" class="input" id="set-wa-token" placeholder="Bearer EAAG..." value="${escAttr(settings.waToken || '')}">
             </div>
 
             <!-- Automation Rules -->

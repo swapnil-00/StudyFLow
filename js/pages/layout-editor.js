@@ -24,6 +24,19 @@ export function renderLayoutEditor(container, params = {}) {
   const floor = store.getFloor(room.floorId);
   const seats = store.getSeats(room.id);
 
+  const esc = (s) => (typeof window !== 'undefined' && window.escapeHtml ? window.escapeHtml(s) : String(s == null ? '' : s));
+  const escAttr = (s) => (typeof window !== 'undefined' && window.escapeAttr ? window.escapeAttr(s) : String(s == null ? '' : s));
+
+  function escapeXml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+  }
+
   // Generate mxGraph XML for Draw.io
   function generateDrawioXml(currentSeats) {
     const seatCells = currentSeats.map(s => {
@@ -45,7 +58,7 @@ export function renderLayoutEditor(container, params = {}) {
         style = "rounded=1;whiteSpace=wrap;html=1;arcSize=16;strokeWidth=2;fillColor=#1f2937;strokeColor=#64748b;fontColor=#94a3b8;fontSize=13;fontStyle=1;";
       }
 
-      return `<mxCell id="seat_${s.id}" value="${s.label}" style="${style}" vertex="1" parent="1">
+      return `<mxCell id="seat_${escapeXml(s.id)}" value="${escapeXml(s.label)}" style="${style}" vertex="1" parent="1">
         <mxGeometry x="${x}" y="${y}" width="62" height="40" as="geometry"/>
       </mxCell>`;
     }).join('\n    ');
@@ -54,7 +67,7 @@ export function renderLayoutEditor(container, params = {}) {
   <root>
     <mxCell id="0"/>
     <mxCell id="1" parent="0"/>
-    <mxCell id="room_boundary" value="📍 ${room.name} · ${floor?.name || 'Floor Plan'} Boundary" style="rounded=1;whiteSpace=wrap;html=1;arcSize=2;fillColor=#181a1d;strokeColor=#36393f;strokeWidth=2;fontColor=#72767d;fontSize=14;fontStyle=1;align=left;verticalAlign=top;spacingLeft=18;spacingTop=14;dashed=1;" vertex="1" parent="1">
+    <mxCell id="room_boundary" value="📍 ${escapeXml(room.name)} · ${escapeXml(floor?.name || 'Floor Plan')} Boundary" style="rounded=1;whiteSpace=wrap;html=1;arcSize=2;fillColor=#181a1d;strokeColor=#36393f;strokeWidth=2;fontColor=#72767d;fontSize=14;fontStyle=1;align=left;verticalAlign=top;spacingLeft=18;spacingTop=14;dashed=1;" vertex="1" parent="1">
       <mxGeometry x="20" y="20" width="2300" height="1500" as="geometry"/>
     </mxCell>
     ${seatCells}
@@ -81,7 +94,7 @@ export function renderLayoutEditor(container, params = {}) {
             <select id="layout-room-select" onchange="app.navigate('/layout-editor?roomId=' + this.value)" style="background:#2c2f33;color:#ffffff;border:1px solid #4f545c;border-radius:6px;padding:4px 10px;font-size:13px;font-weight:600;outline:none;cursor:pointer;">
               ${allRooms.map(r => {
                 const fl = store.getFloor(r.floorId);
-                return `<option value="${r.id}" ${r.id === room.id ? 'selected' : ''}>${r.name} (${fl?.name || 'Floor'})</option>`;
+                return `<option value="${escAttr(r.id)}" ${r.id === room.id ? 'selected' : ''}>${esc(r.name)} (${esc(fl?.name || 'Floor')})</option>`;
               }).join('')}
             </select>
             <span id="full-editor-seat-count" class="badge badge-indigo" style="font-size:11px;">
@@ -92,16 +105,16 @@ export function renderLayoutEditor(container, params = {}) {
 
         <!-- Right: Actions (Add Seat, Add Row, Delete Seat, Save) -->
         <div style="display:flex;align-items:center;gap:8px;">
-          <button type="button" class="btn btn-secondary btn-sm" onclick="drawioPageAddSeat('${room.id}')" title="Add New Seat with Custom Number">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="drawioPageAddSeat('${escAttr(room.id)}')" title="Add New Seat with Custom Number">
             ${icons.plus || '+'} Add Seat
           </button>
-          <button type="button" class="btn btn-secondary btn-sm" onclick="drawioPageAddRow('${room.id}')" title="Add Row of Seats">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="drawioPageAddRow('${escAttr(room.id)}')" title="Add Row of Seats">
             ${icons.plus || '+'} Add Row
           </button>
-          <button type="button" class="btn btn-ghost btn-sm" style="color:#ef4444;" onclick="drawioPageDeleteSeatPrompt('${room.id}')" title="Delete a seat by number">
+          <button type="button" class="btn btn-ghost btn-sm" style="color:#ef4444;" onclick="drawioPageDeleteSeatPrompt('${escAttr(room.id)}')" title="Delete a seat by number">
             ${icons.trash || '🗑️'} Delete Seat
           </button>
-          <button type="button" class="btn btn-primary btn-sm" id="full-editor-save-btn" onclick="drawioPageSave('${room.id}')" style="background:#007acc;border-color:#0098ff;padding:6px 14px;font-weight:700;">
+          <button type="button" class="btn btn-primary btn-sm" id="full-editor-save-btn" onclick="drawioPageSave('${escAttr(room.id)}')" style="background:#007acc;border-color:#0098ff;padding:6px 14px;font-weight:700;">
             ${icons.checkCircle || '✓'} Save & Lock Layout
           </button>
         </div>
@@ -120,8 +133,12 @@ export function renderLayoutEditor(container, params = {}) {
 
   const iframe = document.getElementById('drawio-page-frame');
 
-  // ── Draw.io postMessage Protocol Listener ──
+  const DRAWIO_ORIGIN = 'https://embed.diagrams.net';
+
+  // ── Draw.io postMessage Protocol Listener (SEC-026: Origin & source check) ──
   async function onDrawioPageMessage(evt) {
+    if (evt.origin !== DRAWIO_ORIGIN) return;
+    if (!iframe || evt.source !== iframe.contentWindow) return;
     if (!evt.data || typeof evt.data !== 'string') return;
 
     let msg;
@@ -140,7 +157,7 @@ export function renderLayoutEditor(container, params = {}) {
         autosave: 1,
         xml: currentXml,
         title: `${room.name} - Full Drawing Sheet`
-      }), '*');
+      }), DRAWIO_ORIGIN);
     }
 
     // 2. Draw.io Configure event -> Setup dark theme and default grid
@@ -154,7 +171,7 @@ export function renderLayoutEditor(container, params = {}) {
           defaultPageBackgroundColor: '#121417',
           dark: true
         }
-      }), '*');
+      }), DRAWIO_ORIGIN);
     }
 
     // 3. Draw.io Export / Save event -> Parse XML, delete removed seats, update moved seats, add new seats
@@ -267,7 +284,7 @@ export function renderLayoutEditor(container, params = {}) {
   // Trigger Save
   window.drawioPageSave = function(rId) {
     if (!iframe || !iframe.contentWindow) return;
-    iframe.contentWindow.postMessage(JSON.stringify({ action: 'export', format: 'xml' }), '*');
+    iframe.contentWindow.postMessage(JSON.stringify({ action: 'export', format: 'xml' }), DRAWIO_ORIGIN);
   };
 
   // Delete Seat Prompt helper
@@ -301,7 +318,7 @@ export function renderLayoutEditor(container, params = {}) {
       const updatedSeats = store.getSeats(rId);
       currentXml = generateDrawioXml(updatedSeats);
       if (iframe && iframe.contentWindow) {
-        iframe.contentWindow.postMessage(JSON.stringify({ action: 'load', autosave: 1, xml: currentXml }), '*');
+        iframe.contentWindow.postMessage(JSON.stringify({ action: 'load', autosave: 1, xml: currentXml }), DRAWIO_ORIGIN);
       }
       const countEl = document.getElementById('full-editor-seat-count');
       if (countEl) countEl.textContent = `${updatedSeats.length} seats`;
@@ -346,7 +363,7 @@ export function renderLayoutEditor(container, params = {}) {
       const updatedSeats = store.getSeats(rId);
       currentXml = generateDrawioXml(updatedSeats);
       if (iframe && iframe.contentWindow) {
-        iframe.contentWindow.postMessage(JSON.stringify({ action: 'load', autosave: 1, xml: currentXml }), '*');
+        iframe.contentWindow.postMessage(JSON.stringify({ action: 'load', autosave: 1, xml: currentXml }), DRAWIO_ORIGIN);
       }
       const countEl = document.getElementById('full-editor-seat-count');
       if (countEl) countEl.textContent = `${updatedSeats.length} seats`;
@@ -394,7 +411,7 @@ export function renderLayoutEditor(container, params = {}) {
     const updatedSeats = store.getSeats(rId);
     currentXml = generateDrawioXml(updatedSeats);
     if (iframe && iframe.contentWindow) {
-      iframe.contentWindow.postMessage(JSON.stringify({ action: 'load', autosave: 1, xml: currentXml }), '*');
+      iframe.contentWindow.postMessage(JSON.stringify({ action: 'load', autosave: 1, xml: currentXml }), DRAWIO_ORIGIN);
     }
     const countEl = document.getElementById('full-editor-seat-count');
     if (countEl) countEl.textContent = `${updatedSeats.length} seats`;

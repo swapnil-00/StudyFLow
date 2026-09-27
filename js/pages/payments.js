@@ -1,5 +1,8 @@
 // Payments Page
 export function renderPayments(container) {
+  const esc = (s) => (typeof window !== 'undefined' && window.escapeHtml ? window.escapeHtml(s) : String(s == null ? '' : s));
+  const escAttr = (s) => (typeof window !== 'undefined' && window.escapeAttr ? window.escapeAttr(s) : String(s == null ? '' : s));
+
   const branchId = store.getActiveBranchId();
   const students = store.getStudents(branchId);
   let allPayments = [];
@@ -91,7 +94,7 @@ export function renderPayments(container) {
           <label class="form-label">Student <span class="required">*</span></label>
           <select class="select" id="qpay-student" onchange="loadStudentMembership(this.value)">
             <option value="">Select student...</option>
-            ${students_.map(s => `<option value="${s.id}">${s.name} — ${s.phone}</option>`).join('')}
+            ${students_.map(s => `<option value="${escAttr(s.id)}">${esc(s.name)} — ${esc(s.phone)}</option>`).join('')}
           </select>
         </div>
         <div id="qpay-membership-info" style="display:none;padding:var(--space-3);background:var(--color-bg-secondary);border-radius:var(--radius-lg);font-size:var(--text-sm);"></div>
@@ -187,14 +190,14 @@ export function renderPayments(container) {
               Payment of ${utils.formatINR(amount)} Recorded!
             </div>
             <div style="font-size:var(--text-sm);color:var(--color-text-secondary);margin-top:var(--space-1);">
-              Student: <strong>${student?.name || 'Student'}</strong> · Mode: <strong>${method}</strong>
+              Student: <strong>${esc(student?.name || 'Student')}</strong> · Mode: <strong>${esc(method)}</strong>
             </div>
           </div>
 
           <div style="background:var(--color-bg-secondary);border:1px solid var(--color-border-secondary);border-radius:var(--radius-xl);padding:var(--space-4);margin-bottom:var(--space-4);">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--space-2);">
               <span style="font-size:var(--text-xs);color:var(--color-text-tertiary);text-transform:uppercase;font-weight:var(--fw-semibold);">Receipt #</span>
-              <span style="font-family:var(--font-mono);font-size:var(--text-xs);font-weight:var(--fw-bold);color:var(--sf-indigo-600);">${receiptDoc?.documentNumber || payment.receiptNumber}</span>
+              <span style="font-family:var(--font-mono);font-size:var(--text-xs);font-weight:var(--fw-bold);color:var(--sf-indigo-600);">${esc(receiptDoc?.documentNumber || payment.receiptNumber)}</span>
             </div>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--space-2);">
               <span style="font-size:var(--text-sm);color:var(--color-text-secondary);">Remaining Balance</span>
@@ -204,12 +207,12 @@ export function renderPayments(container) {
               <span style="font-size:var(--text-xs);color:var(--color-text-tertiary);">WhatsApp Receipt</span>
               <span class="badge ${notifMsg?.status === 'skipped' ? 'badge-neutral' : 'badge-success'}" style="font-size:11px;">
                 <span class="badge-dot"></span>
-                ${notifMsg?.status === 'skipped' ? 'Opted Out' : `Queued (${student?.normalized_phone || student?.phone})`}
+                ${notifMsg?.status === 'skipped' ? 'Opted Out' : `Queued (${esc(student?.normalized_phone || student?.phone)})`}
               </span>
             </div>
           </div>
         `, `
-          ${receiptDoc ? `<button class="btn btn-secondary" onclick="invoiceGenerator.previewDocument('${receiptDoc.id}')">${icons.eye} View Receipt</button>` : ''}
+          ${receiptDoc ? `<button class="btn btn-secondary" onclick="invoiceGenerator.previewDocument('${escAttr(receiptDoc.id)}')">${icons.eye} View Receipt</button>` : ''}
           <button class="btn btn-primary" onclick="modal.close(); app._navigate();">Done</button>
         `);
 
@@ -278,25 +281,25 @@ function renderPaymentsTable(payments, search) {
               return `
               <tr>
                 <td>
-                  <div class="student-cell" style="cursor:pointer;" onclick="app.navigate('/student', {id:'${p.student?.id}'})">
-                    <div class="avatar avatar-sm" style="background:${p.student?.avatar};">${utils.initials(p.student?.name || '')}</div>
+                  <div class="student-cell" style="cursor:pointer;" onclick="app.navigate('/student', {id:'${escAttr(p.student?.id)}'})">
+                    <div class="avatar avatar-sm" style="background:${escAttr(p.student?.avatar)};">${utils.initials(p.student?.name || '')}</div>
                     <div>
-                      <div class="student-name">${p.student?.name || '—'}</div>
-                      <div class="student-id">${p.student?.id || ''}</div>
+                      <div class="student-name">${esc(p.student?.name || '—')}</div>
+                      <div class="student-id">${esc(p.student?.id || '')}</div>
                     </div>
                   </div>
                 </td>
-                <td><span style="font-family:var(--font-mono);font-size:var(--text-xs);color:var(--sf-indigo-600);">${p.receiptNumber}</span></td>
+                <td><span style="font-family:var(--font-mono);font-size:var(--text-xs);color:var(--sf-indigo-600);">${esc(p.receiptNumber)}</span></td>
                 <td style="font-weight:var(--fw-semibold);color:var(--sf-success-600);">${utils.formatINR(p.amount)}</td>
-                <td style="color:var(--color-text-secondary);">${p.method || '—'}</td>
+                <td style="color:var(--color-text-secondary);">${esc(p.method || '—')}</td>
                 <td style="color:var(--color-text-secondary);">${utils.formatDate(p.recordedAt, {day:'numeric',month:'short',year:'numeric'})}</td>
                 <td>${waBadge}</td>
                 <td>
                   <div style="display:flex;gap:var(--space-2);">
-                    <button class="btn btn-ghost btn-sm" onclick="previewPaymentReceipt('${p.id}', '${p.receiptNumber}', '${p.student?.id}')" title="View / Print Receipt">
+                    <button class="btn btn-ghost btn-sm" onclick="previewPaymentReceipt(this.dataset.pid, this.dataset.rcpt, this.dataset.sid)" data-pid="${escAttr(p.id)}" data-rcpt="${escAttr(p.receiptNumber)}" data-sid="${escAttr(p.student?.id)}" title="View / Print Receipt">
                       ${icons.fileText || icons.eye} Receipt
                     </button>
-                    <button class="btn btn-ghost btn-icon btn-sm" onclick="resendPaymentReceiptWhatsApp('${p.id}', '${p.student?.id}')" title="Resend WhatsApp Receipt">
+                    <button class="btn btn-ghost btn-icon btn-sm" onclick="resendPaymentReceiptWhatsApp(this.dataset.pid, this.dataset.sid)" data-pid="${escAttr(p.id)}" data-sid="${escAttr(p.student?.id)}" title="Resend WhatsApp Receipt">
                       ${icons.send || icons.bell}
                     </button>
                   </div>
@@ -316,6 +319,9 @@ function renderPaymentsTable(payments, search) {
 }
 
 function renderDuesTable(pendingDues) {
+  const esc = (s) => (typeof window !== 'undefined' && window.escapeHtml ? window.escapeHtml(s) : String(s == null ? '' : s));
+  const escAttr = (s) => (typeof window !== 'undefined' && window.escapeAttr ? window.escapeAttr(s) : String(s == null ? '' : s));
+
   return `
     <div class="table-container">
       <div class="table-header">
@@ -336,26 +342,26 @@ function renderDuesTable(pendingDues) {
           </thead>
           <tbody>
             ${pendingDues.map(d => `
-              <tr onclick="app.navigate('/student', {id:'${d.student.id}'})">
+              <tr onclick="app.navigate('/student', {id:'${escAttr(d.student?.id)}'})">
                 <td>
                   <div class="student-cell">
-                    <div class="avatar avatar-sm" style="background:${d.student?.avatar};">${utils.initials(d.student?.name || '')}</div>
+                    <div class="avatar avatar-sm" style="background:${escAttr(d.student?.avatar)};">${utils.initials(d.student?.name || '')}</div>
                     <div>
-                      <div class="student-name">${d.student?.name || '—'}</div>
-                      <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);">${d.student?.phone || ''}</div>
+                      <div class="student-name">${esc(d.student?.name || '—')}</div>
+                      <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);">${esc(d.student?.phone || '')}</div>
                     </div>
                   </div>
                 </td>
-                <td>${d.seat ? `<span class="badge badge-indigo">${d.seat.label}</span>` : '—'}</td>
-                <td style="color:var(--color-text-secondary);">${d.membership?.planName || '—'}</td>
+                <td>${d.seat ? `<span class="badge badge-indigo">${esc(d.seat.label)}</span>` : '—'}</td>
+                <td style="color:var(--color-text-secondary);">${esc(d.membership?.planName || '—')}</td>
                 <td style="font-weight:var(--fw-semibold);color:var(--sf-error-600);">${utils.formatINR(d.pendingAmount)}</td>
-                <td><span class="badge badge-warning">${d.daysDue}d pending</span></td>
+                <td><span class="badge badge-warning">${esc(d.daysDue)}d pending</span></td>
                 <td onclick="event.stopPropagation()">
                   <div style="display:flex;gap:var(--space-2);">
-                    <button class="btn btn-primary btn-sm" onclick="openPaymentModal('${d.student.id}', '${d.membership.id}')">
+                    <button class="btn btn-primary btn-sm" onclick="openPaymentModal(this.dataset.sid, this.dataset.mid)" data-sid="${escAttr(d.student?.id)}" data-mid="${escAttr(d.membership?.id)}">
                       Collect
                     </button>
-                    <button class="btn btn-secondary btn-sm" onclick="sendDueWhatsAppReminder('${d.student.id}', '${d.membership.id}', ${d.pendingAmount})">
+                    <button class="btn btn-secondary btn-sm" onclick="sendDueWhatsAppReminder(this.dataset.sid, this.dataset.mid, parseFloat(this.dataset.amount))" data-sid="${escAttr(d.student?.id)}" data-mid="${escAttr(d.membership?.id)}" data-amount="${Number(d.pendingAmount) || 0}">
                       ${icons.bell} Remind (WA)
                     </button>
                   </div>

@@ -109,13 +109,14 @@ const invoiceGenerator = {
     return documentData;
   },
 
-  // ── 3. Render Branded Document HTML ──────────────────────────────
+  // ── 3. Render Branded Document HTML (SEC-007: XSS Sanitization) ──
   renderDocumentHTML(doc) {
+    const esc = typeof escapeHtml === 'function' ? escapeHtml : (s) => (s == null ? '' : String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])));
     const isReceipt = doc.documentType === 'receipt';
     const statusColor = doc.status === 'PAID' || doc.status === 'SUCCESS' ? '#079455' : (doc.status === 'PARTIAL' ? '#dc6803' : '#d92d20');
 
     return `
-      <div class="sf-invoice-sheet" id="invoice-sheet-${doc.id}" style="
+      <div class="sf-invoice-sheet" id="invoice-sheet-${esc(doc.id)}" style="
         background: #ffffff;
         color: #181d27;
         font-family: 'Inter', -apple-system, sans-serif;
@@ -138,7 +139,7 @@ const invoiceGenerator = {
             ">SF</div>
             <div>
               <div style="font-size:18px;font-weight:700;color:#181d27;letter-spacing:-0.3px;">StudyFlow</div>
-              <div style="font-size:12px;color:#535862;">${doc.branchName || 'Main Study Library'}</div>
+              <div style="font-size:12px;color:#535862;">${esc(doc.branchName || 'Main Study Library')}</div>
             </div>
           </div>
           <div style="text-align:right;">
@@ -146,10 +147,10 @@ const invoiceGenerator = {
               ${isReceipt ? 'Payment Receipt' : 'Tax Invoice'}
             </div>
             <div style="font-size:13px;font-weight:600;color:#535862;margin-top:2px;">
-              # ${doc.documentNumber}
+              # ${esc(doc.documentNumber)}
             </div>
             <div style="display:inline-block;margin-top:6px;padding:2px 10px;border-radius:9999px;font-size:11px;font-weight:600;background:${statusColor}15;color:${statusColor};border:1px solid ${statusColor}40;">
-              ● ${doc.status}
+              ● ${esc(doc.status)}
             </div>
           </div>
         </div>
@@ -158,15 +159,15 @@ const invoiceGenerator = {
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;padding:20px 0;border-bottom:1px solid #e9eaeb;">
           <div>
             <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:#717680;letter-spacing:0.5px;margin-bottom:6px;">Billed To</div>
-            <div style="font-size:15px;font-weight:600;color:#181d27;">${doc.studentName || 'Student'}</div>
-            <div style="font-size:13px;color:#535862;margin-top:2px;">Phone: ${doc.studentPhone || 'N/A'}</div>
-            ${doc.studentId ? `<div style="font-size:12px;color:#717680;">Student ID: ${doc.studentId}</div>` : ''}
+            <div style="font-size:15px;font-weight:600;color:#181d27;">${esc(doc.studentName || 'Student')}</div>
+            <div style="font-size:13px;color:#535862;margin-top:2px;">Phone: ${esc(doc.studentPhone || 'N/A')}</div>
+            ${doc.studentId ? `<div style="font-size:12px;color:#717680;">Student ID: ${esc(doc.studentId)}</div>` : ''}
           </div>
           <div style="text-align:right;">
             <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:#717680;letter-spacing:0.5px;margin-bottom:6px;">Library Details</div>
-            <div style="font-size:13px;font-weight:500;color:#181d27;">${doc.branchAddress || 'Mumbai, Maharashtra'}</div>
-            <div style="font-size:13px;color:#535862;">Support: ${doc.branchPhone || '+91 98765 43210'}</div>
-            <div style="font-size:12px;color:#717680;margin-top:4px;">Date: ${doc.date}</div>
+            <div style="font-size:13px;font-weight:500;color:#181d27;">${esc(doc.branchAddress || 'Mumbai, Maharashtra')}</div>
+            <div style="font-size:13px;color:#535862;">Support: ${esc(doc.branchPhone || '+91 98765 43210')}</div>
+            <div style="font-size:12px;color:#717680;margin-top:4px;">Date: ${esc(doc.date)}</div>
           </div>
         </div>
 
@@ -176,19 +177,19 @@ const invoiceGenerator = {
           <div style="display:grid;grid-template-columns:repeat(4, 1fr);gap:12px;text-align:center;">
             <div style="background:#ffffff;padding:8px;border-radius:6px;border:1px solid #e9eaeb;">
               <div style="font-size:11px;color:#717680;">Seat</div>
-              <div style="font-size:14px;font-weight:700;color:#181d27;">${doc.seatNumber || 'N/A'}</div>
+              <div style="font-size:14px;font-weight:700;color:#181d27;">${esc(doc.seatNumber || 'N/A')}</div>
             </div>
             <div style="background:#ffffff;padding:8px;border-radius:6px;border:1px solid #e9eaeb;">
               <div style="font-size:11px;color:#717680;">Room</div>
-              <div style="font-size:13px;font-weight:600;color:#181d27;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${doc.roomName || 'General'}</div>
+              <div style="font-size:13px;font-weight:600;color:#181d27;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(doc.roomName || 'General')}</div>
             </div>
             <div style="background:#ffffff;padding:8px;border-radius:6px;border:1px solid #e9eaeb;">
               <div style="font-size:11px;color:#717680;">Plan</div>
-              <div style="font-size:13px;font-weight:600;color:#181d27;">${doc.planName || 'Monthly'}</div>
+              <div style="font-size:13px;font-weight:600;color:#181d27;">${esc(doc.planName || 'Monthly')}</div>
             </div>
             <div style="background:#ffffff;padding:8px;border-radius:6px;border:1px solid #e9eaeb;">
               <div style="font-size:11px;color:#717680;">Valid Until</div>
-              <div style="font-size:13px;font-weight:600;color:#181d27;">${doc.endDate || 'N/A'}</div>
+              <div style="font-size:13px;font-weight:600;color:#181d27;">${esc(doc.endDate || 'N/A')}</div>
             </div>
           </div>
         </div>
@@ -205,14 +206,14 @@ const invoiceGenerator = {
           <tbody>
             <tr style="border-bottom:1px solid #e9eaeb;">
               <td style="padding:12px;font-size:13px;font-weight:500;color:#181d27;">
-                Library Study Space Access (${doc.planName})
-                <div style="font-size:12px;color:#717680;">Seat ${doc.seatNumber}, ${doc.roomName}</div>
+                Library Study Space Access (${esc(doc.planName)})
+                <div style="font-size:12px;color:#717680;">Seat ${esc(doc.seatNumber)}, ${esc(doc.roomName)}</div>
               </td>
               <td style="padding:12px;text-align:center;font-size:12px;color:#535862;">
-                ${doc.startDate || ''} to ${doc.endDate || ''}
+                ${esc(doc.startDate || '')} to ${esc(doc.endDate || '')}
               </td>
               <td style="padding:12px;text-align:right;font-size:14px;font-weight:600;color:#181d27;">
-                ₹${(doc.baseAmount || doc.amount || 0).toLocaleString('en-IN')}
+                ₹${Number(doc.baseAmount || doc.amount || 0).toLocaleString('en-IN')}
               </td>
             </tr>
           </tbody>
@@ -221,29 +222,29 @@ const invoiceGenerator = {
         <!-- Totals & Payment Breakdown -->
         <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:12px 0 24px;border-bottom:1px solid #e9eaeb;">
           <div style="font-size:12px;color:#535862;max-width:280px;">
-            <div style="font-weight:600;color:#181d27;margin-bottom:4px;">Payment Method: ${doc.paymentMethod || 'UPI'}</div>
-            <div>Reference / Txn: <code style="background:#f5f5f5;padding:2px 6px;border-radius:4px;font-size:11px;">${doc.paymentRef || 'Verified'}</code></div>
-            <div style="margin-top:2px;">Paid On: ${doc.paymentDate || doc.date}</div>
+            <div style="font-weight:600;color:#181d27;margin-bottom:4px;">Payment Method: ${esc(doc.paymentMethod || 'UPI')}</div>
+            <div>Reference / Txn: <code style="background:#f5f5f5;padding:2px 6px;border-radius:4px;font-size:11px;">${esc(doc.paymentRef || 'Verified')}</code></div>
+            <div style="margin-top:2px;">Paid On: ${esc(doc.paymentDate || doc.date)}</div>
           </div>
           <div style="min-width:220px;">
-            ${doc.discount > 0 ? `
+            ${Number(doc.discount) > 0 ? `
               <div style="display:flex;justify-content:space-between;font-size:13px;color:#535862;margin-bottom:6px;">
                 <span>Discount</span>
-                <span style="color:#079455;">- ₹${doc.discount.toLocaleString('en-IN')}</span>
+                <span style="color:#079455;">- ₹${Number(doc.discount).toLocaleString('en-IN')}</span>
               </div>
             ` : ''}
             <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:600;color:#181d27;margin-bottom:8px;">
               <span>Total Fee</span>
-              <span>₹${(doc.finalAmount || doc.amount || 0).toLocaleString('en-IN')}</span>
+              <span>₹${Number(doc.finalAmount || doc.amount || 0).toLocaleString('en-IN')}</span>
             </div>
             <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:600;color:#079455;margin-bottom:6px;">
               <span>Amount Paid</span>
-              <span>₹${(doc.paidAmount || doc.amount || 0).toLocaleString('en-IN')}</span>
+              <span>₹${Number(doc.paidAmount || doc.amount || 0).toLocaleString('en-IN')}</span>
             </div>
-            ${doc.pendingAmount > 0 ? `
+            ${Number(doc.pendingAmount) > 0 ? `
               <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;color:#d92d20;padding-top:6px;border-top:1px dashed #e9eaeb;">
                 <span>Balance Due</span>
-                <span>₹${doc.pendingAmount.toLocaleString('en-IN')}</span>
+                <span>₹${Number(doc.pendingAmount).toLocaleString('en-IN')}</span>
               </div>
             ` : ''}
           </div>
@@ -272,18 +273,21 @@ const invoiceGenerator = {
       return;
     }
 
+    const esc = typeof escapeHtml === 'function' ? escapeHtml : (s) => (s == null ? '' : String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])));
+    const escAttr = typeof escapeAttr === 'function' ? escapeAttr : esc;
     const html = this.renderDocumentHTML(doc);
-    modal.open(`${doc.documentType === 'receipt' ? 'Receipt' : 'Invoice'} — ${doc.documentNumber}`, `
+
+    modal.open(`${doc.documentType === 'receipt' ? 'Receipt' : 'Invoice'} — ${esc(doc.documentNumber)}`, `
       <div style="max-height:75vh;overflow-y:auto;padding:12px;">
         ${html}
       </div>
     `, `
       <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
         <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);">
-          Document ID: ${doc.id}
+          Document ID: ${esc(doc.id)}
         </div>
         <div style="display:flex;gap:var(--space-2);">
-          <button class="btn btn-secondary btn-sm" onclick="invoiceGenerator.printDocument('${doc.id}')">
+          <button class="btn btn-secondary btn-sm" id="btn-print-doc-action" data-doc-id="${escAttr(doc.id)}">
             ${icons.printer || ''} Print / PDF
           </button>
           <button class="btn btn-secondary btn-sm" onclick="modal.close()">
@@ -292,11 +296,21 @@ const invoiceGenerator = {
         </div>
       </div>
     `, { size: 'lg' });
+
+    setTimeout(() => {
+      const printBtn = document.getElementById('btn-print-doc-action');
+      if (printBtn) {
+        printBtn.addEventListener('click', () => {
+          invoiceGenerator.printDocument(printBtn.getAttribute('data-doc-id'));
+        });
+      }
+    }, 50);
   },
 
   printDocument(docId) {
     const doc = store.getDocument(docId);
     if (!doc) return;
+    const esc = typeof escapeHtml === 'function' ? escapeHtml : (s) => (s == null ? '' : String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])));
     const html = this.renderDocumentHTML(doc);
     const win = window.open('', '_blank');
     if (!win) {
@@ -307,7 +321,7 @@ const invoiceGenerator = {
       <!DOCTYPE html>
       <html>
       <head>
-        <title>${doc.documentNumber}</title>
+        <title>${esc(doc.documentNumber)}</title>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
         <style>
           @media print {

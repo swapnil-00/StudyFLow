@@ -148,34 +148,30 @@ class MockWhatsAppProvider extends BaseWhatsAppProvider {
 class MetaWhatsAppProvider extends BaseWhatsAppProvider {
   constructor(config = {}) {
     super('MetaWhatsAppProvider');
-    this.apiUrl = config.apiUrl || 'https://graph.facebook.com/v19.0';
-    this.phoneNumberId = config.phoneNumberId || '';
-    this.accessToken = config.accessToken || '';
-    this.businessAccountId = config.businessAccountId || '';
+    this.apiUrl = config.apiUrl || '/api/notify';
   }
 
-  _getCredentials() {
-    const s = (typeof store !== 'undefined' && store.getSettings) ? store.getSettings() : {};
-    return {
-      token: this.accessToken || s.waToken || '',
-      phoneNumberId: this.phoneNumberId || s.waPhoneId || ''
-    };
+  _getHeaders() {
+    const token = (typeof store !== 'undefined' && store.authToken)
+      || (typeof localStorage !== 'undefined' ? localStorage.getItem('studyflow_auth_token') : '');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    return headers;
   }
 
-  async sendTemplateMessage({ to, templateName, language = 'en', variables = {}, document = null }) {
+  async sendTemplateMessage({ to, studentId, templateName, language = 'en', variables = {}, document = null }) {
     try {
-      const creds = this._getCredentials();
       const response = await fetch('/api/notify', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this._getHeaders(),
+        credentials: 'same-origin',
         body: JSON.stringify({
           to,
+          studentId: studentId || variables.studentId,
           templateName,
           language,
           variables,
-          document,
-          token: creds.token,
-          phoneNumberId: creds.phoneNumberId
+          document
         })
       });
 
@@ -204,17 +200,16 @@ class MetaWhatsAppProvider extends BaseWhatsAppProvider {
     }
   }
 
-  async sendTextMessage({ to, text }) {
+  async sendTextMessage({ to, studentId, text }) {
     try {
-      const creds = this._getCredentials();
       const response = await fetch('/api/notify', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this._getHeaders(),
+        credentials: 'same-origin',
         body: JSON.stringify({
           to,
-          customText: text,
-          token: creds.token,
-          phoneNumberId: creds.phoneNumberId
+          studentId,
+          customText: text
         })
       });
       const data = await response.json();
@@ -229,17 +224,16 @@ class MetaWhatsAppProvider extends BaseWhatsAppProvider {
     }
   }
 
-  async sendDocument({ to, documentUrl, filename, caption = '' }) {
+  async sendDocument({ to, studentId, documentUrl, filename, caption = '' }) {
     try {
-      const creds = this._getCredentials();
       const response = await fetch('/api/notify', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this._getHeaders(),
+        credentials: 'same-origin',
         body: JSON.stringify({
           to,
-          document: { url: documentUrl, filename: filename || 'Invoice.pdf', caption },
-          token: creds.token,
-          phoneNumberId: creds.phoneNumberId
+          studentId,
+          document: { url: documentUrl, filename: filename || 'Invoice.pdf', caption }
         })
       });
       const data = await response.json();
@@ -255,53 +249,11 @@ class MetaWhatsAppProvider extends BaseWhatsAppProvider {
   }
 }
 
-// ─── 3. Twilio WhatsApp Provider ─────────────────────────────────────────────
-class TwilioWhatsAppProvider extends BaseWhatsAppProvider {
+// ─── 3. Twilio WhatsApp Provider (Delegates server-side via /api/notify, SEC-022) ─
+class TwilioWhatsAppProvider extends MetaWhatsAppProvider {
   constructor(config = {}) {
-    super('TwilioWhatsAppProvider');
-    this.accountSid = config.accountSid || '';
-    this.authToken = config.authToken || '';
-    this.fromNumber = config.fromNumber || ''; // e.g. whatsapp:+14155238886
-  }
-
-  async sendTemplateMessage({ to, variables = {}, document = null }) {
-    // Basic text/media dispatch for Twilio sandbox/messaging
-    const bodyText = Object.entries(variables).map(([k, v]) => `${k}: ${v}`).join('\n');
-    return this.sendTextMessage({ to, text: bodyText, mediaUrl: document?.url });
-  }
-
-  async sendTextMessage({ to, text, mediaUrl = null }) {
-    if (!this.accountSid || !this.authToken) {
-      return { success: false, error: 'Twilio credentials missing', status: 'FAILED' };
-    }
-
-    const formattedTo = to.startsWith('whatsapp:') ? to : `whatsapp:${to}`;
-    const params = new URLSearchParams();
-    params.append('From', this.fromNumber);
-    params.append('To', formattedTo);
-    params.append('Body', text);
-    if (mediaUrl) params.append('MediaUrl', mediaUrl);
-
-    try {
-      const auth = btoa(`${this.accountSid}:${this.authToken}`);
-      const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${this.accountSid}/Messages.json`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Basic ${auth}`,
-          'Content-Type': 'application/x-www-form-urlencoded'
-        },
-        body: params.toString()
-      });
-      const data = await response.json();
-      return {
-        success: response.ok,
-        providerMessageId: data.sid,
-        status: response.ok ? 'SENT' : 'FAILED',
-        error: data.message
-      };
-    } catch (e) {
-      return { success: false, error: e.message, status: 'FAILED' };
-    }
+    super(config);
+    this.name = 'TwilioWhatsAppProvider';
   }
 }
 

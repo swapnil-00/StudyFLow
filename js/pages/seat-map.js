@@ -386,13 +386,13 @@ window.openSeatDrawer = function(seatId) {
     <!-- Seat Header -->
     <div style="display:flex;align-items:center;gap:var(--space-3);padding-bottom:var(--space-5);border-bottom:1px solid var(--color-border-secondary);margin-bottom:var(--space-5);">
       <div style="width:48px;height:48px;background:var(--seat-${status}-bg);border:2px solid var(--seat-${status}-border);border-radius:var(--radius-lg);display:flex;flex-direction:column;align-items:center;justify-content:center;">
-        <span style="font-size:0.625rem;font-weight:var(--fw-bold);color:var(--seat-${status}-text);">${seat.label}</span>
+        <span style="font-size:0.625rem;font-weight:var(--fw-bold);color:var(--seat-${status}-text);">${esc(seat.label)}</span>
       </div>
       <div>
-        <div style="font-size:var(--text-lg);font-weight:var(--fw-bold);color:var(--color-text-primary);">Seat ${seat.label}</div>
+        <div style="font-size:var(--text-lg);font-weight:var(--fw-bold);color:var(--color-text-primary);">Seat ${esc(seat.label)}</div>
         <div style="display:flex;align-items:center;gap:var(--space-2);margin-top:2px;">
           ${seatStatusBadge(status)}
-          <span style="font-size:var(--text-xs);color:var(--color-text-tertiary);">${seat.type.toUpperCase()} · ${room?.name || '—'}</span>
+          <span style="font-size:var(--text-xs);color:var(--color-text-tertiary);">${esc(seat.type.toUpperCase())} · ${esc(room?.name || '—')}</span>
         </div>
       </div>
     </div>
@@ -402,12 +402,15 @@ window.openSeatDrawer = function(seatId) {
 
   const footerHTML = renderSeatActions(status, seat, student, membership);
 
-  drawer.open(`Seat ${seat.label}`, bodyHTML, footerHTML);
+  drawer.open(`Seat ${esc(seat.label)}`, bodyHTML, footerHTML);
 
   // Highlight selected seat
   document.querySelectorAll('.seat.selected').forEach(el => el.classList.remove('selected'));
   document.getElementById(`seat-${seatId}`)?.classList.add('selected');
 }
+
+const esc = (s) => (typeof window !== 'undefined' && window.escapeHtml ? window.escapeHtml(s) : String(s == null ? '' : s));
+const escAttr = (s) => (typeof window !== 'undefined' && window.escapeAttr ? window.escapeAttr(s) : String(s == null ? '' : s));
 
 function renderStudentSection(student, membership, plan, paymentStatus, paidAmount, pendingAmount) {
   const daysLeft = membership ? utils.daysUntil(membership.endDate) : null;
@@ -417,22 +420,22 @@ function renderStudentSection(student, membership, plan, paymentStatus, paidAmou
     <div class="drawer-section">
       <div class="drawer-section-title">Student</div>
       <div style="display:flex;align-items:center;gap:var(--space-3);margin-bottom:var(--space-4);">
-        <div class="avatar avatar-lg" style="background:${student.avatar};">${utils.initials(student.name)}</div>
+        <div class="avatar avatar-lg" style="background:${escAttr(student.avatar)};">${utils.initials(student.name)}</div>
         <div>
-          <div style="font-size:var(--text-lg);font-weight:var(--fw-semibold);color:var(--color-text-primary);">${student.name}</div>
-          <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);">${student.id}</div>
+          <div style="font-size:var(--text-lg);font-weight:var(--fw-semibold);color:var(--color-text-primary);">${esc(student.name)}</div>
+          <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);">${esc(student.id)}</div>
           <div style="display:flex;align-items:center;gap:var(--space-1);margin-top:var(--space-1);">
-            ${icons.phone}<span style="font-size:var(--text-xs);color:var(--color-text-secondary);">${student.phone}</span>
+            ${icons.phone}<span style="font-size:var(--text-xs);color:var(--color-text-secondary);">${esc(student.phone)}</span>
           </div>
         </div>
       </div>
       <div class="drawer-row">
         <span class="drawer-row-label">Course</span>
-        <span class="drawer-row-value">${student.course || '—'}</span>
+        <span class="drawer-row-value">${esc(student.course || '—')}</span>
       </div>
       <div class="drawer-row">
         <span class="drawer-row-label">Email</span>
-        <span class="drawer-row-value" style="font-size:var(--text-xs);">${student.email || '—'}</span>
+        <span class="drawer-row-value" style="font-size:var(--text-xs);">${esc(student.email || '—')}</span>
       </div>
     </div>
 
@@ -442,7 +445,7 @@ function renderStudentSection(student, membership, plan, paymentStatus, paidAmou
       <div class="drawer-section-title">Membership</div>
       <div class="drawer-row">
         <span class="drawer-row-label">Plan</span>
-        <span class="drawer-row-value">${plan?.name || membership.planName || '—'}</span>
+        <span class="drawer-row-value">${esc(plan?.name || membership.planName || '—')}</span>
       </div>
       <div class="drawer-row">
         <span class="drawer-row-label">Start Date</span>

@@ -4,6 +4,7 @@ const path = require('path');
 const rootDir = __dirname;
 const pagesDir = path.join(rootDir, 'js', 'pages');
 const appJsPath = path.join(rootDir, 'js', 'app.js');
+const utilsJsPath = path.join(rootDir, 'js', 'utils.js');
 const iconsJsPath = path.join(rootDir, 'js', 'icons.js');
 const storeJsPath = path.join(rootDir, 'js', 'store.js');
 const bundlePath = path.join(rootDir, 'js', 'bundle.js');
@@ -36,6 +37,12 @@ const pageFiles = [
 
 
 let bundleContent = `// StudyFlow Bundled Application Scripts\nwindow.Pages = window.Pages || {};\n\n`;
+
+// ─── 0. UTILS & SECURITY (XSS Escaping & Boot Error Handler) ───
+if (fs.existsSync(utilsJsPath)) {
+  const utilsContent = fs.readFileSync(utilsJsPath, 'utf8');
+  bundleContent += `// ─── UTILS & SECURITY ───\n${utilsContent}\n\n`;
+}
 
 // ─── 1. ICONS ───
 if (fs.existsSync(iconsJsPath)) {
@@ -152,25 +159,6 @@ if (fs.existsSync(assetsDir)) {
   }
 }
 
-// Copy Draw.io directory
-const drawioDir = path.join(rootDir, 'drawio');
-const publicDrawioDir = path.join(publicDir, 'drawio');
-if (fs.existsSync(drawioDir)) {
-  function copyRecursiveSync(src, dest) {
-    if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
-    const entries = fs.readdirSync(src, { withFileTypes: true });
-    for (const entry of entries) {
-      const srcPath = path.join(src, entry.name);
-      const destPath = path.join(dest, entry.name);
-      if (entry.isDirectory()) {
-        copyRecursiveSync(srcPath, destPath);
-      } else {
-        fs.copyFileSync(srcPath, destPath);
-      }
-    }
-  }
-  copyRecursiveSync(drawioDir, publicDrawioDir);
-}
 
 console.log('Static distribution compiled to public/ directory for Vercel deployment.');
 
