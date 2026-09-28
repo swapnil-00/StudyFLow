@@ -1,8 +1,8 @@
-// scripts/repair-bookings.js — Safe Data Repair & Audit Script (SEC-018)
-// Dry-run by default. Backfills missing branch_ids and reports duplicate memberships for owner review.
 // Usage:
-//   node scripts/repair-bookings.js                 (DRY RUN - Read-only inspection & report)
-//   node scripts/repair-bookings.js --apply         (APPLY - Backfills missing branch_ids)
+//   node scripts/repair-bookings.js --target=test                 (DRY RUN against TEST_DATABASE_URL)
+//   node scripts/repair-bookings.js --target=prod --confirm-production  (DRY RUN against production DATABASE_URL)
+//   node scripts/repair-bookings.js --target=test --apply         (APPLY changes against TEST_DATABASE_URL)
+//   node scripts/repair-bookings.js --target=prod --confirm-production --apply (APPLY changes against production)
 
 'use strict';
 const path = require('path');
@@ -10,19 +10,45 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const { Pool } = require('pg');
 
 async function main() {
-  const isApply = process.argv.includes('--apply');
-  const dbUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
+  const args = process.argv.slice(2);
+  const isApply = args.includes('--apply');
+  const targetArg = args.find(a => a.startsWith('--target='));
+  const target = targetArg ? targetArg.split('=')[1].toLowerCase() : (args.includes('--test') ? 'test' : (args.includes('--prod') ? 'prod' : null));
+  const hasConfirmProd = args.includes('--confirm-production');
 
-  if (!dbUrl) {
-    console.error('❌ Error: DATABASE_URL / TEST_DATABASE_URL is not set.');
+  if (!target || (target !== 'test' && target !== 'prod')) {
+    console.error('❌ Error: You must explicitly specify a target database: --target=test or --target=prod');
+    console.error('   Example: node scripts/repair-bookings.js --target=test');
+    console.error('   Example: node scripts/repair-bookings.js --target=prod --confirm-production');
     process.exit(1);
   }
 
+  let dbUrl;
+  if (target === 'test') {
+    dbUrl = process.env.TEST_DATABASE_URL;
+    if (!dbUrl) {
+      console.error('❌ Error: TEST_DATABASE_URL is not set in environment or .env file.');
+      process.exit(1);
+    }
+  } else if (target === 'prod') {
+    if (!hasConfirmProd) {
+      console.error('❌ Error: Running against production requires the explicit --confirm-production flag.');
+      console.error('   Example: node scripts/repair-bookings.js --target=prod --confirm-production');
+      process.exit(1);
+    }
+    dbUrl = process.env.DATABASE_URL;
+    if (!dbUrl) {
+      console.error('❌ Error: DATABASE_URL is not set in environment or .env file.');
+      process.exit(1);
+    }
+  }
+
   const isLocal = dbUrl.includes('localhost') || dbUrl.includes('127.0.0.1');
+  const rejectUnauthorized = process.env.DB_REJECT_UNAUTHORIZED !== 'false';
 
   const pool = new Pool({
     connectionString: dbUrl,
-    ssl: isLocal ? false : { rejectUnauthorized: false },
+    ssl: isLocal ? false : { rejectUnauthorized },
     connectionTimeoutMillis: 30000,
     idleTimeoutMillis: 30000,
   });

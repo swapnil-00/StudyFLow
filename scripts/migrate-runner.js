@@ -11,9 +11,10 @@ async function runMigrations(dbUrl, specificFile = null) {
   }
 
   const isLocal = dbUrl.includes('localhost') || dbUrl.includes('127.0.0.1');
+  const rejectUnauthorized = process.env.DB_REJECT_UNAUTHORIZED !== 'false';
   const pool = new Pool({
     connectionString: dbUrl,
-    ssl: isLocal ? false : { rejectUnauthorized: false },
+    ssl: isLocal ? false : { rejectUnauthorized },
     connectionTimeoutMillis: 30000,
     idleTimeoutMillis: 30000,
   });
