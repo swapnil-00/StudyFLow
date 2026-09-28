@@ -1326,5 +1326,9 @@ function openWhatsApp(phone, text = '') {
 
 window.Store = Store;
 window.store = new Store();
-window.utils = { uid, now, today, formatINR, getAvatarColor, initials, formatDate, formatTime, formatRelative, daysUntil, addDays, normalizePhone, openWhatsApp };
+window.utils = Object.assign(window.utils || {}, {
+  escapeHtml: (typeof escapeHtml === 'function' ? escapeHtml : (str) => (str == null ? '' : String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'))),
+  escapeAttr: (typeof escapeAttr === 'function' ? escapeAttr : (str) => (str == null ? '' : String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;'))),
+  uid, now, today, formatINR, getAvatarColor, initials, formatDate, formatTime, formatRelative, daysUntil, addDays, normalizePhone, openWhatsApp
+});
 

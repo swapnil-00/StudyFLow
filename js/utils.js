@@ -33,6 +33,9 @@ function escapeAttr(str) {
 
 // Global exposure for all pages and components
 if (typeof window !== 'undefined') {
+  window.utils = window.utils || {};
+  window.utils.escapeHtml = escapeHtml;
+  window.utils.escapeAttr = escapeAttr;
   window.escapeHtml = escapeHtml;
   window.escapeAttr = escapeAttr;
 
