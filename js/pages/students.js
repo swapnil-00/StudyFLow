@@ -15,7 +15,8 @@ export function renderStudents(container) {
         s.name.toLowerCase().includes(q) ||
         s.phone.includes(q) ||
         s.id.toLowerCase().includes(q) ||
-        s.email?.toLowerCase().includes(q)
+        s.email?.toLowerCase().includes(q) ||
+        (s.idProof && String(s.idProof).toLowerCase().includes(q))
       );
     }
     if (filter !== 'all') {
@@ -285,9 +286,15 @@ window.openAddStudentModal = function() {
           <input type="date" class="input" id="new-student-dob">
         </div>
       </div>
-      <div class="form-group">
-        <label class="form-label">Address</label>
-        <input type="text" class="input" id="new-student-address" placeholder="Full address">
+      <div class="grid-2">
+        <div class="form-group">
+          <label class="form-label">Aadhaar Card Number</label>
+          <input type="text" class="input" id="new-student-aadhaar" placeholder="12-digit Aadhaar Number (Optional)" maxlength="14">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Address</label>
+          <input type="text" class="input" id="new-student-address" placeholder="Full address">
+        </div>
       </div>
       <div class="grid-2">
         <div class="form-group">
@@ -330,6 +337,7 @@ window.confirmAddStudent = async function(branchId) {
   const gender = document.getElementById('new-student-gender')?.value;
   const course = document.getElementById('new-student-course')?.value?.trim();
   const college = document.getElementById('new-student-college')?.value?.trim();
+  const aadhaar = document.getElementById('new-student-aadhaar')?.value?.trim() || '';
   const address = document.getElementById('new-student-address')?.value?.trim();
   const dob = document.getElementById('new-student-dob')?.value;
   const ecName = document.getElementById('new-ec-name')?.value?.trim();
@@ -360,6 +368,10 @@ window.confirmAddStudent = async function(branchId) {
         announcements: true
       },
       email, gender, course, college, address, dob, branchId,
+      idProof: aadhaar,
+      idProofNumber: aadhaar,
+      idProofType: aadhaar ? 'Aadhaar' : '',
+      aadhaar,
       emergencyContact: ecName ? { name: ecName, phone: ecPhone } : null
     });
 

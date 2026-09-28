@@ -128,6 +128,7 @@ export function renderStudentProfile(container, params) {
               <div class="info-item"><div class="info-label">Phone</div><div class="info-value">${window.escapeHtml ? window.escapeHtml(student.phone) : student.phone}</div></div>
               <div class="info-item"><div class="info-label">Email</div><div class="info-value">${window.escapeHtml ? window.escapeHtml(student.email || '—') : (student.email || '—')}</div></div>
               <div class="info-item"><div class="info-label">Gender</div><div class="info-value">${window.escapeHtml ? window.escapeHtml(student.gender || '—') : (student.gender || '—')}</div></div>
+              <div class="info-item"><div class="info-label">Aadhaar Card</div><div class="info-value">${window.escapeHtml ? window.escapeHtml(student.idProof || student.idProofNumber || '—') : (student.idProof || student.idProofNumber || '—')}</div></div>
               <div class="info-item"><div class="info-label">Date of Birth</div><div class="info-value">${student.dob ? utils.formatDate(student.dob) : '—'}</div></div>
               <div class="info-item"><div class="info-label">Course</div><div class="info-value">${window.escapeHtml ? window.escapeHtml(student.course || '—') : (student.course || '—')}</div></div>
               <div class="info-item"><div class="info-label">College</div><div class="info-value">${window.escapeHtml ? window.escapeHtml(student.college || '—') : (student.college || '—')}</div></div>
@@ -443,6 +444,9 @@ export function renderStudentProfile(container, params) {
         </div>
         <div class="grid-2">
           <div class="form-group"><label class="form-label">Email</label><input type="email" class="input" id="edit-email" value="${window.escapeAttr ? window.escapeAttr(s.email || '') : (s.email || '')}"></div>
+          <div class="form-group"><label class="form-label">Aadhaar Card Number</label><input type="text" class="input" id="edit-aadhaar" placeholder="12-digit Aadhaar (Optional)" maxlength="14" value="${window.escapeAttr ? window.escapeAttr(s.idProof || s.idProofNumber || '') : (s.idProof || s.idProofNumber || '')}"></div>
+        </div>
+        <div class="grid-2">
           <div class="form-group">
             <label class="form-label">Notification Language</label>
             <select class="select" id="edit-lang">
@@ -451,8 +455,8 @@ export function renderStudentProfile(container, params) {
               <option value="mr" ${s.preferred_language === 'mr' ? 'selected' : ''}>मराठी (Marathi)</option>
             </select>
           </div>
+          <div class="form-group"><label class="form-label">Course</label><input type="text" class="input" id="edit-course" value="${window.escapeAttr ? window.escapeAttr(s.course || '') : (s.course || '')}"></div>
         </div>
-        <div class="form-group"><label class="form-label">Course</label><input type="text" class="input" id="edit-course" value="${window.escapeAttr ? window.escapeAttr(s.course || '') : (s.course || '')}"></div>
         <div class="form-group"><label class="form-label">Address</label><input type="text" class="input" id="edit-address" value="${window.escapeAttr ? window.escapeAttr(s.address || '') : (s.address || '')}"></div>
       </div>
     `, `
@@ -465,6 +469,7 @@ export function renderStudentProfile(container, params) {
     const name = document.getElementById('edit-name')?.value?.trim();
     const phone = document.getElementById('edit-phone')?.value?.trim();
     const lang = document.getElementById('edit-lang')?.value || 'en';
+    const aadhaar = document.getElementById('edit-aadhaar')?.value?.trim() || '';
     if (!name || !phone) { toast.show('Name and phone are required', 'error'); return; }
     
     const countryCode = '+91';
@@ -476,6 +481,10 @@ export function renderStudentProfile(container, params) {
       normalized_phone: normalized,
       preferred_language: lang,
       email: document.getElementById('edit-email')?.value?.trim(),
+      idProof: aadhaar,
+      idProofNumber: aadhaar,
+      idProofType: aadhaar ? 'Aadhaar' : '',
+      aadhaar,
       course: document.getElementById('edit-course')?.value?.trim(),
       address: document.getElementById('edit-address')?.value?.trim(),
     });

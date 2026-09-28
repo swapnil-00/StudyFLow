@@ -345,7 +345,7 @@ module.exports = withHandler(async function handler(req, res) {
           `INSERT INTO students (id,organization_id,name,email,phone,emergency_contact,avatar_color,id_proof,address,notes,status,join_date,branch_id,country_code,normalized_phone,whatsapp_opt_in)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,CURRENT_DATE,$12,$13,$14,$15)`,
           [newId, orgId, s.name, s.email || '', s.phone || '', s.emergencyContact || '',
-           avatarColor, s.idProofNumber || s.idProof || '', s.address || '', s.notes || '',
+           avatarColor, s.idProofNumber || s.idProof || s.aadhaar || s.aadhar || '', s.address || '', s.notes || '',
            s.status || 'active', s.branchId || null, '+91', s.phone || '', s.whatsappOptIn !== false]
         );
 
@@ -363,7 +363,7 @@ module.exports = withHandler(async function handler(req, res) {
 
         const map = {
           name: 'name', email: 'email', phone: 'phone', emergencyContact: 'emergency_contact',
-          idProofNumber: 'id_proof', idProof: 'id_proof', idProofType: 'id_proof_type',
+          idProofNumber: 'id_proof', idProof: 'id_proof', aadhaar: 'id_proof', aadhar: 'id_proof', idProofType: 'id_proof_type',
           address: 'address', notes: 'notes', status: 'status', branchId: 'branch_id',
           country_code: 'country_code', avatarColor: 'avatar_color', avatar: 'avatar_color',
           whatsappOptIn: 'whatsapp_opt_in'
