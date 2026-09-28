@@ -1,22 +1,14 @@
 // StudyFlow Data Store — Neon PostgreSQL backend via REST API
-// Replaces localStorage store with server-backed persistence
+// Uses HttpOnly session cookies (DB-backed) for zero-token client security.
 // All reads are from in-memory cache (loaded once on boot).
 // All writes go to /api/write immediately, then update the cache.
 
 const API_BASE = '';  // Same origin — works on Vercel and local
 
-function getAuthToken() {
-  return typeof localStorage !== 'undefined' ? (localStorage.getItem('studyflow_auth_token') || '') : '';
-}
-
 async function apiWrite(table, action, data, id) {
-  const token = getAuthToken();
-  const headers = { 'Content-Type': 'application/json' };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-
   const res = await fetch(`${API_BASE}/api/write`, {
     method: 'POST',
-    headers,
+    headers: { 'Content-Type': 'application/json' },
     credentials: 'same-origin',
     body: JSON.stringify({ table, action, data, id }),
   });
@@ -29,6 +21,7 @@ class Store {
   constructor() {
     this._db = null;
     this._organization = null;
+    this._currentUser = null;
     this._subscribers = [];
     this._loading = false;
     this._loaded = false;
@@ -47,19 +40,22 @@ class Store {
     }
     this._loading = true;
     try {
-      const token = getAuthToken();
-      const headers = {};
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/api/data`, { headers, credentials: 'same-origin' });
+      const res = await fetch(`${API_BASE}/api/data`, { credentials: 'same-origin' });
       const json = await res.json();
-      if (!json.ok) throw new Error(json.error || 'Failed to load data');
-      this._db = json.db;
-      this._organization = json.organization || null;
+      if (res.ok && json.ok) {
+        this._db = json.db;
+        this._organization = json.organization || null;
+        this._currentUser = json.user || null;
+      } else {
+        this._currentUser = null;
+        this._organization = null;
+        this._db = { branches:[], floors:[], rooms:[], seats:[], students:[], membershipPlans:[], memberships:[], seatAssignments:[], payments:[], expenses:[], notifications:[], activityLog:[], waitlist:[], staff:[], seatTransfers:[], documents:[], settings:{} };
+      }
       this._loaded = true;
     } catch (e) {
       console.error('Store load failed:', e);
       this._lastLoadError = e.message;
+      this._currentUser = null;
       this._db = { branches:[], floors:[], rooms:[], seats:[], students:[], membershipPlans:[], memberships:[], seatAssignments:[], payments:[], expenses:[], notifications:[], activityLog:[], waitlist:[], staff:[], seatTransfers:[], documents:[], settings:{} };
       this._loaded = true;
     }
@@ -68,17 +64,8 @@ class Store {
   }
 
   // ── Multi-Tenant SaaS Auth Methods ──────────────────────────────
-  get authToken() {
-    return getAuthToken();
-  }
-
   get currentUser() {
-    try {
-      const u = localStorage.getItem('studyflow_user');
-      return u ? JSON.parse(u) : null;
-    } catch (e) {
-      return null;
-    }
+    return this._currentUser;
   }
 
   get organization() {
@@ -93,23 +80,21 @@ class Store {
   }
 
   isAuthenticated() {
-    return Boolean(this.authToken);
+    return Boolean(this._currentUser);
   }
 
   async login(email, password) {
     const res = await fetch(`${API_BASE}/api/auth`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: JSON.stringify({ action: 'login', email, password })
     });
     const json = await res.json();
     if (!json.ok) throw new Error(json.error || 'Login failed');
 
-    localStorage.setItem('studyflow_auth_token', json.token);
-    localStorage.setItem('studyflow_user', JSON.stringify(json.user));
-    localStorage.setItem('studyflow_org', JSON.stringify(json.organization));
+    this._currentUser = json.user;
     this._organization = json.organization;
-
     this._loaded = false;
     await this.load();
     return json;
@@ -119,37 +104,85 @@ class Store {
     const res = await fetch(`${API_BASE}/api/auth`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: JSON.stringify({ action: 'register', orgName, name, email, password, phone })
     });
     const json = await res.json();
     if (!json.ok) throw new Error(json.error || 'Registration failed');
 
-    localStorage.setItem('studyflow_auth_token', json.token);
-    localStorage.setItem('studyflow_user', JSON.stringify(json.user));
-    localStorage.setItem('studyflow_org', JSON.stringify(json.organization));
+    this._currentUser = json.user;
     this._organization = json.organization;
+    this._loaded = false;
+    await this.load();
+    return json;
+  }
 
+  async sessionFromIdToken(idToken) {
+    const res = await fetch(`${API_BASE}/api/auth`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ action: 'session', idToken })
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || 'Authentication failed');
+
+    this._currentUser = json.user;
+    this._organization = json.organization;
+    this._loaded = false;
+    await this.load();
+    return json;
+  }
+
+  async createLibrary({ orgName, city, name }) {
+    const res = await fetch(`${API_BASE}/api/auth`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ action: 'create_library', orgName, city, name })
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || 'Failed to create library');
+
+    this._organization = json.organization;
     this._loaded = false;
     await this.load();
     return json;
   }
 
   async logout() {
-    localStorage.removeItem('studyflow_auth_token');
-    localStorage.removeItem('studyflow_user');
-    localStorage.removeItem('studyflow_org');
+    await fetch(`${API_BASE}/api/auth`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ action: 'logout' })
+    }).catch(() => {});
+
+    this._currentUser = null;
+    this._organization = null;
+    this._loaded = false;
+    await this.load();
+  }
+
+  async logoutAll() {
+    await fetch(`${API_BASE}/api/auth`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ action: 'logout_all' })
+    }).catch(() => {});
+
+    this._currentUser = null;
+    this._organization = null;
     this._loaded = false;
     await this.load();
   }
 
   async completeOnboarding(onboardingData) {
-    const token = this.authToken;
     const res = await fetch(`${API_BASE}/api/auth`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: JSON.stringify({ action: 'onboarding', ...onboardingData })
     });
     const json = await res.json();

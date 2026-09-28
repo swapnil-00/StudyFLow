@@ -13,9 +13,14 @@ export function renderStaff(container) {
           <h1 class="page-title">Staff</h1>
           <p class="page-subtitle">Manage staff members and roles</p>
         </div>
-        <button class="btn btn-primary" onclick="openAddStaffModal()">
-          ${icons['user-plus']} Add Staff
-        </button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-secondary" onclick="openInviteStaffModal()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg> Invite Staff (Login Access)
+          </button>
+          <button class="btn btn-primary" onclick="openAddStaffModal()">
+            ${icons['user-plus']} Add Staff
+          </button>
+        </div>
       </div>
     </div>
 
@@ -113,6 +118,96 @@ export function renderStaff(container) {
       app._navigate();
     } catch (e) {
       toast.show(e.message || 'Failed to remove staff', 'error');
+    }
+  };
+
+  window.openInviteStaffModal = function() {
+    const branches = store.getBranches();
+    const branchCheckboxes = branches.map(b => `
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+        <input type="checkbox" class="invite-branch-check" value="${escAttr(b.id)}" checked />
+        <span>${esc(b.name)}</span>
+      </label>
+    `).join('');
+
+    modal.open('Invite Staff Member to Library', `
+      <div style="display:flex;flex-direction:column;gap:var(--space-4);">
+        <p style="font-size:13px;color:var(--color-text-secondary);margin:0;">
+          Staff will receive a secure 72-hour invite link to sign in with Google or Phone and access assigned branches.
+        </p>
+        <div class="grid-2">
+          <div class="form-group">
+            <label class="form-label">Email Address</label>
+            <input type="email" class="input" id="invite-email" placeholder="staff@example.com" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Phone (+91)</label>
+            <input type="tel" class="input" id="invite-phone" placeholder="9876543210" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Access Role</label>
+          <select class="select" id="invite-role">
+            <option value="staff">Staff (Operational Branch Access)</option>
+            <option value="manager">Manager (Branch & Financial Operations)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Assigned Branches</label>
+          <div style="display:flex;flex-direction:column;gap:8px;padding:10px;background:var(--color-bg-secondary);border-radius:8px;border:1px solid var(--color-border);">
+            ${branchCheckboxes || '<span style="font-size:12px;color:var(--color-text-tertiary);">No branches available</span>'}
+          </div>
+        </div>
+      </div>
+    `, `
+      <button class="btn btn-secondary" onclick="modal.close()">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmInviteStaff()">Create Invite Link</button>
+    `);
+  };
+
+  window.confirmInviteStaff = async function() {
+    const email = document.getElementById('invite-email')?.value?.trim();
+    const phone = document.getElementById('invite-phone')?.value?.trim();
+    const role = document.getElementById('invite-role')?.value || 'staff';
+    const branchCheckboxes = document.querySelectorAll('.invite-branch-check:checked');
+    const branchIds = Array.from(branchCheckboxes).map(cb => cb.value);
+
+    if (!email && !phone) {
+      toast.show('Please provide an email address or mobile number for the invite', 'error');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          action: 'invitations',
+          email: email || undefined,
+          phone: phone ? `+91${phone.replace(/\D/g, '').slice(-10)}` : undefined,
+          role,
+          branchIds
+        })
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'Failed to create invite');
+
+      modal.close();
+      const fullLink = `${window.location.origin}${json.inviteLink}`;
+      modal.open('Staff Invitation Created', `
+        <div style="display:flex;flex-direction:column;gap:14px;">
+          <p style="font-size:13px;color:var(--color-text-secondary);margin:0;">
+            Share this link with your staff member. It expires in 72 hours.
+          </p>
+          <div style="display:flex;gap:8px;">
+            <input type="text" class="input" value="${escAttr(fullLink)}" id="invite-link-copy" readonly style="font-size:12px;" />
+            <button class="btn btn-primary" onclick="navigator.clipboard.writeText('${escAttr(fullLink)}'); toast.show('Invite link copied!', 'success');">Copy</button>
+          </div>
+        </div>
+      `, `<button class="btn btn-secondary" onclick="modal.close()">Done</button>`);
+    } catch (e) {
+      toast.show(e.message || 'Failed to create invite', 'error');
     }
   };
 }

@@ -178,6 +178,37 @@ describe('Phase 4: Financial Integrity & Business Logic', () => {
   });
 });
 
+describe('Phase 5: Auth Upgrade & Session Hardening', () => {
+  test('CSRF: Cross-origin POST from unauthorized domain is rejected with HTTP 403', async () => {
+    const { req, res } = mockReqRes('POST',
+      { action: 'password_reset', email: 'test@example.com' },
+      { 'origin': 'https://evil-attacker-site.com' }
+    );
+    await authHandler(req, res);
+    assert.equal(res._status, 403, 'Cross-origin mutation request must return 403');
+    assert.equal(res._json.code, 'CSRF_FORBIDDEN');
+  });
+
+  test('Enumeration Defense: Password reset returns identical generic response for any input', async () => {
+    const { req, res } = mockReqRes('POST',
+      { action: 'password_reset', email: 'nonexistent@example.com' }
+    );
+    await authHandler(req, res);
+    assert.equal(res._status, 200);
+    assert.equal(res._json.ok, true);
+    assert.match(res._json.message, /If an account exists/i);
+  });
+
+  test('Session Security: Session token hashes are SHA-256 and non-reversible', () => {
+    const { generateSessionToken, hashSessionToken } = require('../lib/session');
+    const token = generateSessionToken();
+    assert.equal(token.length, 64, 'Token must be 32 bytes hex = 64 characters');
+    const hash = hashSessionToken(token);
+    assert.equal(hash.length, 64, 'SHA-256 hash must be 64 characters hex');
+    assert.notEqual(token, hash, 'Hash must not equal raw token');
+  });
+});
+
 describe('Phase 0 Safety Net: Production Database Protection Guard', () => {
   test('Guard: Refuses to run DB tests against production DATABASE_URL', () => {
     const testDbUrl = process.env.TEST_DATABASE_URL;

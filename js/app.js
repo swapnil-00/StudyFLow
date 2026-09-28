@@ -2,6 +2,10 @@
 
 // ── Router ─────────────────────────────────────────────────────────
 const routes = {
+  '/login': () => import('./pages/auth.js').then(m => m.renderLoginPage),
+  '/signup': () => import('./pages/auth.js').then(m => m.renderSignupPage),
+  '/invite': () => import('./pages/auth.js').then(m => m.renderInvitePage),
+  '/forgot-password': () => import('./pages/auth.js').then(m => m.renderForgotPasswordPage),
   '/landing': () => import('./pages/landing.js').then(m => m.renderLanding),
   '/dashboard': () => import('./pages/dashboard.js').then(m => m.renderDashboard),
   '/seat-map': () => import('./pages/seat-map.js').then(m => m.renderSeatMap),
@@ -238,9 +242,10 @@ class App {
     this._updateActiveNav(path);
     this.closeMobileSidebar();
 
+    const isAuthRoute = ['/landing', '/login', '/signup', '/forgot-password'].includes(path) || path.startsWith('/invite');
     const appEl = document.getElementById('app');
     if (appEl) {
-      if (path === '/landing') {
+      if (isAuthRoute) {
         document.documentElement.classList.add('landing-html');
         document.body.classList.add('landing-body');
         appEl.classList.add('landing-mode');
@@ -268,6 +273,19 @@ class App {
       </div>
     `;
 
+    // Handle invite token route
+    if (path.startsWith('/invite')) {
+      const inviteToken = path.split('/invite/')[1] || params.get('token') || '';
+      try {
+        const renderInvite = window.Pages?.renderInvitePage || ((await import('./pages/auth.js')).renderInvitePage);
+        content.innerHTML = '';
+        content.appendChild(renderInvite(inviteToken));
+      } catch (e) {
+        console.error('Invite page error:', e);
+      }
+      return;
+    }
+
     // Find matching route
     let routeFn = routes[path];
     if (!routeFn) {
@@ -282,8 +300,13 @@ class App {
         const inner = document.createElement('div');
         inner.className = 'page-inner';
         content.innerHTML = '';
-        content.appendChild(inner);
-        renderFn(inner, Object.fromEntries(params));
+        const res = renderFn(inner, Object.fromEntries(params));
+        if (res instanceof HTMLElement) {
+          content.innerHTML = '';
+          content.appendChild(res);
+        } else {
+          content.appendChild(inner);
+        }
       } catch (e) {
         console.error('Page load error:', e);
         content.innerHTML = `
@@ -669,6 +692,13 @@ class App {
       }
       if (btn) { btn.disabled = false; btn.textContent = 'Create Free Library'; }
     }
+  }
+
+  async handleLogout() {
+    await store.logout();
+    toast.show('Signed out successfully.', 'info');
+    this._render();
+    this.navigate('/login');
   }
 
   // ── Onboarding Wizard ─────────────────────────────────────────────

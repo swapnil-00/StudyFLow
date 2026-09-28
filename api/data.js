@@ -189,5 +189,15 @@ module.exports = withHandler(async function handler(req, res) {
     organization
   };
 
-  res.status(200).json({ ok: true, db, organization });
+  const user = {
+    id: session.userId,
+    name: session.name,
+    email: session.email,
+    role: session.role,
+    branchIds: session.branchIds,
+    phone: session.phone,
+    avatarColor: session.avatarColor
+  };
+
+  res.status(200).json({ ok: true, db, organization, user });
 }, { methods: ['GET'], auth: true });

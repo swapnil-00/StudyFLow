@@ -152,11 +152,7 @@ class MetaWhatsAppProvider extends BaseWhatsAppProvider {
   }
 
   _getHeaders() {
-    const token = (typeof store !== 'undefined' && store.authToken)
-      || (typeof localStorage !== 'undefined' ? localStorage.getItem('studyflow_auth_token') : '');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    return headers;
+    return { 'Content-Type': 'application/json' };
   }
 
   async sendTemplateMessage({ to, studentId, templateName, language = 'en', variables = {}, document = null }) {

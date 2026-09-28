@@ -204,6 +204,45 @@ export function renderSettings(container) {
           </div>
         </div>
 
+        <!-- Security & Active Sessions (Plan §4.3 & §5) -->
+        <div class="card">
+          <div class="card-header"><div class="card-title">Security & Active Devices</div></div>
+          <div class="card-body" style="display:flex;flex-direction:column;gap:var(--space-4);">
+            <div>
+              <div style="font-size:var(--text-sm);font-weight:600;color:var(--color-text-primary);margin-bottom:4px;">Linked Identity</div>
+              <div style="font-size:var(--text-xs);color:var(--color-text-secondary);">
+                ${user.firebaseUid ? '✓ Google / Phone authentication linked' : 'Standard email & password account'}
+              </div>
+            </div>
+
+            <div style="padding-top:var(--space-3);border-top:1px solid var(--color-border-secondary);">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <div>
+                  <div style="font-size:var(--text-sm);font-weight:600;color:var(--color-text-primary);">Active Sessions</div>
+                  <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);">Devices currently signed in to your account</div>
+                </div>
+                <button class="btn btn-secondary btn-sm" onclick="app.handleLogoutAll()">Sign Out Everywhere</button>
+              </div>
+              <div id="active-sessions-list" style="display:flex;flex-direction:column;gap:8px;font-size:12px;">
+                <span style="color:var(--color-text-tertiary);">Loading active devices...</span>
+              </div>
+            </div>
+
+            <div style="padding-top:var(--space-3);border-top:1px solid var(--color-border-secondary);">
+              <div style="font-size:var(--text-sm);font-weight:600;color:var(--color-text-primary);margin-bottom:8px;">Change Password</div>
+              <div class="form-group" style="margin-bottom:8px;">
+                <label class="form-label">Current Password</label>
+                <input type="password" class="input" id="set-cur-pwd" placeholder="••••••••" />
+              </div>
+              <div class="form-group" style="margin-bottom:12px;">
+                <label class="form-label">New Password (min 10 chars)</label>
+                <input type="password" class="input" id="set-new-pwd" placeholder="••••••••••" minlength="10" />
+              </div>
+              <button class="btn btn-primary w-full" onclick="updateUserPassword()">Update Password</button>
+            </div>
+          </div>
+        </div>
+
         <!-- Danger Zone -->
         <div class="card" style="border-color:var(--sf-error-200);">
           <div class="card-header"><div class="card-title" style="color:var(--sf-error-600);">Danger Zone</div></div>
@@ -220,6 +259,95 @@ export function renderSettings(container) {
       </div>
     </div>
   `;
+
+  // Load active sessions
+  setTimeout(async () => {
+    try {
+      const res = await fetch('/api/auth?action=sessions', { credentials: 'same-origin' });
+      const json = await res.json();
+      const listEl = document.getElementById('active-sessions-list');
+      if (listEl && json.ok && json.sessions) {
+        listEl.innerHTML = json.sessions.map(s => `
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--color-bg-secondary);border-radius:8px;border:1px solid var(--color-border);">
+            <div>
+              <div style="font-weight:600;color:var(--color-text-primary);">
+                ${s.isCurrent ? '🟢 This Device (Current)' : '💻 Device'}
+              </div>
+              <div style="font-size:11px;color:var(--color-text-tertiary);">${esc(s.ipAddress || 'Unknown IP')} · ${new Date(s.lastSeenAt || s.createdAt).toLocaleDateString()}</div>
+            </div>
+            ${!s.isCurrent ? `<button class="btn btn-ghost btn-sm" style="color:var(--sf-error-600);font-size:11px;" onclick="revokeSessionAction('${escAttr(s.id)}')">Revoke</button>` : ''}
+          </div>
+        `).join('');
+      }
+    } catch (_) {}
+  }, 0);
+
+  window.revokeSessionAction = async function(sessionId) {
+    try {
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ action: 'revoke_session', sessionId })
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'Failed to revoke session');
+      toast.show('Device session revoked', 'success');
+      app._navigate();
+    } catch (e) {
+      toast.show(e.message || 'Failed to revoke session', 'error');
+    }
+  };
+
+  window.updateUserPassword = async function() {
+    const curPwd = document.getElementById('set-cur-pwd')?.value;
+    const newPwd = document.getElementById('set-new-pwd')?.value;
+    const user = store.currentUser || {};
+    if (!newPwd || newPwd.length < 10) {
+      toast.show('New password must be at least 10 characters long', 'error');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          action: 'update_profile',
+          name: user.name,
+          currentPassword: curPwd || undefined,
+          newPassword: newPwd
+        })
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'Failed to update password');
+      toast.show('Password updated successfully! Other sessions logged out.', 'success');
+      document.getElementById('set-cur-pwd').value = '';
+      document.getElementById('set-new-pwd').value = '';
+    } catch (e) {
+      toast.show(e.message || 'Failed to update password', 'error');
+    }
+  };
+
+  window.app.handleLogoutAll = async function() {
+    const confirmed = await modal.confirm({
+      title: 'Sign Out Everywhere',
+      message: 'This will log you out of all active devices and browsers. Are you sure?',
+      confirmText: 'Sign Out Everywhere',
+      type: 'danger'
+    });
+    if (!confirmed) return;
+
+    try {
+      await store.logoutAll();
+      toast.show('Signed out of all devices', 'info');
+      app._render();
+      app.navigate('/login');
+    } catch (e) {
+      toast.show(e.message || 'Failed to sign out', 'error');
+    }
+  };
 
   window.saveOrgSettings = async function() {
     await store.updateSettings({

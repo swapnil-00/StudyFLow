@@ -18,6 +18,7 @@ const serviceFiles = [
 ];
 
 const pageFiles = [
+  'auth.js',
   'landing.js',
   'dashboard.js',
   'seat-map.js',
@@ -87,6 +88,10 @@ let appContent = fs.readFileSync(appJsPath, 'utf8');
 
 // Replace dynamic imports with sync window.Pages lookup
 const routeReplacements = {
+  "'/login': () => import('./pages/auth.js').then(m => m.renderLoginPage)": "'/login': () => Promise.resolve(window.Pages.renderLoginPage)",
+  "'/signup': () => import('./pages/auth.js').then(m => m.renderSignupPage)": "'/signup': () => Promise.resolve(window.Pages.renderSignupPage)",
+  "'/invite': () => import('./pages/auth.js').then(m => m.renderInvitePage)": "'/invite': () => Promise.resolve(window.Pages.renderInvitePage)",
+  "'/forgot-password': () => import('./pages/auth.js').then(m => m.renderForgotPasswordPage)": "'/forgot-password': () => Promise.resolve(window.Pages.renderForgotPasswordPage)",
   "'/landing': () => import('./pages/landing.js').then(m => m.renderLanding)": "'/landing': () => Promise.resolve(window.Pages.renderLanding)",
   "'/dashboard': () => import('./pages/dashboard.js').then(m => m.renderDashboard)": "'/dashboard': () => Promise.resolve(window.Pages.renderDashboard)",
   "'/seat-map': () => import('./pages/seat-map.js').then(m => m.renderSeatMap)": "'/seat-map': () => Promise.resolve(window.Pages.renderSeatMap)",
