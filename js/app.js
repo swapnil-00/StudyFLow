@@ -612,7 +612,7 @@ class App {
 
         <div class="form-group">
           <label class="form-label">Password *</label>
-          <input type="password" class="input" id="reg-password" required placeholder="At least 6 characters" minlength="6">
+          <input type="password" class="input" id="reg-password" required placeholder="At least 10 characters" minlength="10">
         </div>
       </form>
     `;
@@ -643,6 +643,14 @@ class App {
 
     if (!orgName || !name || !email || !password) {
       if (errBox) { errBox.textContent = 'Please fill in all required fields'; errBox.style.display = 'block'; }
+      return;
+    }
+
+    if (password.length < 10) {
+      if (errBox) {
+        errBox.textContent = 'Password must be at least 10 characters long.';
+        errBox.style.display = 'block';
+      }
       return;
     }
 

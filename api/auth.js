@@ -43,7 +43,9 @@ module.exports = withHandler(async function handler(req, res) {
 
     const orgId = uid('ORG');
     const userId = uid('USR');
-    const slug = orgName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || `org-${Date.now()}`;
+    const baseSlug = orgName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'org';
+    const slugSuffix = crypto.randomBytes(3).toString('hex');
+    const slug = `${baseSlug.substring(0, 80)}-${slugSuffix}`;
     const passwordHash = hashPassword(password);
     const avatarColors = ['#6172f3', '#16b364', '#f79009', '#ee46bc', '#7a5af8', '#0ba5ec'];
     const avatarColor = avatarColors[Math.floor(Math.random() * avatarColors.length)];
@@ -58,8 +60,8 @@ module.exports = withHandler(async function handler(req, res) {
 
       // Create Owner User
       await client.query(
-        `INSERT INTO users (id, organization_id, name, email, password_hash, role, phone, avatar_color, status)
-         VALUES ($1, $2, $3, $4, $5, 'owner', $6, $7, 'active')`,
+        `INSERT INTO users (id, organization_id, name, email, password_hash, role, phone, avatar_color, status, token_version)
+         VALUES ($1, $2, $3, $4, $5, 'owner', $6, $7, 'active', 1)`,
         [userId, orgId, name.trim(), cleanEmail, passwordHash, phone || '', avatarColor]
       );
 
