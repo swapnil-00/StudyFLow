@@ -75,9 +75,9 @@ class Store {
   get currentUser() {
     try {
       const u = localStorage.getItem('studyflow_user');
-      return u ? JSON.parse(u) : { name: 'Admin', email: 'admin@studyflow.in', role: 'owner', avatarColor: '#6172f3' };
+      return u ? JSON.parse(u) : null;
     } catch (e) {
-      return { name: 'Admin', email: 'admin@studyflow.in', role: 'owner', avatarColor: '#6172f3' };
+      return null;
     }
   }
 

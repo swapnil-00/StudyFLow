@@ -530,11 +530,6 @@ class App {
           <label class="form-label">Password *</label>
           <input type="password" class="input" id="login-password" required placeholder="••••••••" autocomplete="current-password">
         </div>
-
-        <div style="display:flex;align-items:center;justify-content:space-between;font-size:var(--text-xs);color:var(--color-text-tertiary);">
-          <span>Default Demo Account:</span>
-          <a href="javascript:void(0)" onclick="document.getElementById('login-email').value='admin@studyflow.in';document.getElementById('login-password').value='studyflow123';" style="color:var(--color-primary);font-weight:600;">Auto-fill Demo</a>
-        </div>
       </form>
     `;
 
