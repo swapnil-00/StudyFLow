@@ -19,15 +19,32 @@ async function main() {
   }
 
   const isLocal = dbUrl.includes('localhost') || dbUrl.includes('127.0.0.1');
-  const rejectUnauthorized = process.env.DB_REJECT_UNAUTHORIZED !== 'false';
 
   const pool = new Pool({
     connectionString: dbUrl,
-    ssl: isLocal ? false : { rejectUnauthorized },
-    connectionTimeoutMillis: 15000,
+    ssl: isLocal ? false : { rejectUnauthorized: false },
+    connectionTimeoutMillis: 30000,
+    idleTimeoutMillis: 30000,
   });
 
-  const client = await pool.connect();
+  let client;
+  let lastErr;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      console.log(`🔌 Connecting to database (attempt ${attempt}/3)...`);
+      client = await pool.connect();
+      break;
+    } catch (err) {
+      lastErr = err;
+      console.warn(`⚠️  Connection attempt ${attempt} failed (${err.message}). Retrying in 2s...`);
+      await new Promise(r => setTimeout(r, 2000));
+    }
+  }
+
+  if (!client) {
+    await pool.end();
+    throw new Error(`Failed to connect to database after 3 attempts: ${lastErr?.message}`);
+  }
 
   try {
     console.log('===============================================================');

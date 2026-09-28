@@ -4,6 +4,7 @@ const { query } = require('../lib/db');
 const { ensureMultiTenantSchema } = require('../lib/db-init');
 const { withHandler } = require('../lib/http');
 const { assertBranchAccess } = require('../lib/authorize');
+const { HttpError } = require('../lib/errors');
 const { getTodayIST, daysBetweenIST } = require('../lib/dates');
 
 module.exports = withHandler(async function handler(req, res) {
