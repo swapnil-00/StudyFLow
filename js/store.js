@@ -684,25 +684,25 @@ class Store {
   }
 
   getStudentAssignment(studentId) {
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = today();
     return (this._db?.seatAssignments || []).find(a => {
       if (a.studentId !== studentId && a.student_id !== studentId) return false;
       if (a.status !== 'active') return false;
       if (!a.endDate && !a.end_date) return true;
       const end = (a.endDate || a.end_date);
-      const endStr = typeof end === 'string' ? end.split('T')[0] : new Date(end).toISOString().split('T')[0];
+      const endStr = typeof end === 'string' ? end.split('T')[0] : String(end);
       return endStr >= todayStr;
     });
   }
 
   getActiveAssignment(seatId) {
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = today();
     return (this._db?.seatAssignments || []).find(a => {
       if (a.seatId !== seatId && a.seat_id !== seatId) return false;
       if (a.status !== 'active') return false;
       if (!a.endDate && !a.end_date) return true;
       const end = (a.endDate || a.end_date);
-      const endStr = typeof end === 'string' ? end.split('T')[0] : new Date(end).toISOString().split('T')[0];
+      const endStr = typeof end === 'string' ? end.split('T')[0] : String(end);
       return endStr >= todayStr;
     });
   }

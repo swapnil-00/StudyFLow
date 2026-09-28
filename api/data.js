@@ -31,6 +31,28 @@ module.exports = withHandler(async function handler(req, res) {
     });
   }
 
+  // Reconcile expired seat assignments for this tenant
+  const { getTodayIST } = require('../lib/dates');
+  const todayIST = getTodayIST();
+  try {
+    const expAssignments = await query(
+      `UPDATE seat_assignments 
+       SET status = 'expired', updated_at = CURRENT_TIMESTAMP 
+       WHERE organization_id = $1 AND status = 'active' AND end_date < $2
+       RETURNING seat_id`,
+      [orgId, todayIST]
+    );
+    if (expAssignments.rows.length > 0) {
+      const expiredSeatIds = [...new Set(expAssignments.rows.map(r => r.seat_id))];
+      await query(
+        `UPDATE seats 
+         SET status = 'available', current_student_id = NULL, updated_at = CURRENT_TIMESTAMP 
+         WHERE organization_id = $1 AND id = ANY($2) AND status = 'occupied'`,
+        [orgId, expiredSeatIds]
+      );
+    }
+  } catch (_) {}
+
   const [
     branches, floors, rooms, seats, students,
     membershipPlans, memberships, seatAssignments,

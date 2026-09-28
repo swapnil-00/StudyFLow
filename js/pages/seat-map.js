@@ -590,6 +590,7 @@ window.openAssignModal = function(seatId, preselectedStudentId) {
   const allSeats = store.getSeatsForBranch(branchId);
   const availableSeats = allSeats.filter(s => store.getSeatStatus(s.id) === 'available');
 
+  const isOwnerOrManager = store.currentUser?.role === 'owner' || store.currentUser?.role === 'manager';
   const today_ = new Date().toISOString().split('T')[0];
 
   modal.open('Assign Seat', `
@@ -638,17 +639,17 @@ window.openAssignModal = function(seatId, preselectedStudentId) {
 
       <div class="grid-2">
         <div class="form-group">
-          <label class="form-label">Amount (₹) <span class="required">*</span></label>
+          <label class="form-label">Plan Price (₹)</label>
           <div class="input-group">
             <span class="input-group-prefix">₹</span>
-            <input type="number" class="input" id="assign-price" min="0" placeholder="0">
+            <input type="number" class="input" id="assign-price" min="0" placeholder="0" readonly style="background:var(--color-bg-secondary);">
           </div>
         </div>
         <div class="form-group">
-          <label class="form-label">Discount (₹)</label>
+          <label class="form-label">Discount (₹)${!isOwnerOrManager ? ' <span style="font-size:11px;color:var(--color-text-tertiary);">(Owner/Manager only)</span>' : ''}</label>
           <div class="input-group">
             <span class="input-group-prefix">₹</span>
-            <input type="number" class="input" id="assign-discount" value="0" min="0">
+            <input type="number" class="input" id="assign-discount" value="0" min="0" ${!isOwnerOrManager ? 'disabled style="background:var(--color-bg-secondary);"' : ''}>
           </div>
         </div>
       </div>
@@ -771,6 +772,7 @@ window.confirmAssignSeat = async function() {
     const membership = bookingResult.membership;
     const paymentRecord = bookingResult.payment;
     const plan = store.getMembershipPlan(planId);
+    const finalAmount = membership?.finalAmount !== undefined ? membership.finalAmount : (price - discount);
     const endDate = membership?.endDate || utils.addDays(startDate, plan?.duration || 30);
 
     // ── Generate Invoice & Receipt Documents ONLY AFTER SUCCESSFUL BOOKING ──
@@ -814,8 +816,8 @@ window.confirmAssignSeat = async function() {
           membership_name: plan?.name || 'Membership',
           start_date: startDate,
           expiry_date: endDate,
-          amount: (price - discount).toLocaleString('en-IN'),
-          payment_status: payStatus === 'paid' ? 'Paid' : (payStatus === 'partial' ? 'Partial' : 'Pending')
+          amount: finalAmount.toLocaleString('en-IN'),
+          payment_status: membership?.paymentStatus === 'paid' ? 'Paid' : (membership?.paymentStatus === 'partial' ? 'Partial' : 'Pending')
         }
       });
     }
@@ -840,7 +842,7 @@ window.confirmAssignSeat = async function() {
           <div>
             <span style="color:var(--color-text-tertiary);">Payment Status:</span>
             <div style="font-weight:var(--fw-semibold);color:var(--color-text-primary);margin-top:2px;">
-              ${payStatus === 'paid' ? `₹${(price - discount).toLocaleString('en-IN')} (Paid)` : (payStatus === 'partial' ? `₹${payAmount} (Partial)` : 'Pending')}
+              ${membership?.paymentStatus === 'paid' ? `₹${finalAmount.toLocaleString('en-IN')} (Paid)` : (membership?.paymentStatus === 'partial' ? `₹${paymentRecord?.amount || payAmount} (Partial)` : 'Pending')}
             </div>
           </div>
           <div>
@@ -1238,6 +1240,7 @@ window.openRenewModal = function(studentId, seatId) {
   const branchId = store.getActiveBranchId();
   const currentMembership = store.getActiveMembership(studentId);
   const plans = store.getMembershipPlans(branchId);
+  const isOwnerOrManager = store.currentUser?.role === 'owner' || store.currentUser?.role === 'manager';
 
   const newStart = currentMembership
     ? utils.addDays(currentMembership.endDate, 1)
@@ -1272,11 +1275,20 @@ window.openRenewModal = function(studentId, seatId) {
         </div>
       </div>
 
-      <div class="form-group">
-        <label class="form-label">Amount (₹)</label>
-        <div class="input-group">
-          <span class="input-group-prefix">₹</span>
-          <input type="number" class="input" id="renew-price" min="0">
+      <div class="grid-2">
+        <div class="form-group">
+          <label class="form-label">Plan Price (₹)</label>
+          <div class="input-group">
+            <span class="input-group-prefix">₹</span>
+            <input type="number" class="input" id="renew-price" min="0" readonly style="background:var(--color-bg-secondary);">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Discount (₹)${!isOwnerOrManager ? ' <span style="font-size:11px;color:var(--color-text-tertiary);">(Owner/Manager only)</span>' : ''}</label>
+          <div class="input-group">
+            <span class="input-group-prefix">₹</span>
+            <input type="number" class="input" id="renew-discount" value="0" min="0" ${!isOwnerOrManager ? 'disabled style="background:var(--color-bg-secondary);"' : ''}>
+          </div>
         </div>
       </div>
 
@@ -1321,13 +1333,14 @@ window.confirmRenew = async function(studentId, seatId) {
   const planId = document.getElementById('renew-plan')?.value;
   const startDate = document.getElementById('renew-start')?.value;
   const price = parseFloat(document.getElementById('renew-price')?.value || 0);
+  const discount = parseFloat(document.getElementById('renew-discount')?.value || 0);
   const method = document.getElementById('renew-method')?.value || 'cash';
 
   if (!planId) { toast.show('Please select a plan', 'error'); return; }
   if (!startDate) { toast.show('Please enter a start date', 'error'); return; }
+  if (discount > price) { toast.show('Discount cannot exceed the plan price', 'error'); return; }
 
-  const plan = store.getMembershipPlan(planId);
-  const endDate = utils.addDays(startDate, plan?.duration || 30);
+  const payAmount = Math.max(0, price - discount);
 
   const btn = document.querySelector('.modal-footer .btn-primary');
   if (btn) {
@@ -1341,16 +1354,18 @@ window.confirmRenew = async function(studentId, seatId) {
       seatId,
       planId,
       startDate,
-      endDate,
       price,
-      discount: 0,
+      discount,
       mode: method,
       method,
-      payAmount: price
+      payAmount
     });
 
     const newMem = renewResult.membership;
     const renewPayment = renewResult.payment;
+    const plan = store.getMembershipPlan(planId);
+    const finalAmount = newMem?.finalAmount !== undefined ? newMem.finalAmount : (price - discount);
+    const endDate = newMem?.endDate || utils.addDays(startDate, plan?.duration || 30);
     const assignment = renewResult.assignment || store.getStudentAssignment(studentId);
 
     // Auto-generate renewal invoice ONLY AFTER SUCCESSFUL RENEWAL
@@ -1362,15 +1377,15 @@ window.confirmRenew = async function(studentId, seatId) {
         studentId,
         seatId: assignment?.seatId || seatId,
         planId: plan.id,
-        amount: price,
-        discount: 0
+        amount: finalAmount,
+        discount
       });
       if (renewPayment) {
         renewReceiptDoc = window.invoiceGenerator.generateReceipt({
           paymentId: renewPayment.id,
           membershipId: newMem.id,
           studentId,
-          amount: price,
+          amount: renewPayment.amount || finalAmount,
           paymentMethod: method
         });
       }
@@ -1384,7 +1399,7 @@ window.confirmRenew = async function(studentId, seatId) {
         seatId: assignment?.seatId || seatId,
         planName: plan?.name || 'Membership',
         newEndDate: endDate,
-        amount: price,
+        amount: finalAmount,
         invoiceNumber: renewInvoiceDoc?.documentNumber,
         receiptNumber: renewReceiptDoc?.documentNumber || renewResult.receiptNumber,
         documentId: renewInvoiceDoc?.id

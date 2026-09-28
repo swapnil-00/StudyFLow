@@ -10,12 +10,90 @@ const { validate } = require('../lib/validate');
 const { audit } = require('../lib/audit');
 const { encrypt } = require('../lib/crypto');
 const { HttpError } = require('../lib/errors');
-const { getTodayIST, addDaysIST } = require('../lib/dates');
+const { getTodayIST, addDaysIST, daysBetweenIST } = require('../lib/dates');
 
 function uid(prefix) {
   return `${prefix}-${crypto.randomUUID().replace(/-/g, '').substring(0, 9).toUpperCase()}`;
 }
 function now() { return new Date().toISOString(); }
+
+/**
+ * Sweeps expired assignments (status='active' AND end_date < todayIST) and frees their seats.
+ */
+async function expireOutdatedAssignments(client, orgId) {
+  const todayIST = getTodayIST();
+  const expRes = await client.query(
+    `UPDATE seat_assignments 
+     SET status = 'expired', updated_at = CURRENT_TIMESTAMP 
+     WHERE organization_id = $1 AND status = 'active' AND end_date < $2
+     RETURNING seat_id`,
+    [orgId, todayIST]
+  );
+  if (expRes.rows.length > 0) {
+    const expiredSeatIds = [...new Set(expRes.rows.map(r => r.seat_id))];
+    await client.query(
+      `UPDATE seats 
+       SET status = 'available', current_student_id = NULL, updated_at = CURRENT_TIMESTAMP 
+       WHERE organization_id = $1 AND id = ANY($2) AND status = 'occupied'
+       AND id NOT IN (SELECT seat_id FROM seat_assignments WHERE status = 'active' AND organization_id = $1)`,
+      [orgId, expiredSeatIds]
+    );
+  }
+}
+
+async function findBookingByIdempotency(client, orgId, idempotencyKey, studentId) {
+  if (!idempotencyKey) return null;
+  const dupMem = await client.query(
+    `SELECT m.id, m.branch_id, m.plan_id, m.price, m.discount, m.final_amount, m.start_date, m.end_date, m.due_date, m.status, m.payment_status,
+            a.id as assignment_id, a.seat_id,
+            p.id as payment_id, p.amount as payment_amount, p.receipt_number, p.mode as payment_mode
+     FROM memberships m
+     LEFT JOIN seat_assignments a ON a.membership_id = m.id AND a.status = 'active'
+     LEFT JOIN payments p ON p.membership_id = m.id
+     WHERE m.organization_id = $1 AND m.idempotency_key = $2`,
+    [orgId, idempotencyKey]
+  );
+  if (dupMem.rows.length > 0) {
+    const row = dupMem.rows[0];
+    return {
+      ok: true,
+      duplicate: true,
+      membership: {
+        id: row.id,
+        studentId: studentId,
+        planId: row.plan_id,
+        branchId: row.branch_id,
+        seatId: row.seat_id,
+        startDate: row.start_date,
+        endDate: row.end_date,
+        dueDate: row.due_date,
+        price: parseFloat(row.price),
+        discount: parseFloat(row.discount) || 0,
+        finalAmount: parseFloat(row.final_amount),
+        status: row.status,
+        paymentStatus: row.payment_status
+      },
+      assignment: row.assignment_id ? {
+        id: row.assignment_id,
+        seatId: row.seat_id,
+        studentId: studentId,
+        membershipId: row.id,
+        branchId: row.branch_id,
+        startDate: row.start_date,
+        endDate: row.end_date,
+        status: 'active'
+      } : null,
+      payment: row.payment_id ? {
+        id: row.payment_id,
+        amount: parseFloat(row.payment_amount),
+        receiptNumber: row.receipt_number,
+        mode: row.payment_mode
+      } : null,
+      receiptNumber: row.receipt_number || null
+    };
+  }
+  return null;
+}
 
 /**
  * Asserts that a referenced foreign entity belongs to the caller's organization (and branch).
@@ -521,6 +599,9 @@ module.exports = withHandler(async function handler(req, res) {
       const newId = uid('ASN');
 
       const result = await withTransaction(async client => {
+        // Reconcile any expired assignments first
+        await expireOutdatedAssignments(client, orgId);
+
         // 1. Lock the seat row FOR UPDATE
         const seatRes = await client.query(
           'SELECT id, branch_id, status FROM seats WHERE id = $1 AND organization_id = $2 FOR UPDATE',
@@ -668,57 +749,11 @@ module.exports = withHandler(async function handler(req, res) {
 
       const result = await withTransaction(async client => {
         // 1. Idempotency check: if key supplied and booking exists, replay response
-        if (idempotencyKey) {
-          const dupMem = await client.query(
-            `SELECT m.id, m.branch_id, m.plan_id, m.price, m.discount, m.final_amount, m.start_date, m.end_date, m.due_date, m.status, m.payment_status,
-                    a.id as assignment_id, a.seat_id,
-                    p.id as payment_id, p.amount as payment_amount, p.receipt_number, p.mode as payment_mode
-             FROM memberships m
-             LEFT JOIN seat_assignments a ON a.membership_id = m.id AND a.status = 'active'
-             LEFT JOIN payments p ON p.membership_id = m.id
-             WHERE m.organization_id = $1 AND m.idempotency_key = $2`,
-            [orgId, idempotencyKey]
-          );
-          if (dupMem.rows.length > 0) {
-            const row = dupMem.rows[0];
-            return {
-              ok: true,
-              duplicate: true,
-              membership: {
-                id: row.id,
-                studentId: b.studentId,
-                planId: row.plan_id,
-                branchId: row.branch_id,
-                seatId: row.seat_id,
-                startDate: row.start_date,
-                endDate: row.end_date,
-                dueDate: row.due_date,
-                price: parseFloat(row.price),
-                discount: parseFloat(row.discount) || 0,
-                finalAmount: parseFloat(row.final_amount),
-                status: row.status,
-                paymentStatus: row.payment_status
-              },
-              assignment: row.assignment_id ? {
-                id: row.assignment_id,
-                seatId: row.seat_id,
-                studentId: b.studentId,
-                membershipId: row.id,
-                branchId: row.branch_id,
-                startDate: row.start_date,
-                endDate: row.end_date,
-                status: 'active'
-              } : null,
-              payment: row.payment_id ? {
-                id: row.payment_id,
-                amount: parseFloat(row.payment_amount),
-                receiptNumber: row.receipt_number,
-                mode: row.payment_mode
-              } : null,
-              receiptNumber: row.receipt_number || null
-            };
-          }
-        }
+        const replay = await findBookingByIdempotency(client, orgId, idempotencyKey, b.studentId);
+        if (replay) return replay;
+
+        // Reconcile expired assignments first
+        await expireOutdatedAssignments(client, orgId);
 
         // 2. Lock Seat & verify
         const seatRes = await client.query(
@@ -774,19 +809,37 @@ module.exports = withHandler(async function handler(req, res) {
         }
         const finalAmount = planPrice - discount;
 
-        // 6. Dates calculation
+        // 6. Dates calculation & validation
         const startDate = b.startDate ? String(b.startDate).split('T')[0] : getTodayIST();
+        if (session.role !== 'owner') {
+          const diff = daysBetweenIST(getTodayIST(), startDate);
+          if (diff < -7 || diff > 60) {
+            throw new HttpError(400, 'INVALID_START_DATE', 'Start date must be within 7 days in the past and 60 days in the future.');
+          }
+        }
         const durationDays = parseInt(plan.duration, 10) || 30;
-        const endDate = b.endDate ? String(b.endDate).split('T')[0] : addDaysIST(startDate, durationDays);
+        let endDate = addDaysIST(startDate, durationDays);
+        if (session.role === 'owner' && b.endDate) {
+          endDate = String(b.endDate).split('T')[0];
+        }
         const dueDate = addDaysIST(startDate, 3); // 3 days grace period
 
         // 7. Insert Membership (guaranteed branch_id = seat.branch_id)
         const memId = uid('MEM');
-        await client.query(
-          `INSERT INTO memberships (id, organization_id, student_id, plan_id, branch_id, seat_id, start_date, end_date, due_date, price, discount, final_amount, status, payment_status, notes, idempotency_key)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
-          [memId, orgId, b.studentId, plan.id, seat.branch_id, seat.id, startDate, endDate, dueDate, planPrice, discount, finalAmount, 'active', 'pending', b.notes || '', idempotencyKey]
-        );
+        const initialPaymentStatus = finalAmount === 0 ? 'paid' : 'pending';
+        try {
+          await client.query(
+            `INSERT INTO memberships (id, organization_id, student_id, plan_id, branch_id, seat_id, start_date, end_date, due_date, price, discount, final_amount, status, payment_status, notes, idempotency_key)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+            [memId, orgId, b.studentId, plan.id, seat.branch_id, seat.id, startDate, endDate, dueDate, planPrice, discount, finalAmount, 'active', initialPaymentStatus, b.notes || '', idempotencyKey]
+          );
+        } catch (insertErr) {
+          if (insertErr.code === '23505' && idempotencyKey) {
+            const conflictReplay = await findBookingByIdempotency(client, orgId, idempotencyKey, b.studentId);
+            if (conflictReplay) return conflictReplay;
+          }
+          throw insertErr;
+        }
 
         // 8. Insert Seat Assignment
         const assignId = uid('ASN');
@@ -805,7 +858,7 @@ module.exports = withHandler(async function handler(req, res) {
         // 10. Process Payment if requested
         let paymentRecord = null;
         let generatedReceipt = null;
-        let computedPaymentStatus = 'pending';
+        let computedPaymentStatus = initialPaymentStatus;
 
         let payAmount = 0;
         if (b.payStatus === 'paid') {
@@ -840,12 +893,13 @@ module.exports = withHandler(async function handler(req, res) {
           generatedReceipt = `REC-${year}-${String(currentSeq).padStart(6, '0')}`;
 
           const payId = uid('PAY');
+          const paymentDate = getTodayIST();
           const payIdempKey = idempotencyKey ? `${idempotencyKey}-PAY` : null;
 
           await client.query(
             `INSERT INTO payments (id,organization_id,student_id,membership_id,branch_id,amount,mode,reference_number,receipt_number,date,notes,status,idempotency_key)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-            [payId, orgId, b.studentId, memId, seat.branch_id, payAmount, mode, b.referenceNumber || '', generatedReceipt, startDate, b.notes || '', 'recorded', payIdempKey]
+            [payId, orgId, b.studentId, memId, seat.branch_id, payAmount, mode, b.referenceNumber || '', generatedReceipt, paymentDate, b.notes || '', 'recorded', payIdempKey]
           );
 
           computedPaymentStatus = payAmount >= finalAmount ? 'paid' : 'partial';
@@ -862,7 +916,7 @@ module.exports = withHandler(async function handler(req, res) {
             amount: payAmount,
             mode,
             receiptNumber: generatedReceipt,
-            date: startDate,
+            date: paymentDate,
             status: 'recorded'
           };
         }
@@ -920,6 +974,13 @@ module.exports = withHandler(async function handler(req, res) {
       const idempotencyKey = req.headers['idempotency-key'] || b.idempotencyKey || null;
 
       const result = await withTransaction(async client => {
+        // 1. Idempotency check: if key supplied and booking exists, replay response
+        const replay = await findBookingByIdempotency(client, orgId, idempotencyKey, b.studentId);
+        if (replay) return replay;
+
+        // Reconcile expired assignments first
+        await expireOutdatedAssignments(client, orgId);
+
         await assertForeignEntity(client, 'students', b.studentId, orgId);
 
         // Load plan
@@ -931,21 +992,47 @@ module.exports = withHandler(async function handler(req, res) {
         const plan = planRes.rows[0];
         const planPrice = parseFloat(plan.price);
         const discount = b.discount !== undefined ? Math.max(0, parseFloat(b.discount)) : 0;
+
+        if (discount > 0 && session.role !== 'owner' && session.role !== 'manager') {
+          throw new HttpError(403, 'DISCOUNT_NOT_ALLOWED', 'Only owners and managers are authorized to apply discounts.');
+        }
+        if (discount > planPrice) {
+          throw new HttpError(400, 'INVALID_DISCOUNT', 'Discount amount cannot exceed the plan price.');
+        }
         const finalAmount = planPrice - discount;
 
-        // Get active assignment
+        // Get active assignment with FOR UPDATE lock
         const assignRes = await client.query(
-          `SELECT id, seat_id, branch_id, membership_id, end_date FROM seat_assignments WHERE student_id = $1 AND status = 'active' AND organization_id = $2`,
+          `SELECT id, seat_id, branch_id, membership_id, end_date FROM seat_assignments WHERE student_id = $1 AND status = 'active' AND organization_id = $2 FOR UPDATE`,
           [b.studentId, orgId]
         );
         const activeAssign = assignRes.rows[0] || null;
         const branchId = activeAssign?.branch_id || b.branchId || null;
+        if (branchId) assertBranchAccess(session, branchId);
         const seatId = activeAssign?.seat_id || b.seatId || null;
 
-        // Start & End dates
-        const startDate = b.startDate ? String(b.startDate).split('T')[0] : getTodayIST();
+        // Start & End dates calculation (continuous renewal: start after current end date if active and not expired)
+        let startDate;
+        if (b.startDate) {
+          startDate = String(b.startDate).split('T')[0];
+        } else if (activeAssign && activeAssign.end_date && activeAssign.end_date >= getTodayIST()) {
+          startDate = addDaysIST(activeAssign.end_date, 1);
+        } else {
+          startDate = getTodayIST();
+        }
+
+        if (session.role !== 'owner') {
+          const diff = daysBetweenIST(getTodayIST(), startDate);
+          if (diff < -7 || diff > 60) {
+            throw new HttpError(400, 'INVALID_START_DATE', 'Start date must be within 7 days in the past and 60 days in the future.');
+          }
+        }
+
         const durationDays = parseInt(plan.duration, 10) || 30;
-        const endDate = b.endDate ? String(b.endDate).split('T')[0] : addDaysIST(startDate, durationDays);
+        let endDate = addDaysIST(startDate, durationDays);
+        if (session.role === 'owner' && b.endDate) {
+          endDate = String(b.endDate).split('T')[0];
+        }
         const dueDate = addDaysIST(startDate, 3);
 
         // Mark previous active membership as renewed
@@ -958,11 +1045,20 @@ module.exports = withHandler(async function handler(req, res) {
 
         // Insert new membership
         const newMemId = uid('MEM');
-        await client.query(
-          `INSERT INTO memberships (id, organization_id, student_id, plan_id, branch_id, seat_id, start_date, end_date, due_date, price, discount, final_amount, status, payment_status, notes, idempotency_key)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
-          [newMemId, orgId, b.studentId, plan.id, branchId, seatId, startDate, endDate, dueDate, planPrice, discount, finalAmount, 'active', 'pending', b.notes || '', idempotencyKey]
-        );
+        const initialPaymentStatus = finalAmount === 0 ? 'paid' : 'pending';
+        try {
+          await client.query(
+            `INSERT INTO memberships (id, organization_id, student_id, plan_id, branch_id, seat_id, start_date, end_date, due_date, price, discount, final_amount, status, payment_status, notes, idempotency_key)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+            [newMemId, orgId, b.studentId, plan.id, branchId, seatId, startDate, endDate, dueDate, planPrice, discount, finalAmount, 'active', initialPaymentStatus, b.notes || '', idempotencyKey]
+          );
+        } catch (insertErr) {
+          if (insertErr.code === '23505' && idempotencyKey) {
+            const conflictReplay = await findBookingByIdempotency(client, orgId, idempotencyKey, b.studentId);
+            if (conflictReplay) return conflictReplay;
+          }
+          throw insertErr;
+        }
 
         // Update active assignment
         if (activeAssign) {
@@ -972,15 +1068,29 @@ module.exports = withHandler(async function handler(req, res) {
           );
         }
 
-        // Record payment if paid
+        // Process Payment if requested
         let renewPayment = null;
         let generatedReceipt = null;
-        const payAmount = b.payAmount !== undefined ? parseFloat(b.payAmount) : planPrice;
+        let computedPaymentStatus = initialPaymentStatus;
+
+        let payAmount = 0;
+        if (b.payStatus === 'paid') {
+          payAmount = finalAmount;
+        } else if (b.payStatus === 'partial' || b.payAmount !== undefined) {
+          payAmount = Math.max(0, parseFloat(b.payAmount || 0));
+        }
+
         if (payAmount > 0) {
+          if (payAmount > finalAmount) {
+            throw new HttpError(400, 'INVALID_PAYMENT_AMOUNT', 'Payment amount cannot exceed the total amount due.');
+          }
+
           const allowedModes = ['cash', 'upi', 'card', 'bank_transfer', 'cheque', 'other'];
           let mode = b.mode || b.method || 'cash';
           mode = String(mode).toLowerCase().replace(/\s+/g, '_');
-          if (!allowedModes.includes(mode)) mode = 'cash';
+          if (!allowedModes.includes(mode)) {
+            throw new HttpError(400, 'VALIDATION_ERROR', `Payment mode must be one of: ${allowedModes.join(', ')}`);
+          }
 
           const seqRes = await client.query(
             `INSERT INTO receipt_sequences (organization_id, current_number)
@@ -995,16 +1105,19 @@ module.exports = withHandler(async function handler(req, res) {
           generatedReceipt = `REC-${year}-${String(currentSeq).padStart(6, '0')}`;
 
           const payId = uid('PAY');
+          const paymentDate = getTodayIST();
+          const payIdempKey = idempotencyKey ? `${idempotencyKey}-PAY` : null;
+
           await client.query(
-            `INSERT INTO payments (id,organization_id,student_id,membership_id,branch_id,amount,mode,reference_number,receipt_number,date,notes,status)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-            [payId, orgId, b.studentId, newMemId, branchId, payAmount, mode, b.referenceNumber || '', generatedReceipt, startDate, b.notes || '', 'recorded']
+            `INSERT INTO payments (id,organization_id,student_id,membership_id,branch_id,amount,mode,reference_number,receipt_number,date,notes,status,idempotency_key)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+            [payId, orgId, b.studentId, newMemId, branchId, payAmount, mode, b.referenceNumber || '', generatedReceipt, paymentDate, b.notes || '', 'recorded', payIdempKey]
           );
 
-          const computedStatus = payAmount >= finalAmount ? 'paid' : 'partial';
+          computedPaymentStatus = payAmount >= finalAmount ? 'paid' : 'partial';
           await client.query(
             `UPDATE memberships SET payment_status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND organization_id = $3`,
-            [computedStatus, newMemId, orgId]
+            [computedPaymentStatus, newMemId, orgId]
           );
 
           renewPayment = {
@@ -1015,12 +1128,12 @@ module.exports = withHandler(async function handler(req, res) {
             amount: payAmount,
             mode,
             receiptNumber: generatedReceipt,
-            date: startDate,
+            date: paymentDate,
             status: 'recorded'
           };
         }
 
-        await audit(client, session, 'booking.renew', 'memberships', newMemId, { studentId: b.studentId, planId: plan.id, payAmount });
+        await audit(client, session, 'booking.renew', 'memberships', newMemId, { studentId: b.studentId, planId: plan.id, payAmount, paymentStatus: computedPaymentStatus });
 
         return {
           ok: true,
@@ -1038,7 +1151,8 @@ module.exports = withHandler(async function handler(req, res) {
             discount,
             finalAmount,
             status: 'active',
-            paymentStatus: payAmount >= finalAmount ? 'paid' : 'pending'
+            paymentStatus: computedPaymentStatus,
+            notes: b.notes || ''
           },
           assignment: activeAssign ? {
             id: activeAssign.id,
