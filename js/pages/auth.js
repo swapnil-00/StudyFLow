@@ -62,7 +62,10 @@ export function renderLoginPage() {
     </div>
   `;
 
-  setTimeout(() => setupLoginEvents(container), 0);
+  setTimeout(() => {
+    setupLoginEvents(container);
+    ensureFirebaseSdk().catch(() => {});
+  }, 0);
   return container;
 }
 
@@ -143,7 +146,10 @@ export function renderSignupPage() {
     </div>
   `;
 
-  setTimeout(() => setupSignupEvents(container), 0);
+  setTimeout(() => {
+    setupSignupEvents(container);
+    ensureFirebaseSdk().catch(() => {});
+  }, 0);
   return container;
 }
 
@@ -204,8 +210,12 @@ export function renderSetupLibraryPage() {
         return;
       }
 
+      const origHtml = submitBtn.innerHTML;
       submitBtn.disabled = true;
-      submitBtn.textContent = 'Creating Library...';
+      submitBtn.innerHTML = `
+        <span class="spinner" style="width:16px;height:16px;border-width:2px;border-color:rgba(255,255,255,0.3);border-top-color:#ffffff;display:inline-block;vertical-align:middle;margin-right:8px;"></span>
+        <span>Creating Library...</span>
+      `;
 
       try {
         await store.createLibrary({ orgName, city });
@@ -213,7 +223,7 @@ export function renderSetupLibraryPage() {
       } catch (err) {
         showAuthAlert(alertEl, err.message || 'Failed to create library');
         submitBtn.disabled = false;
-        submitBtn.textContent = 'Create Library & Continue';
+        submitBtn.innerHTML = origHtml;
       }
     });
   }, 0);
@@ -296,8 +306,12 @@ export function renderOnboardingPage() {
         return;
       }
 
+      const origHtml = submitBtn.innerHTML;
       submitBtn.disabled = true;
-      submitBtn.textContent = 'Setting up Library...';
+      submitBtn.innerHTML = `
+        <span class="spinner" style="width:16px;height:16px;border-width:2px;border-color:rgba(255,255,255,0.3);border-top-color:#ffffff;display:inline-block;vertical-align:middle;margin-right:8px;"></span>
+        <span>Setting up Library...</span>
+      `;
 
       try {
         await store.completeOnboarding({ branchName, city, roomName, seatCount });
@@ -305,7 +319,7 @@ export function renderOnboardingPage() {
       } catch (err) {
         showAuthAlert(alertEl, err.message || 'Onboarding failed');
         submitBtn.disabled = false;
-        submitBtn.textContent = '🚀 Complete Setup & Launch Dashboard';
+        submitBtn.innerHTML = origHtml;
       }
     });
   }, 0);
@@ -566,15 +580,30 @@ function setupLoginEvents(container) {
   if (googleBtn) {
     googleBtn.addEventListener('click', async () => {
       alertEl.style.display = 'none';
+      const origHtml = googleBtn.innerHTML;
       googleBtn.disabled = true;
-      googleBtn.style.opacity = '0.7';
+      googleBtn.innerHTML = `
+        <span class="spinner" style="width:16px;height:16px;border-width:2px;border-color:rgba(255,255,255,0.3);border-top-color:#ffffff;display:inline-block;vertical-align:middle;margin-right:8px;"></span>
+        <span>Connecting to Google...</span>
+      `;
 
       try {
         await ensureFirebaseSdk();
         const auth = window.firebase.auth();
         const provider = new window.firebase.auth.GoogleAuthProvider();
+        
+        googleBtn.innerHTML = `
+          <span class="spinner" style="width:16px;height:16px;border-width:2px;border-color:rgba(255,255,255,0.3);border-top-color:#ffffff;display:inline-block;vertical-align:middle;margin-right:8px;"></span>
+          <span>Awaiting Google Authorization...</span>
+        `;
+        
         const result = await auth.signInWithPopup(provider);
         const idToken = await result.user.getIdToken();
+
+        googleBtn.innerHTML = `
+          <span class="spinner" style="width:16px;height:16px;border-width:2px;border-color:rgba(255,255,255,0.3);border-top-color:#ffffff;display:inline-block;vertical-align:middle;margin-right:8px;"></span>
+          <span>Loading your library...</span>
+        `;
 
         const res = await store.sessionFromIdToken(idToken, 'login');
 
@@ -595,12 +624,14 @@ function setupLoginEvents(container) {
           `;
           alertEl.className = 'auth-alert auth-alert-error';
           alertEl.style.display = 'block';
+        } else if (err.code === 'auth/popup-closed-by-user') {
+          // User cancelled the popup
         } else {
           showAuthAlert(alertEl, err.message || 'Google sign in failed');
         }
       } finally {
         googleBtn.disabled = false;
-        googleBtn.style.opacity = '1';
+        googleBtn.innerHTML = origHtml;
       }
     });
   }
@@ -617,8 +648,12 @@ function setupLoginEvents(container) {
         return;
       }
 
+      const origText = submitBtn.innerHTML;
       submitBtn.disabled = true;
-      submitBtn.textContent = 'Signing in...';
+      submitBtn.innerHTML = `
+        <span class="spinner" style="width:16px;height:16px;border-width:2px;border-color:rgba(255,255,255,0.3);border-top-color:#ffffff;display:inline-block;vertical-align:middle;margin-right:8px;"></span>
+        <span>Signing in...</span>
+      `;
 
       try {
         const res = await store.login(email, password);
@@ -633,7 +668,7 @@ function setupLoginEvents(container) {
         showAuthAlert(alertEl, err.message || 'Invalid email or password');
       } finally {
         submitBtn.disabled = false;
-        submitBtn.textContent = 'Sign In';
+        submitBtn.innerHTML = origText;
       }
     });
   }
@@ -664,23 +699,42 @@ function setupSignupEvents(container) {
         return;
       }
 
+      const origHtml = googleBtn.innerHTML;
       googleBtn.disabled = true;
-      googleBtn.style.opacity = '0.7';
+      googleBtn.innerHTML = `
+        <span class="spinner" style="width:16px;height:16px;border-width:2px;border-color:rgba(255,255,255,0.3);border-top-color:#ffffff;display:inline-block;vertical-align:middle;margin-right:8px;"></span>
+        <span>Connecting to Google...</span>
+      `;
 
       try {
         await ensureFirebaseSdk();
         const auth = window.firebase.auth();
         const provider = new window.firebase.auth.GoogleAuthProvider();
+        
+        googleBtn.innerHTML = `
+          <span class="spinner" style="width:16px;height:16px;border-width:2px;border-color:rgba(255,255,255,0.3);border-top-color:#ffffff;display:inline-block;vertical-align:middle;margin-right:8px;"></span>
+          <span>Awaiting Google Authorization...</span>
+        `;
+
         const result = await auth.signInWithPopup(provider);
         const idToken = await result.user.getIdToken();
+
+        googleBtn.innerHTML = `
+          <span class="spinner" style="width:16px;height:16px;border-width:2px;border-color:rgba(255,255,255,0.3);border-top-color:#ffffff;display:inline-block;vertical-align:middle;margin-right:8px;"></span>
+          <span>Creating your account...</span>
+        `;
 
         await store.sessionFromIdToken(idToken, 'signup', null, true);
         window.location.hash = '#/setup-library';
       } catch (err) {
-        showAuthAlert(alertEl, err.message || 'Google sign up failed');
+        if (err.code === 'auth/popup-closed-by-user') {
+          // User closed popup
+        } else {
+          showAuthAlert(alertEl, err.message || 'Google sign up failed');
+        }
       } finally {
         googleBtn.disabled = false;
-        googleBtn.style.opacity = '1';
+        googleBtn.innerHTML = origHtml;
       }
     });
   }
@@ -705,8 +759,12 @@ function setupSignupEvents(container) {
         return;
       }
 
+      const origText = submitBtn.innerHTML;
       submitBtn.disabled = true;
-      submitBtn.textContent = 'Creating Account...';
+      submitBtn.innerHTML = `
+        <span class="spinner" style="width:16px;height:16px;border-width:2px;border-color:rgba(255,255,255,0.3);border-top-color:#ffffff;display:inline-block;vertical-align:middle;margin-right:8px;"></span>
+        <span>Creating Account...</span>
+      `;
 
       try {
         await store.register(name, email, password, phone, termsAccepted);
@@ -715,7 +773,7 @@ function setupSignupEvents(container) {
         showAuthAlert(alertEl, err.message || 'Registration failed');
       } finally {
         submitBtn.disabled = false;
-        submitBtn.textContent = 'Continue to Library Setup';
+        submitBtn.innerHTML = origText;
       }
     });
   }
