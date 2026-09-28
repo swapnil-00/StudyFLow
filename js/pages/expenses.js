@@ -214,6 +214,7 @@ export function renderExpenses(container) {
   }
 
   function openAddModal() {
+    const branches = store.getBranches();
     modal.open('Add Expense', `
       <div style="display:flex;flex-direction:column;gap:var(--space-4);">
         <div class="form-group">
@@ -222,6 +223,12 @@ export function renderExpenses(container) {
         </div>
         <div class="grid-2" style="gap:var(--space-3);">
           <div class="form-group">
+            <label class="form-label">Branch <span class="required">*</span></label>
+            <select class="select" id="exp-branch-input">
+              ${branches.map(b => `<option value="${escAttr(b.id)}" ${branchId === b.id ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
             <label class="form-label">Category <span class="required">*</span></label>
             <select class="select" id="exp-category-input">
               <option>Rent</option><option>Electricity</option><option>Internet</option>
@@ -229,16 +236,18 @@ export function renderExpenses(container) {
               <option>Furniture</option><option>Other</option>
             </select>
           </div>
+        </div>
+        <div class="grid-2" style="gap:var(--space-3);">
           <div class="form-group">
             <label class="form-label">Amount (₹) <span class="required">*</span></label>
             <div class="input-group"><span class="input-group-prefix">₹</span><input type="number" class="input" id="exp-amount-input" min="1" step="0.01"></div>
           </div>
-        </div>
-        <div class="grid-2" style="gap:var(--space-3);">
           <div class="form-group">
             <label class="form-label">Date <span class="required">*</span></label>
             <input type="date" class="input" id="exp-date-input" value="${utils.today()}">
           </div>
+        </div>
+        <div class="grid-2" style="gap:var(--space-3);">
           <div class="form-group">
             <label class="form-label">Payment Method</label>
             <select class="select" id="exp-method-input">
@@ -250,16 +259,14 @@ export function renderExpenses(container) {
               <option value="other">Other</option>
             </select>
           </div>
-        </div>
-        <div class="grid-2" style="gap:var(--space-3);">
           <div class="form-group">
             <label class="form-label">Vendor / Payee</label>
             <input type="text" class="input" id="exp-vendor-input" placeholder="Optional vendor name">
           </div>
-          <div class="form-group">
-            <label class="form-label">Bill / Receipt Ref</label>
-            <input type="text" class="input" id="exp-ref-input" placeholder="Optional invoice #">
-          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Bill / Receipt Ref</label>
+          <input type="text" class="input" id="exp-ref-input" placeholder="Optional invoice #">
         </div>
       </div>
     `, `
@@ -270,6 +277,7 @@ export function renderExpenses(container) {
     document.getElementById('modal-cancel-btn')?.addEventListener('click', () => modal.close());
     document.getElementById('modal-save-btn')?.addEventListener('click', async () => {
       const title = document.getElementById('exp-title-input')?.value?.trim();
+      const expBranchId = document.getElementById('exp-branch-input')?.value || branchId;
       const category = document.getElementById('exp-category-input')?.value;
       const amount = parseFloat(document.getElementById('exp-amount-input')?.value);
       const date = document.getElementById('exp-date-input')?.value;
@@ -286,7 +294,7 @@ export function renderExpenses(container) {
 
       try {
         await store.addExpense({
-          branchId,
+          branchId: expBranchId,
           title,
           category,
           amount,
@@ -296,7 +304,24 @@ export function renderExpenses(container) {
           receiptRef
         });
         modal.close();
-        toast.show('Expense recorded successfully!', 'success');
+
+        // Navigate period filter to expense date month if needed
+        const expMonth = date.slice(0, 7);
+        const todayMonth = utils.today().slice(0, 7);
+        const [y, m] = utils.today().split('-').map(Number);
+        const lastM = m === 1 ? 12 : m - 1;
+        const lastY = m === 1 ? y - 1 : y;
+        const lastMonth = `${lastY}-${String(lastM).padStart(2, '0')}`;
+
+        if (expMonth === todayMonth) {
+          filterPeriod = 'this-month';
+        } else if (expMonth === lastMonth) {
+          filterPeriod = 'last-month';
+        } else {
+          filterPeriod = 'all';
+        }
+
+        toast.show(`Expense recorded! Viewing ${filterPeriod === 'all' ? 'All Time' : (filterPeriod === 'last-month' ? 'Last Month' : 'This Month')}`, 'success');
         renderView();
       } catch (err) {
         toast.show(err.message || 'Failed to save expense', 'error');
@@ -308,6 +333,7 @@ export function renderExpenses(container) {
   function openEditModal(expenseId) {
     const expense = store.getExpenses(branchId, true).find(e => e.id === expenseId);
     if (!expense) return;
+    const branches = store.getBranches();
 
     modal.open('Edit Expense', `
       <div style="display:flex;flex-direction:column;gap:var(--space-4);">
@@ -317,6 +343,12 @@ export function renderExpenses(container) {
         </div>
         <div class="grid-2" style="gap:var(--space-3);">
           <div class="form-group">
+            <label class="form-label">Branch <span class="required">*</span></label>
+            <select class="select" id="exp-edit-branch">
+              ${branches.map(b => `<option value="${escAttr(b.id)}" ${(expense.branchId || branchId) === b.id ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
             <label class="form-label">Category <span class="required">*</span></label>
             <select class="select" id="exp-edit-category">
               ${['Rent', 'Electricity', 'Internet', 'Staff Salary', 'Maintenance', 'Cleaning', 'Furniture', 'Other'].map(c => `
@@ -324,16 +356,18 @@ export function renderExpenses(container) {
               `).join('')}
             </select>
           </div>
+        </div>
+        <div class="grid-2" style="gap:var(--space-3);">
           <div class="form-group">
             <label class="form-label">Amount (₹) <span class="required">*</span></label>
             <div class="input-group"><span class="input-group-prefix">₹</span><input type="number" class="input" id="exp-edit-amount" value="${expense.amount}" min="1" step="0.01"></div>
           </div>
-        </div>
-        <div class="grid-2" style="gap:var(--space-3);">
           <div class="form-group">
             <label class="form-label">Date <span class="required">*</span></label>
             <input type="date" class="input" id="exp-edit-date" value="${escAttr(expense.date || '')}">
           </div>
+        </div>
+        <div class="grid-2" style="gap:var(--space-3);">
           <div class="form-group">
             <label class="form-label">Payment Method</label>
             <select class="select" id="exp-edit-method">
@@ -349,26 +383,25 @@ export function renderExpenses(container) {
               `).join('')}
             </select>
           </div>
-        </div>
-        <div class="grid-2" style="gap:var(--space-3);">
           <div class="form-group">
             <label class="form-label">Vendor / Payee</label>
             <input type="text" class="input" id="exp-edit-vendor" value="${escAttr(expense.vendor || '')}">
           </div>
-          <div class="form-group">
-            <label class="form-label">Bill / Receipt Ref</label>
-            <input type="text" class="input" id="exp-edit-ref" value="${escAttr(expense.receiptRef || '')}">
-          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Bill / Receipt Ref</label>
+          <input type="text" class="input" id="exp-edit-ref" value="${escAttr(expense.receiptRef || expense.receipt_ref || '')}">
         </div>
       </div>
     `, `
       <button class="btn btn-secondary" id="modal-cancel-btn">Cancel</button>
-      <button class="btn btn-primary" id="modal-update-btn">Update Expense</button>
+      <button class="btn btn-primary" id="modal-save-btn">Update Expense</button>
     `);
 
     document.getElementById('modal-cancel-btn')?.addEventListener('click', () => modal.close());
-    document.getElementById('modal-update-btn')?.addEventListener('click', async () => {
+    document.getElementById('modal-save-btn')?.addEventListener('click', async () => {
       const title = document.getElementById('exp-edit-title')?.value?.trim();
+      const expBranchId = document.getElementById('exp-edit-branch')?.value || branchId;
       const category = document.getElementById('exp-edit-category')?.value;
       const amount = parseFloat(document.getElementById('exp-edit-amount')?.value);
       const date = document.getElementById('exp-edit-date')?.value;
@@ -376,20 +409,30 @@ export function renderExpenses(container) {
       const vendor = document.getElementById('exp-edit-vendor')?.value?.trim();
       const receiptRef = document.getElementById('exp-edit-ref')?.value?.trim();
 
-      if (!title) { toast.show('Title is required', 'error'); return; }
-      if (!amount || amount <= 0) { toast.show('Valid amount required', 'error'); return; }
+      if (!title) { toast.show('Please enter an expense title', 'error'); return; }
+      if (!amount || amount <= 0) { toast.show('Please enter a valid amount', 'error'); return; }
+      if (!date) { toast.show('Please select a date', 'error'); return; }
 
-      const updateBtn = document.getElementById('modal-update-btn');
-      if (updateBtn) { updateBtn.disabled = true; updateBtn.textContent = 'Updating...'; }
+      const saveBtn = document.getElementById('modal-save-btn');
+      if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Updating...'; }
 
       try {
-        await store.updateExpense(expenseId, { title, category, amount, date, paymentMode, vendor, receiptRef });
+        await store.updateExpense(expenseId, {
+          branchId: expBranchId,
+          title,
+          category,
+          amount,
+          date,
+          paymentMode,
+          vendor,
+          receiptRef
+        });
         modal.close();
-        toast.show('Expense updated!', 'success');
+        toast.show('Expense updated successfully!', 'success');
         renderView();
       } catch (err) {
-        toast.show(err.message || 'Update failed', 'error');
-        if (updateBtn) { updateBtn.disabled = false; updateBtn.textContent = 'Update Expense'; }
+        toast.show(err.message || 'Failed to update expense', 'error');
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Update Expense'; }
       }
     });
   }
