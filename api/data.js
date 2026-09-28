@@ -93,10 +93,49 @@ module.exports = withHandler(async function handler(req, res) {
     return { id: a.id, seatId: a.seat_id, studentId: a.student_id, membershipId: a.membership_id, branchId: a.branch_id, startDate: a.start_date, endDate: a.end_date, slotType: a.slot_type, status: a.status, createdAt: a.created_at };
   }
   function mapPayment(p) {
-    return { id: p.id, studentId: p.student_id, membershipId: p.membership_id, branchId: p.branch_id, amount: parseFloat(p.amount), method: p.mode, mode: p.mode, receiptNumber: p.reference_number, referenceNumber: p.reference_number, date: p.date, recordedAt: p.created_at, notes: p.notes, status: p.status, createdAt: p.created_at };
+    return {
+      id: p.id,
+      studentId: p.student_id,
+      membershipId: p.membership_id,
+      branchId: p.branch_id,
+      amount: parseFloat(p.amount),
+      method: p.mode,
+      mode: p.mode,
+      receiptNumber: p.receipt_number || p.reference_number,
+      referenceNumber: p.reference_number,
+      date: p.date,
+      recordedAt: p.created_at,
+      notes: p.notes,
+      status: p.status,
+      voidedAt: p.voided_at,
+      voidReason: p.void_reason,
+      refundOf: p.refund_of,
+      idempotencyKey: p.idempotency_key,
+      createdAt: p.created_at
+    };
   }
   function mapExpense(e) {
-    return { id: e.id, branchId: e.branch_id, category: e.category, title: e.title, description: e.title, amount: parseFloat(e.amount), date: e.date, method: e.payment_mode, paymentMode: e.payment_mode, vendor: e.vendor, receiptRef: e.receipt_ref, recordedBy: e.recorded_by, createdAt: e.created_at };
+    return {
+      id: e.id,
+      branchId: e.branch_id,
+      category: e.category,
+      title: e.title,
+      description: e.title,
+      amount: parseFloat(e.amount),
+      date: e.date,
+      method: e.payment_mode,
+      paymentMode: e.payment_mode,
+      vendor: e.vendor,
+      receiptRef: e.receipt_ref,
+      notes: e.notes,
+      status: e.status || 'active',
+      voidedAt: e.voided_at,
+      voidReason: e.void_reason,
+      isRecurring: Boolean(e.is_recurring),
+      recurringFrequency: e.recurring_frequency,
+      recordedBy: e.recorded_by,
+      createdAt: e.created_at
+    };
   }
   function mapNotification(n) {
     return { id: n.id, title: n.title, message: n.message, type: n.type, date: n.date, read: n.read, link: n.link, createdAt: n.created_at };

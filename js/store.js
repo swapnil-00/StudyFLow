@@ -5,10 +5,10 @@
 
 const API_BASE = '';  // Same origin — works on Vercel and local
 
-async function apiWrite(table, action, data, id) {
+async function apiWrite(table, action, data, id, extraHeaders = {}) {
   const res = await fetch(`${API_BASE}/api/write`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...extraHeaders },
     credentials: 'same-origin',
     body: JSON.stringify({ table, action, data, id }),
   });
@@ -858,9 +858,17 @@ class Store {
   }
 
   // ── Payments ──────────────────────────────────────────────────────
-  getPayments(membershipId) {
-    const payments = this._db?.payments || [];
-    return membershipId ? payments.filter(p => p.membershipId === membershipId) : payments;
+  getPayments(membershipId, branchId) {
+    let payments = (this._db?.payments || []).filter(p => p.status !== 'voided');
+    if (membershipId) payments = payments.filter(p => p.membershipId === membershipId);
+    if (branchId) payments = payments.filter(p => p.branchId === branchId);
+    return payments;
+  }
+
+  getAllPayments(branchId) {
+    let payments = this._db?.payments || [];
+    if (branchId) payments = payments.filter(p => p.branchId === branchId);
+    return payments;
   }
 
   getPayment(paymentId) {
@@ -874,8 +882,7 @@ class Store {
   }
 
   getPaymentsForStudent(studentId) {
-    const membershipIds = this.getMemberships(studentId).map(m => m.id);
-    return (this._db?.payments || []).filter(p => membershipIds.includes(p.membershipId));
+    return (this._db?.payments || []).filter(p => p.studentId === studentId && p.status !== 'voided');
   }
 
   getPaymentStatus(membershipId) {
@@ -883,55 +890,118 @@ class Store {
     if (!membership) return 'unknown';
 
     const payments = this.getPayments(membershipId);
-    const totalPaid = payments.filter(p => p.status !== 'refunded').reduce((sum, p) => sum + p.amount, 0);
-    const totalDue = membership.price - (membership.discount || 0);
+    const totalPaid = payments.filter(p => p.status === 'recorded').reduce((sum, p) => sum + p.amount, 0);
+    const finalAmount = membership.finalAmount !== undefined && !isNaN(membership.finalAmount)
+      ? membership.finalAmount
+      : (membership.price - (membership.discount || 0));
 
-    if (totalPaid >= totalDue) return 'paid';
+    if (totalPaid >= finalAmount) return 'paid';
     if (totalPaid > 0) return 'partial';
 
-    const today = new Date();
+    const todayDate = new Date();
     const startDate = new Date(membership.startDate);
-    if (today > startDate) return 'overdue';
+    if (todayDate > startDate) return 'overdue';
     return 'pending';
   }
 
   getPaidAmount(membershipId) {
-    return this.getPayments(membershipId).filter(p => p.status !== 'refunded').reduce((sum, p) => sum + p.amount, 0);
+    return this.getPayments(membershipId).filter(p => p.status === 'recorded').reduce((sum, p) => sum + p.amount, 0);
   }
 
   getPendingAmount(membershipId) {
     const membership = this.getMembership(membershipId);
     if (!membership) return 0;
-    const totalDue = membership.price - (membership.discount || 0);
+    const finalAmount = membership.finalAmount !== undefined && !isNaN(membership.finalAmount)
+      ? membership.finalAmount
+      : (membership.price - (membership.discount || 0));
     const paid = this.getPaidAmount(membershipId);
-    return Math.max(0, totalDue - paid);
+    return Math.max(0, finalAmount - paid);
   }
 
   async recordPayment(data) {
-    const membership = this.getMembership(data.membershipId);
-    if (!membership) throw new Error('Membership not found');
+    const student = data.studentId ? this.getStudent(data.studentId) : null;
+    const membership = data.membershipId ? this.getMembership(data.membershipId) : null;
+
+    // Auto-resolve branchId
+    const branchId = data.branchId || membership?.branchId || student?.branchId || this.getActiveBranchId();
+    const mode = (data.mode || data.method || 'cash').toLowerCase();
+    const referenceNumber = data.referenceNumber || data.txnId || '';
+    const date = data.date || today();
+    const amount = Math.round(Number(data.amount) * 100) / 100;
+    const idempotencyKey = data.idempotencyKey || `PAY-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+    const payload = {
+      studentId: data.studentId,
+      membershipId: data.membershipId || null,
+      branchId,
+      amount,
+      mode,
+      referenceNumber,
+      receiptNumber: data.receiptNumber || '',
+      date,
+      notes: data.notes || '',
+      idempotencyKey
+    };
+
+    const res = await apiWrite('payments', 'insert', payload, null, { 'Idempotency-Key': idempotencyKey });
 
     const payment = {
-      id: uid('PAY'),
-      status: 'recorded',
-      receiptNumber: data.receiptNumber || `REC-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
+      id: res.id || uid('PAY'),
+      studentId: payload.studentId,
+      membershipId: payload.membershipId,
+      branchId: payload.branchId,
+      amount: payload.amount,
+      mode: payload.mode,
+      method: payload.mode,
+      referenceNumber: payload.referenceNumber,
+      receiptNumber: res.receiptNumber || payload.referenceNumber || res.id,
+      date: payload.date,
       recordedAt: now(),
-      ...data
+      notes: payload.notes,
+      status: 'recorded',
+      idempotencyKey,
+      createdAt: now()
     };
-    const res = await apiWrite('payments', 'insert', payment);
-    if (res?.id) payment.id = res.id;
-    this._db.payments.push(payment);
 
-    // Update membership payment status
-    const newStatus = this.getPaymentStatus(data.membershipId);
-    if (membership.paymentStatus !== newStatus) {
-      membership.paymentStatus = newStatus;
-      apiWrite('memberships', 'update', { paymentStatus: newStatus }, membership.id).catch(e => console.warn('Membership status sync error:', e));
+    this._db.payments = this._db.payments || [];
+    const existingIdx = this._db.payments.findIndex(p => p.id === payment.id);
+    if (existingIdx !== -1) {
+      this._db.payments[existingIdx] = { ...this._db.payments[existingIdx], ...payment };
+    } else {
+      this._db.payments.unshift(payment);
     }
 
-    this.addActivity({ action: 'payment_recorded', entity: 'payment', entityId: payment.id, description: `Payment of ${formatINR(payment.amount)} recorded` });
+    // Update in-memory membership status
+    if (membership) {
+      membership.paymentStatus = res.paymentStatus || this.getPaymentStatus(membership.id);
+    }
+
+    this.addActivity({
+      action: 'payment_recorded',
+      entity: 'payment',
+      entityId: payment.id,
+      description: `Payment of ${formatINR(payment.amount)} recorded (${payment.receiptNumber})`
+    });
+
     this._notify();
     return payment;
+  }
+
+  async voidPayment(paymentId, reason) {
+    const res = await apiWrite('payments', 'void', { reason }, paymentId);
+    const payment = (this._db?.payments || []).find(p => p.id === paymentId);
+    if (payment) {
+      payment.status = 'voided';
+      payment.voidedAt = now();
+      payment.voidReason = reason;
+      if (payment.membershipId) {
+        const mem = this.getMembership(payment.membershipId);
+        if (mem) mem.paymentStatus = this.getPaymentStatus(mem.id);
+      }
+    }
+    this.addActivity({ action: 'payment_voided', entity: 'payment', entityId: paymentId, description: `Payment voided: ${reason || 'No reason'}` });
+    this._notify();
+    return res;
   }
 
   // ── Attendance ────────────────────────────────────────────────────
@@ -975,18 +1045,79 @@ class Store {
   }
 
   // ── Expenses ──────────────────────────────────────────────────────
-  getExpenses(branchId) {
-    const expenses = this._db?.expenses || [];
-    return branchId ? expenses.filter(e => e.branchId === branchId) : expenses;
+  getExpenses(branchId, includeVoided = false) {
+    let expenses = this._db?.expenses || [];
+    if (!includeVoided) expenses = expenses.filter(e => e.status !== 'voided');
+    if (branchId) expenses = expenses.filter(e => e.branchId === branchId);
+    return expenses;
   }
 
   async addExpense(data) {
-    const expense = { id: uid('EXP'), createdAt: now(), ...data };
-    const res = await apiWrite('expenses', 'insert', expense);
-    if (res?.id) expense.id = res.id;
-    this._db.expenses.push(expense);
+    const branchId = data.branchId || this.getActiveBranchId();
+    const title = data.title || data.description || 'Expense';
+    const description = data.description || data.title || '';
+    const paymentMode = (data.paymentMode || data.method || 'cash').toLowerCase();
+    const date = data.date || today();
+    const amount = Math.round(Number(data.amount) * 100) / 100;
+
+    const payload = {
+      branchId,
+      title,
+      category: data.category || 'General',
+      amount,
+      date,
+      paymentMode,
+      vendor: data.vendor || '',
+      receiptRef: data.receiptRef || '',
+      notes: data.notes || description,
+      isRecurring: Boolean(data.isRecurring),
+      recurringFrequency: data.recurringFrequency || ''
+    };
+
+    const res = await apiWrite('expenses', 'insert', payload);
+    const expense = {
+      id: res.id || uid('EXP'),
+      ...payload,
+      description: payload.title,
+      method: payload.paymentMode,
+      status: 'active',
+      createdAt: now()
+    };
+
+    this._db.expenses = this._db.expenses || [];
+    this._db.expenses.unshift(expense);
+    this.addActivity({ action: 'expense_recorded', entity: 'expense', entityId: expense.id, description: `Expense of ${formatINR(expense.amount)} recorded (${expense.title})` });
     this._notify();
     return expense;
+  }
+
+  async updateExpense(id, updates) {
+    const res = await apiWrite('expenses', 'update', updates, id);
+    const idx = (this._db?.expenses || []).findIndex(e => e.id === id);
+    if (idx !== -1) {
+      this._db.expenses[idx] = {
+        ...this._db.expenses[idx],
+        ...updates,
+        description: updates.title || this._db.expenses[idx].description,
+        method: updates.paymentMode || this._db.expenses[idx].method
+      };
+    }
+    this.addActivity({ action: 'expense_updated', entity: 'expense', entityId: id, description: `Expense updated` });
+    this._notify();
+    return res;
+  }
+
+  async voidExpense(id, reason) {
+    const res = await apiWrite('expenses', 'void', { reason }, id);
+    const expense = (this._db?.expenses || []).find(e => e.id === id);
+    if (expense) {
+      expense.status = 'voided';
+      expense.voidedAt = now();
+      expense.voidReason = reason;
+    }
+    this.addActivity({ action: 'expense_voided', entity: 'expense', entityId: id, description: `Expense voided: ${reason || 'No reason'}` });
+    this._notify();
+    return res;
   }
 
   // ── Notifications ─────────────────────────────────────────────────
@@ -1104,9 +1235,9 @@ class Store {
 
   // ── Aggregations ──────────────────────────────────────────────────
   getDashboardStats(branchId) {
-    const seats = this.getSeatsForBranch(branchId);
+    const activeBranchId = branchId || this.getActiveBranchId();
+    const seats = this.getSeatsForBranch(activeBranchId);
     const totalSeats = seats.length;
-    const today_ = new Date();
 
     let occupied = 0, available = 0, reserved = 0, maintenance = 0;
     seats.forEach(seat => {
@@ -1116,30 +1247,29 @@ class Store {
       else if (status === 'maintenance' || status === 'blocked') maintenance++;
     });
 
-    const todayPayments = (this._db?.payments || []).filter(p => {
-      const d = new Date(p.recordedAt || p.createdAt);
-      return d.toDateString() === today_.toDateString();
-    });
+    const branchPayments = this.getPayments(null, activeBranchId);
+    const todayStr = today();
+    const currentMonthPrefix = todayStr.slice(0, 7);
+
+    const todayPayments = branchPayments.filter(p => p.date === todayStr);
     const todayRevenue = todayPayments.reduce((sum, p) => sum + p.amount, 0);
 
-    const monthPayments = (this._db?.payments || []).filter(p => {
-      const d = new Date(p.recordedAt || p.createdAt);
-      return d.getMonth() === today_.getMonth() && d.getFullYear() === today_.getFullYear();
-    });
+    const monthPayments = branchPayments.filter(p => p.date && p.date.startsWith(currentMonthPrefix));
     const monthRevenue = monthPayments.reduce((sum, p) => sum + p.amount, 0);
 
     const activeMemberships = (this._db?.memberships || []).filter(m => {
-      const students = this.getStudents(branchId).map(s => s.id);
+      const students = this.getStudents(activeBranchId).map(s => s.id);
       return students.includes(m.studentId) && m.status === 'active';
     });
     let totalPending = 0;
     activeMemberships.forEach(m => { totalPending += this.getPendingAmount(m.id); });
 
-    const nextWeek = new Date(today_);
+    const todayDate = new Date();
+    const nextWeek = new Date(todayDate);
     nextWeek.setDate(nextWeek.getDate() + 7);
     const expiringCount = activeMemberships.filter(m => {
       const exp = new Date(m.endDate);
-      return exp >= today_ && exp <= nextWeek;
+      return exp >= todayDate && exp <= nextWeek;
     }).length;
 
     const activeMembershipsCount = activeMemberships.length;
@@ -1148,11 +1278,12 @@ class Store {
   }
 
   getExpiringMemberships(branchId, days = 7) {
+    const activeBranchId = branchId || this.getActiveBranchId();
     const today_ = new Date();
     const future = new Date(today_);
     future.setDate(future.getDate() + days);
 
-    const studentIds = this.getStudents(branchId).map(s => s.id);
+    const studentIds = this.getStudents(activeBranchId).map(s => s.id);
     return (this._db?.memberships || [])
       .filter(m => {
         if (!studentIds.includes(m.studentId)) return false;
@@ -1171,7 +1302,8 @@ class Store {
   }
 
   getPendingDues(branchId) {
-    const studentIds = this.getStudents(branchId).map(s => s.id);
+    const activeBranchId = branchId || this.getActiveBranchId();
+    const studentIds = this.getStudents(activeBranchId).map(s => s.id);
     const result = [];
     const today_ = new Date();
 
@@ -1193,19 +1325,24 @@ class Store {
   }
 
   getRevenueChart(branchId, days = 7) {
+    const activeBranchId = branchId || this.getActiveBranchId();
+    const branchPayments = this.getPayments(null, activeBranchId);
     const result = [];
-    const today_ = new Date();
+    const todayDate = new Date();
 
     for (let i = days - 1; i >= 0; i--) {
-      const d = new Date(today_);
+      const d = new Date(todayDate);
       d.setDate(d.getDate() - i);
-      const dateStr = d.toDateString();
+      const dateIso = d.toISOString().split('T')[0];
 
-      const dayPayments = (this._db?.payments || []).filter(p =>
-        new Date(p.recordedAt || p.createdAt).toDateString() === dateStr
-      );
+      const dayPayments = branchPayments.filter(p => p.date === dateIso);
       const amount = dayPayments.reduce((sum, p) => sum + p.amount, 0);
-      result.push({ date: d, label: d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }), amount });
+      result.push({
+        date: d,
+        isoDate: dateIso,
+        label: d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
+        amount
+      });
     }
 
     return result;

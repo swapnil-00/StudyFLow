@@ -1121,18 +1121,31 @@ window.openPaymentModal = function(studentId, membershipId) {
   `);
 };
 
-window.confirmPayment = function(membershipId, studentId) {
+window.confirmPayment = async function(membershipId, studentId) {
   const amount = parseFloat(document.getElementById('pay-amount')?.value || 0);
   const method = document.getElementById('pay-method')?.value;
   const txnId = document.getElementById('pay-txn-id')?.value;
+  const date = document.getElementById('pay-date')?.value;
   const notes = document.getElementById('pay-notes')?.value;
 
   if (!amount || amount <= 0) { toast.show('Please enter a valid amount', 'error'); return; }
 
+  const btn = document.querySelector('.modal-footer .btn-primary');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving Payment...'; }
+
   try {
     const student = store.getStudent(studentId);
     const membership = store.getMembership(membershipId);
-    const payment = store.recordPayment({ membershipId, studentId, amount, method, txnId, notes });
+    const payment = await store.recordPayment({
+      membershipId,
+      studentId,
+      branchId: membership?.branchId,
+      amount,
+      mode: method,
+      referenceNumber: txnId,
+      date,
+      notes
+    });
 
     // Generate receipt document
     let receiptDoc = null;
@@ -1332,7 +1345,13 @@ window.confirmRenew = function(studentId, seatId) {
     let renewPayment = null;
     let renewReceiptDoc = null;
     if (price > 0) {
-      renewPayment = store.recordPayment({ membershipId: newMem.id, studentId, amount: price, method });
+      renewPayment = await store.recordPayment({
+        membershipId: newMem.id,
+        studentId,
+        branchId: newMem.branchId || branchId,
+        amount: price,
+        mode: method
+      });
       if (window.invoiceGenerator) {
         renewReceiptDoc = window.invoiceGenerator.generateReceipt({
           paymentId: renewPayment.id,

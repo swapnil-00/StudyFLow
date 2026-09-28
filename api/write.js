@@ -478,7 +478,7 @@ module.exports = withHandler(async function handler(req, res) {
           throw new HttpError(409, 'PRICE_IMMUTABLE', 'Membership amounts cannot be modified after payment is completed.');
         }
 
-        const map = { status: 'status', paymentStatus: 'payment_status', endDate: 'end_date', seatId: 'seat_id' };
+        const map = { status: 'status', endDate: 'end_date', seatId: 'seat_id' };
         const fields = [], vals = [];
         for (const [k, col] of Object.entries(map)) {
           if (m[k] !== undefined) { fields.push(`${col}=$${fields.length + 1}`); vals.push(m[k] || null); }
@@ -486,7 +486,7 @@ module.exports = withHandler(async function handler(req, res) {
         if (fields.length === 0) return { ok: true };
         vals.push(id);
         vals.push(orgId);
-        await client.query(`UPDATE memberships SET ${fields.join(',')} WHERE id=$${vals.length - 1} AND organization_id=$${vals.length}`, vals);
+        await client.query(`UPDATE memberships SET ${fields.join(',')}, updated_at=CURRENT_TIMESTAMP WHERE id=$${vals.length - 1} AND organization_id=$${vals.length}`, vals);
         await audit(client, session, 'membership.update', 'memberships', id, { fields });
         return { ok: true };
       });
@@ -659,54 +659,180 @@ module.exports = withHandler(async function handler(req, res) {
     }
   }
 
-  // ── Payments (SEC-010: Append-Only & Idempotent) ───────────────────────────
+  // ── Payments (SEC-010: Append-Only, Sequential Receipts, Idempotent, Accurate Membership Status) ──
   if (table === 'payments') {
     if (action === 'insert') {
       const p = data;
-      const idempotencyKey = req.headers['idempotency-key'] || p.referenceNumber;
+      const idempotencyKey = req.headers['idempotency-key'] || p.idempotencyKey || null;
       const newId = uid('PAY');
 
       const result = await withTransaction(async client => {
-        // Idempotency check: if key supplied and payment exists, return it
+        // 1. Idempotency check: if key supplied and payment exists, return it immediately
         if (idempotencyKey) {
           const dup = await client.query(
-            'SELECT id, amount, status, reference_number FROM payments WHERE organization_id = $1 AND reference_number = $2',
+            'SELECT id, amount, status, receipt_number, reference_number FROM payments WHERE organization_id = $1 AND (idempotency_key = $2 OR (reference_number = $2 AND reference_number != \'\'))',
             [orgId, idempotencyKey]
           );
           if (dup.rows.length > 0) {
-            return { ok: true, id: dup.rows[0].id, duplicate: true };
+            return {
+              ok: true,
+              id: dup.rows[0].id,
+              receiptNumber: dup.rows[0].receipt_number || dup.rows[0].reference_number,
+              amount: parseFloat(dup.rows[0].amount),
+              duplicate: true
+            };
           }
         }
 
         await assertForeignEntity(client, 'students', p.studentId, orgId);
-        if (p.branchId) await assertForeignEntity(client, 'branches', p.branchId, orgId);
-        if (p.membershipId) await assertForeignEntity(client, 'memberships', p.membershipId, orgId);
 
-        await client.query(
-          `INSERT INTO payments (id,organization_id,student_id,membership_id,branch_id,amount,mode,reference_number,date,notes,status)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-          [newId, orgId, p.studentId, p.membershipId || null, p.branchId || null,
-           p.amount, p.mode || 'upi', idempotencyKey || '',
-           p.date || now().split('T')[0], p.notes || '', 'recorded']
-        );
-
-        // If linked to membership, update its payment_status
+        // Auto-resolve branchId from membership or student if missing
+        let resolvedBranchId = p.branchId;
+        if (!resolvedBranchId && p.membershipId) {
+          const memBranchRes = await client.query('SELECT branch_id FROM memberships WHERE id = $1 AND organization_id = $2', [p.membershipId, orgId]);
+          if (memBranchRes.rows.length > 0 && memBranchRes.rows[0].branch_id) {
+            resolvedBranchId = memBranchRes.rows[0].branch_id;
+          }
+        }
+        if (!resolvedBranchId && p.studentId) {
+          const stuBranchRes = await client.query('SELECT branch_id FROM students WHERE id = $1 AND organization_id = $2', [p.studentId, orgId]);
+          if (stuBranchRes.rows.length > 0 && stuBranchRes.rows[0].branch_id) {
+            resolvedBranchId = stuBranchRes.rows[0].branch_id;
+          }
+        }
+        if (resolvedBranchId) {
+          assertBranchAccess(session, resolvedBranchId);
+          await assertForeignEntity(client, 'branches', resolvedBranchId, orgId);
+        }
         if (p.membershipId) {
-          await client.query(
-            "UPDATE memberships SET payment_status = 'paid' WHERE id = $1 AND organization_id = $2",
-            [p.membershipId, orgId]
-          );
+          await assertForeignEntity(client, 'memberships', p.membershipId, orgId);
         }
 
-        await audit(client, session, 'payment.create', 'payments', newId, { amount: p.amount, mode: p.mode });
-        return { ok: true, id: newId };
+        // 2. Atomic per-organization sequential receipt number generation
+        const seqRes = await client.query(
+          `INSERT INTO receipt_sequences (organization_id, current_number)
+           VALUES ($1, 1)
+           ON CONFLICT (organization_id)
+           DO UPDATE SET current_number = receipt_sequences.current_number + 1, updated_at = CURRENT_TIMESTAMP
+           RETURNING current_number`,
+          [orgId]
+        );
+        const currentSeq = seqRes.rows[0].current_number;
+        const year = (p.date ? new Date(p.date) : new Date()).getFullYear() || new Date().getFullYear();
+        const generatedReceiptNumber = p.receiptNumber || `REC-${year}-${String(currentSeq).padStart(6, '0')}`;
+
+        // 3. Insert payment record
+        await client.query(
+          `INSERT INTO payments (id,organization_id,student_id,membership_id,branch_id,amount,mode,reference_number,receipt_number,date,notes,status,idempotency_key)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+          [newId, orgId, p.studentId, p.membershipId || null, resolvedBranchId || null,
+           p.amount, p.mode || 'upi', p.referenceNumber || '', generatedReceiptNumber,
+           p.date || now().split('T')[0], p.notes || '', 'recorded', idempotencyKey]
+        );
+
+        // 4. Server computes membership payment_status (paid / partial / pending) from SUM(payments)
+        let computedPaymentStatus = 'recorded';
+        if (p.membershipId) {
+          const memRes = await client.query(
+            'SELECT id, price, discount, final_amount FROM memberships WHERE id = $1 AND organization_id = $2 FOR UPDATE',
+            [p.membershipId, orgId]
+          );
+          if (memRes.rows.length > 0) {
+            const mem = memRes.rows[0];
+            const finalAmount = parseFloat(mem.final_amount ?? (Number(mem.price) - (Number(mem.discount) || 0)));
+            const paidRes = await client.query(
+              "SELECT COALESCE(SUM(amount), 0) AS total_paid FROM payments WHERE membership_id = $1 AND organization_id = $2 AND status = 'recorded' AND voided_at IS NULL",
+              [p.membershipId, orgId]
+            );
+            const totalPaid = parseFloat(paidRes.rows[0].total_paid);
+            computedPaymentStatus = totalPaid >= finalAmount ? 'paid' : (totalPaid > 0 ? 'partial' : 'pending');
+            await client.query(
+              'UPDATE memberships SET payment_status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND organization_id = $3',
+              [computedPaymentStatus, p.membershipId, orgId]
+            );
+          }
+        }
+
+        await audit(client, session, 'payment.create', 'payments', newId, {
+          amount: p.amount,
+          mode: p.mode,
+          receiptNumber: generatedReceiptNumber,
+          branchId: resolvedBranchId
+        });
+
+        return {
+          ok: true,
+          id: newId,
+          receiptNumber: generatedReceiptNumber,
+          amount: p.amount,
+          date: p.date || now().split('T')[0],
+          paymentStatus: computedPaymentStatus
+        };
+      });
+
+      return res.json(result);
+    }
+
+    if (action === 'void' || action === 'refund') {
+      if (session.role !== 'owner' && session.role !== 'manager') {
+        throw new HttpError(403, 'FORBIDDEN', 'Only owners and managers can void or refund payments.');
+      }
+      const { reason } = data || {};
+      const statusValue = action === 'refund' ? 'refunded' : 'voided';
+
+      const result = await withTransaction(async client => {
+        const payRes = await client.query(
+          'SELECT * FROM payments WHERE id = $1 AND organization_id = $2 FOR UPDATE',
+          [id, orgId]
+        );
+        if (payRes.rows.length === 0) throw new HttpError(404, 'PAYMENT_NOT_FOUND', 'Payment not found');
+        const payment = payRes.rows[0];
+
+        if (payment.status === 'voided' || payment.status === 'refunded') {
+          throw new HttpError(400, 'ALREADY_PROCESSED', `Payment is already ${payment.status}.`);
+        }
+
+        await client.query(
+          'UPDATE payments SET status = $1, voided_at = CURRENT_TIMESTAMP, void_reason = $2 WHERE id = $3 AND organization_id = $4',
+          [statusValue, reason || 'Payment cancelled', id, orgId]
+        );
+
+        // Recalculate membership payment status if linked
+        if (payment.membership_id) {
+          const memRes = await client.query(
+            'SELECT id, price, discount, final_amount FROM memberships WHERE id = $1 AND organization_id = $2 FOR UPDATE',
+            [payment.membership_id, orgId]
+          );
+          if (memRes.rows.length > 0) {
+            const mem = memRes.rows[0];
+            const finalAmount = parseFloat(mem.final_amount ?? (Number(mem.price) - (Number(mem.discount) || 0)));
+            const paidRes = await client.query(
+              "SELECT COALESCE(SUM(amount), 0) AS total_paid FROM payments WHERE membership_id = $1 AND organization_id = $2 AND status = 'recorded' AND voided_at IS NULL",
+              [payment.membership_id, orgId]
+            );
+            const totalPaid = parseFloat(paidRes.rows[0].total_paid);
+            const newPaymentStatus = totalPaid >= finalAmount ? 'paid' : (totalPaid > 0 ? 'partial' : 'pending');
+            await client.query(
+              'UPDATE memberships SET payment_status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND organization_id = $3',
+              [newPaymentStatus, payment.membership_id, orgId]
+            );
+          }
+        }
+
+        await audit(client, session, `payment.${action}`, 'payments', id, {
+          amount: payment.amount,
+          receiptNumber: payment.receipt_number,
+          reason
+        });
+
+        return { ok: true, id, status: statusValue };
       });
 
       return res.json(result);
     }
   }
 
-  // ── Expenses ──────────────────────────────────────────────────
+  // ── Expenses (SEC-010: Input Validation, Auditing & Void Support) ────────────
   if (table === 'expenses') {
     if (action === 'insert') {
       const e = data;
@@ -715,14 +841,59 @@ module.exports = withHandler(async function handler(req, res) {
         if (e.branchId) await assertForeignEntity(client, 'branches', e.branchId, orgId);
 
         await client.query(
-          `INSERT INTO expenses (id,organization_id,branch_id,category,title,amount,date,payment_mode,vendor,receipt_ref,recorded_by)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          `INSERT INTO expenses (id,organization_id,branch_id,category,title,amount,date,payment_mode,vendor,receipt_ref,notes,status,is_recurring,recurring_frequency,recorded_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
           [newId, orgId, e.branchId || null, e.category || 'General', e.title,
            e.amount, e.date || now().split('T')[0], e.paymentMode || 'cash',
-           e.vendor || '', e.receiptRef || '', session.userId]
+           e.vendor || '', e.receiptRef || '', e.notes || '', 'active',
+           Boolean(e.isRecurring), e.recurringFrequency || '', session.userId]
         );
-        await audit(client, session, 'expense.create', 'expenses', newId, { amount: e.amount, title: e.title });
+        await audit(client, session, 'expense.create', 'expenses', newId, { amount: e.amount, title: e.title, branchId: e.branchId });
         return { ok: true, id: newId };
+      });
+      return res.json(result);
+    }
+
+    if (action === 'update') {
+      const e = data;
+      const result = await withTransaction(async client => {
+        const expRes = await client.query('SELECT * FROM expenses WHERE id = $1 AND organization_id = $2 FOR UPDATE', [id, orgId]);
+        if (expRes.rows.length === 0) throw new HttpError(404, 'EXPENSE_NOT_FOUND', 'Expense not found');
+
+        const map = {
+          title: 'title', category: 'category', branchId: 'branch_id', amount: 'amount',
+          date: 'date', paymentMode: 'payment_mode', vendor: 'vendor', receiptRef: 'receipt_ref',
+          notes: 'notes', status: 'status'
+        };
+        const fields = [], vals = [];
+        for (const [k, col] of Object.entries(map)) {
+          if (e[k] !== undefined) { fields.push(`${col}=$${fields.length + 1}`); vals.push(e[k] || null); }
+        }
+        if (fields.length === 0) return { ok: true };
+        vals.push(id);
+        vals.push(orgId);
+        await client.query(`UPDATE expenses SET ${fields.join(',')}, updated_at=CURRENT_TIMESTAMP WHERE id=$${vals.length - 1} AND organization_id=$${vals.length}`, vals);
+        await audit(client, session, 'expense.update', 'expenses', id, { fields });
+        return { ok: true };
+      });
+      return res.json(result);
+    }
+
+    if (action === 'void') {
+      if (session.role !== 'owner' && session.role !== 'manager') {
+        throw new HttpError(403, 'FORBIDDEN', 'Only owners and managers can void expenses.');
+      }
+      const { reason } = data || {};
+      const result = await withTransaction(async client => {
+        const expRes = await client.query('SELECT * FROM expenses WHERE id = $1 AND organization_id = $2 FOR UPDATE', [id, orgId]);
+        if (expRes.rows.length === 0) throw new HttpError(404, 'EXPENSE_NOT_FOUND', 'Expense not found');
+
+        await client.query(
+          'UPDATE expenses SET status = \'voided\', voided_at = CURRENT_TIMESTAMP, void_reason = $1 WHERE id = $2 AND organization_id = $3',
+          [reason || 'Expense cancelled', id, orgId]
+        );
+        await audit(client, session, 'expense.void', 'expenses', id, { reason });
+        return { ok: true, id, status: 'voided' };
       });
       return res.json(result);
     }
