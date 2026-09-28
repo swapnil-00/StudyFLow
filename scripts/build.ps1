@@ -49,6 +49,8 @@ $appPath = Join-Path $rootDir "js\app.js"
 $appContent = Get-Content $appPath -Raw -Encoding UTF8
 $appContent = $appContent.Replace("'/login': () => import('./pages/auth.js').then(m => m.renderLoginPage)", "'/login': () => Promise.resolve(window.Pages.renderLoginPage)")
 $appContent = $appContent.Replace("'/signup': () => import('./pages/auth.js').then(m => m.renderSignupPage)", "'/signup': () => Promise.resolve(window.Pages.renderSignupPage)")
+$appContent = $appContent.Replace("'/setup-library': () => import('./pages/auth.js').then(m => m.renderSetupLibraryPage)", "'/setup-library': () => Promise.resolve(window.Pages.renderSetupLibraryPage)")
+$appContent = $appContent.Replace("'/onboarding': () => import('./pages/auth.js').then(m => m.renderOnboardingPage)", "'/onboarding': () => Promise.resolve(window.Pages.renderOnboardingPage)")
 $appContent = $appContent.Replace("'/invite': () => import('./pages/auth.js').then(m => m.renderInvitePage)", "'/invite': () => Promise.resolve(window.Pages.renderInvitePage)")
 $appContent = $appContent.Replace("'/forgot-password': () => import('./pages/auth.js').then(m => m.renderForgotPasswordPage)", "'/forgot-password': () => Promise.resolve(window.Pages.renderForgotPasswordPage)")
 $appContent = $appContent.Replace("'/landing': () => import('./pages/landing.js').then(m => m.renderLanding)", "'/landing': () => Promise.resolve(window.Pages.renderLanding)")

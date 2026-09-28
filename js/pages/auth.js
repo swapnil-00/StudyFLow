@@ -1,5 +1,5 @@
-// js/pages/auth.js — Dedicated Auth Pages: Login, Signup, Staff Invite, Forgot Password
-// Implements Google Sign-In, Phone OTP (+91 India SMS), and Email+Password.
+// js/pages/auth.js — Dedicated Auth Pages: Login, Signup, Setup Library, Onboarding, Invite, Forgot Password
+// Multi-Tenant SaaS auth flow with strict state routing, Google OAuth, and zero fake defaults.
 
 export function renderLoginPage() {
   const container = document.createElement('div');
@@ -14,7 +14,7 @@ export function renderLoginPage() {
 
       <div id="auth-alert" class="auth-alert" style="display:none;" role="alert" aria-live="assertive"></div>
 
-      <!-- Social & Google Identity Option -->
+      <!-- Google Sign In -->
       <div class="auth-identity-buttons">
         <button type="button" class="btn-google" id="btn-google-login">
           <svg width="18" height="18" viewBox="0 0 24 24">
@@ -62,7 +62,6 @@ export function renderLoginPage() {
     </div>
   `;
 
-  // Attach interactive listeners
   setTimeout(() => setupLoginEvents(container), 0);
   return container;
 }
@@ -80,112 +79,345 @@ export function renderSignupPage() {
 
       <div id="auth-alert" class="auth-alert" style="display:none;" role="alert" aria-live="assertive"></div>
 
-      <!-- Step 1: Account Creation -->
-      <div id="signup-step-1">
-        <div class="auth-identity-buttons">
-          <button type="button" class="btn-google" id="btn-google-signup">
-            <svg width="18" height="18" viewBox="0 0 24 24">
-              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-            </svg>
-            Sign up with Google
-          </button>
-        </div>
-
-        <div class="auth-divider">
-          <span>or sign up with email</span>
-        </div>
-
-        <form id="email-signup-form" class="auth-form" onsubmit="event.preventDefault();">
-          <div class="form-group">
-            <label class="form-label" for="reg-org-name">Library / Reading Hall Name *</label>
-            <input type="text" id="reg-org-name" class="input" required placeholder="e.g. Apex Reading Lounge" />
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" for="reg-name">Your Full Name *</label>
-            <input type="text" id="reg-name" class="input" required placeholder="e.g. Rahul Sharma" autocomplete="name" />
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" for="reg-email">Email Address *</label>
-            <input type="email" id="reg-email" class="input" required placeholder="owner@yourlibrary.com" autocomplete="email" />
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" for="reg-phone">Mobile Number</label>
-            <div class="phone-input-group">
-              <span class="phone-prefix">+91</span>
-              <input type="tel" id="reg-phone" class="input" placeholder="98765 43210" maxlength="10" inputmode="numeric" />
-            </div>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" for="reg-password">Password * (at least 10 characters)</label>
-            <div class="password-input-wrap">
-              <input type="password" id="reg-password" class="input" required placeholder="••••••••••" minlength="10" autocomplete="new-password" />
-              <button type="button" class="password-toggle-btn" aria-label="Toggle password visibility">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-              </button>
-            </div>
-          </div>
-
-          <div class="form-group terms-checkbox-group" style="margin-top:10px;">
-            <label class="checkbox-label" style="display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--color-text-secondary);cursor:pointer;">
-              <input type="checkbox" id="reg-terms-check" required style="margin-top:2px;" />
-              <span>I agree to the <a href="javascript:void(0)" style="color:var(--color-primary);text-decoration:underline;">Terms of Service</a> and <a href="javascript:void(0)" style="color:var(--color-primary);text-decoration:underline;">Privacy Policy</a> (India DPDP compliant).</span>
-            </label>
-          </div>
-
-          <button type="submit" class="btn btn-primary btn-block" id="btn-signup-submit" style="margin-top:14px;">
-            Create My Library
-          </button>
-        </form>
+      <!-- Google Sign Up -->
+      <div class="auth-identity-buttons">
+        <button type="button" class="btn-google" id="btn-google-signup">
+          <svg width="18" height="18" viewBox="0 0 24 24">
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+          </svg>
+          Sign up with Google
+        </button>
       </div>
 
-      <!-- Step 2: Create Library Details (for Google/Phone users without a library yet) -->
-      <div id="signup-step-2" style="display:none;">
-        <p style="font-size:13px;color:var(--color-text-secondary);margin-bottom:16px;">
-          Your identity is verified! Enter your library details to complete setup:
-        </p>
-        <form id="create-library-form" class="auth-form" onsubmit="event.preventDefault();">
-          <div class="form-group">
-            <label class="form-label" for="new-lib-name">Library / Reading Hall Name *</label>
-            <input type="text" id="new-lib-name" class="input" required placeholder="e.g. Apex Reading Lounge" />
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" for="new-lib-city">City *</label>
-            <input type="text" id="new-lib-city" class="input" required placeholder="e.g. Pune" />
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" for="new-owner-name">Owner / Admin Name</label>
-            <input type="text" id="new-owner-name" class="input" placeholder="Your name" />
-          </div>
-
-          <div class="form-group terms-checkbox-group">
-            <label class="checkbox-label" style="display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--color-text-secondary);cursor:pointer;">
-              <input type="checkbox" id="lib-terms-check" required checked style="margin-top:2px;" />
-              <span>I agree to the Terms of Service and Privacy Policy.</span>
-            </label>
-          </div>
-
-          <button type="submit" class="btn btn-primary btn-block" id="btn-create-lib-submit" style="margin-top:14px;">
-            Launch Library Dashboard
-          </button>
-        </form>
+      <div class="auth-divider">
+        <span>or sign up with email</span>
       </div>
+
+      <form id="email-signup-form" class="auth-form" onsubmit="event.preventDefault();">
+        <div class="form-group">
+          <label class="form-label" for="reg-name">Your Full Name *</label>
+          <input type="text" id="reg-name" class="input" required placeholder="e.g. Rahul Sharma" autocomplete="name" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="reg-email">Email Address *</label>
+          <input type="email" id="reg-email" class="input" required placeholder="owner@yourlibrary.com" autocomplete="email" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="reg-phone">Mobile Number (Optional)</label>
+          <div class="phone-input-group">
+            <span class="phone-prefix">+91</span>
+            <input type="tel" id="reg-phone" class="input" placeholder="98765 43210" maxlength="10" inputmode="numeric" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="reg-password">Password * (at least 10 characters)</label>
+          <div class="password-input-wrap">
+            <input type="password" id="reg-password" class="input" required placeholder="••••••••••" minlength="10" autocomplete="new-password" />
+            <button type="button" class="password-toggle-btn" aria-label="Toggle password visibility">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="form-group terms-checkbox-group" style="margin-top:10px;">
+          <label class="checkbox-label" style="display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--color-text-secondary);cursor:pointer;">
+            <input type="checkbox" id="reg-terms-check" style="margin-top:2px;" />
+            <span>I agree to the <a href="javascript:void(0)" style="color:var(--color-primary);text-decoration:underline;">Terms of Service</a> and <a href="javascript:void(0)" style="color:var(--color-primary);text-decoration:underline;">Privacy Policy</a>.</span>
+          </label>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block" id="btn-signup-submit" style="margin-top:14px;">
+          Continue to Library Setup
+        </button>
+      </form>
 
       <div class="auth-footer">
-        Already have an account? <a href="#/login" class="auth-switch-link">Sign In</a>
+        Already have a library account? <a href="#/login" class="auth-switch-link">Sign In</a>
       </div>
     </div>
   `;
 
   setTimeout(() => setupSignupEvents(container), 0);
+  return container;
+}
+
+export function renderSetupLibraryPage() {
+  const container = document.createElement('div');
+  container.className = 'auth-page-container';
+  container.innerHTML = `
+    <div class="auth-card">
+      <div class="auth-header">
+        <div class="auth-logo">SF</div>
+        <h1 class="auth-title">Set up your library</h1>
+        <p class="auth-subtitle">Enter your library or study hall details to get started.</p>
+      </div>
+
+      <div id="auth-alert" class="auth-alert" style="display:none;" role="alert" aria-live="assertive"></div>
+
+      <form id="setup-library-form" class="auth-form" onsubmit="event.preventDefault();">
+        <div class="form-group">
+          <label class="form-label" for="setup-org-name">Library / Reading Hall Name *</label>
+          <input type="text" id="setup-org-name" class="input" required placeholder="e.g. Apex Reading Lounge & Library" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="setup-org-city">City / Location *</label>
+          <input type="text" id="setup-org-city" class="input" required placeholder="e.g. Pune, Maharashtra" />
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block" id="btn-setup-submit" style="margin-top:14px;">
+          Create Library & Continue
+        </button>
+      </form>
+
+      <div class="auth-footer">
+        <a href="javascript:void(0)" id="btn-logout-setup" style="color:var(--color-text-secondary);font-size:12px;">Sign out / Switch account</a>
+      </div>
+    </div>
+  `;
+
+  setTimeout(() => {
+    const alertEl = container.querySelector('#auth-alert');
+    const form = container.querySelector('#setup-library-form');
+    const submitBtn = container.querySelector('#btn-setup-submit');
+    const logoutBtn = container.querySelector('#btn-logout-setup');
+
+    if (logoutBtn) {
+      logoutBtn.addEventListener('click', async () => {
+        await store.logout();
+        window.location.hash = '#/login';
+      });
+    }
+
+    form.addEventListener('submit', async () => {
+      const orgName = container.querySelector('#setup-org-name').value.trim();
+      const city = container.querySelector('#setup-org-city').value.trim();
+
+      if (!orgName || !city) {
+        showAuthAlert(alertEl, 'Please fill in both library name and city.');
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Creating Library...';
+
+      try {
+        await store.createLibrary({ orgName, city });
+        window.location.hash = '#/onboarding';
+      } catch (err) {
+        showAuthAlert(alertEl, err.message || 'Failed to create library');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Create Library & Continue';
+      }
+    });
+  }, 0);
+
+  return container;
+}
+
+export function renderOnboardingPage() {
+  const container = document.createElement('div');
+  container.className = 'auth-page-container';
+  const org = store.organization || { name: 'My Library' };
+
+  container.innerHTML = `
+    <div class="auth-card" style="max-width:540px;">
+      <div class="auth-header">
+        <div class="auth-logo">SF</div>
+        <h1 class="auth-title">Configure Initial Setup</h1>
+        <p class="auth-subtitle">Set up your main branch and initial seating capacity for <strong>${utils.escapeHtml(org.name || 'your library')}</strong>.</p>
+      </div>
+
+      <div id="auth-alert" class="auth-alert" style="display:none;" role="alert" aria-live="assertive"></div>
+
+      <form id="onboarding-form" class="auth-form" onsubmit="event.preventDefault();">
+        <div style="font-weight:700;font-size:14px;color:var(--color-text-primary);margin-bottom:8px;">1. Main Branch</div>
+        
+        <div class="form-group">
+          <label class="form-label" for="ob-branch-name">Branch Name *</label>
+          <input type="text" id="ob-branch-name" class="input" required placeholder="e.g. Main Branch / Kothrud Campus" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="ob-branch-city">Branch City *</label>
+          <input type="text" id="ob-branch-city" class="input" required placeholder="e.g. Pune" />
+        </div>
+
+        <div style="font-weight:700;font-size:14px;color:var(--color-text-primary);margin:16px 0 8px 0;">2. Study Hall & Seats</div>
+
+        <div class="form-group">
+          <label class="form-label" for="ob-room-name">Main Hall / Room Name *</label>
+          <input type="text" id="ob-room-name" class="input" required placeholder="e.g. Silent Reading Hall A" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="ob-seat-count">Initial Number of Seats (10 – 100)</label>
+          <input type="number" id="ob-seat-count" class="input" min="10" max="100" value="40" required />
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block" id="btn-ob-submit" style="margin-top:18px;">
+          🚀 Complete Setup & Launch Dashboard
+        </button>
+      </form>
+
+      <div class="auth-footer">
+        <a href="javascript:void(0)" id="btn-logout-ob" style="color:var(--color-text-secondary);font-size:12px;">Sign out</a>
+      </div>
+    </div>
+  `;
+
+  setTimeout(() => {
+    const alertEl = container.querySelector('#auth-alert');
+    const form = container.querySelector('#onboarding-form');
+    const submitBtn = container.querySelector('#btn-ob-submit');
+    const logoutBtn = container.querySelector('#btn-logout-ob');
+
+    if (logoutBtn) {
+      logoutBtn.addEventListener('click', async () => {
+        await store.logout();
+        window.location.hash = '#/login';
+      });
+    }
+
+    form.addEventListener('submit', async () => {
+      const branchName = container.querySelector('#ob-branch-name').value.trim();
+      const city = container.querySelector('#ob-branch-city').value.trim();
+      const roomName = container.querySelector('#ob-room-name').value.trim();
+      const seatCount = parseInt(container.querySelector('#ob-seat-count').value, 10) || 40;
+
+      if (!branchName || !city || !roomName) {
+        showAuthAlert(alertEl, 'Please fill in all required setup fields.');
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Setting up Library...';
+
+      try {
+        await store.completeOnboarding({ branchName, city, roomName, seatCount });
+        window.location.hash = '#/dashboard';
+      } catch (err) {
+        showAuthAlert(alertEl, err.message || 'Onboarding failed');
+        submitBtn.disabled = false;
+        submitBtn.textContent = '🚀 Complete Setup & Launch Dashboard';
+      }
+    });
+  }, 0);
+
+  return container;
+}
+
+export function renderForgotPasswordPage() {
+  const container = document.createElement('div');
+  container.className = 'auth-page-container';
+  container.innerHTML = `
+    <div class="auth-card">
+      <div class="auth-header">
+        <div class="auth-logo">SF</div>
+        <h1 class="auth-title">Reset Password</h1>
+        <p class="auth-subtitle">Enter your email address to receive a password reset code.</p>
+      </div>
+
+      <div id="auth-alert" class="auth-alert" style="display:none;" role="alert" aria-live="assertive"></div>
+
+      <!-- Step 1: Request Code -->
+      <form id="forgot-request-form" class="auth-form" onsubmit="event.preventDefault();">
+        <div class="form-group">
+          <label class="form-label" for="reset-email">Email Address</label>
+          <input type="email" id="reset-email" class="input" required placeholder="owner@yourlibrary.com" />
+        </div>
+        <button type="submit" class="btn btn-primary btn-block" id="btn-request-reset">
+          Send Reset Code
+        </button>
+      </form>
+
+      <!-- Step 2: Enter Code & New Password -->
+      <form id="forgot-confirm-form" class="auth-form" style="display:none;" onsubmit="event.preventDefault();">
+        <div class="form-group">
+          <label class="form-label" for="reset-code">6-Digit Reset Code</label>
+          <input type="text" id="reset-code" class="input" required placeholder="123456" maxlength="6" inputmode="numeric" style="letter-spacing:4px;font-weight:700;font-size:18px;text-align:center;" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="reset-new-password">New Password (at least 10 chars)</label>
+          <input type="password" id="reset-new-password" class="input" required placeholder="••••••••••" minlength="10" />
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block" id="btn-confirm-reset">
+          Reset Password & Sign In
+        </button>
+      </form>
+
+      <div class="auth-footer">
+        Remember your password? <a href="#/login" class="auth-switch-link">Sign In</a>
+      </div>
+    </div>
+  `;
+
+  setTimeout(() => {
+    const alertEl = container.querySelector('#auth-alert');
+    const reqForm = container.querySelector('#forgot-request-form');
+    const confForm = container.querySelector('#forgot-confirm-form');
+    let emailVal = '';
+
+    reqForm.addEventListener('submit', async () => {
+      emailVal = container.querySelector('#reset-email').value.trim();
+      if (!emailVal) return;
+
+      const btn = container.querySelector('#btn-request-reset');
+      btn.disabled = true;
+      btn.textContent = 'Sending...';
+
+      try {
+        const res = await fetch('/api/auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'password_reset_request', email: emailVal })
+        });
+        const json = await res.json();
+        showAuthAlert(alertEl, json.message || 'Reset code sent! Check your inbox.', 'success');
+        reqForm.style.display = 'none';
+        confForm.style.display = 'block';
+      } catch (err) {
+        showAuthAlert(alertEl, err.message || 'Request failed');
+        btn.disabled = false;
+        btn.textContent = 'Send Reset Code';
+      }
+    });
+
+    confForm.addEventListener('submit', async () => {
+      const code = container.querySelector('#reset-code').value.trim();
+      const newPassword = container.querySelector('#reset-new-password').value;
+
+      const btn = container.querySelector('#btn-confirm-reset');
+      btn.disabled = true;
+      btn.textContent = 'Resetting...';
+
+      try {
+        const res = await fetch('/api/auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'password_reset_confirm', email: emailVal, code, newPassword })
+        });
+        const json = await res.json();
+        if (!json.ok) throw new Error(json.error || 'Failed to reset password');
+
+        showAuthAlert(alertEl, 'Password reset successfully! Redirecting to login...', 'success');
+        setTimeout(() => { window.location.hash = '#/login'; }, 1200);
+      } catch (err) {
+        showAuthAlert(alertEl, err.message || 'Failed to reset password');
+        btn.disabled = false;
+        btn.textContent = 'Reset Password & Sign In';
+      }
+    });
+  }, 0);
+
   return container;
 }
 
@@ -197,479 +429,294 @@ export function renderInvitePage(token) {
       <div class="auth-header">
         <div class="auth-logo">SF</div>
         <h1 class="auth-title">Staff Invitation</h1>
-        <p class="auth-subtitle" id="invite-subheading">Loading invitation details...</p>
+        <p class="auth-subtitle" id="invite-subtitle">Loading invitation details...</p>
       </div>
 
       <div id="auth-alert" class="auth-alert" style="display:none;" role="alert" aria-live="assertive"></div>
+      <div id="invite-content"></div>
+    </div>
+  `;
 
-      <div id="invite-card-content" style="display:none;">
-        <div class="invite-info-box" style="padding:16px;background:var(--color-bg-secondary);border-radius:12px;margin-bottom:20px;border:1px solid var(--color-border);">
-          <div style="font-size:12px;color:var(--color-text-tertiary);text-transform:uppercase;letter-spacing:0.5px;">Invited to join</div>
-          <div id="invite-org-name" style="font-size:18px;font-weight:700;color:var(--color-text-primary);margin-top:2px;"></div>
-          <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
-            <span id="invite-role-badge" class="badge badge-primary" style="text-transform:capitalize;"></span>
-            <span id="invite-recipient" style="font-size:12px;color:var(--color-text-secondary);"></span>
-          </div>
-        </div>
+  setTimeout(async () => {
+    const alertEl = container.querySelector('#auth-alert');
+    const subtitleEl = container.querySelector('#invite-subtitle');
+    const contentEl = container.querySelector('#invite-content');
 
-        <p style="font-size:13px;color:var(--color-text-secondary);margin-bottom:16px;">
-          To accept this invitation, sign in with your verified Google account or phone number:
-        </p>
+    if (!token) {
+      subtitleEl.textContent = 'Invalid invitation link.';
+      showAuthAlert(alertEl, 'No invitation token found in link.');
+      return;
+    }
 
-        <div class="auth-identity-buttons">
+    try {
+      const res = await fetch(`/api/auth?action=invitation_info&token=${encodeURIComponent(token)}`);
+      const json = await res.json();
+
+      if (!json.ok) {
+        subtitleEl.textContent = 'Invitation Unavailable';
+        showAuthAlert(alertEl, json.error || 'Invitation is invalid or expired.');
+        return;
+      }
+
+      subtitleEl.innerHTML = `You have been invited to join <strong>${utils.escapeHtml(json.organizationName || 'StudyFlow Library')}</strong> as <strong>${utils.escapeHtml(json.role || 'staff')}</strong>.`;
+
+      contentEl.innerHTML = `
+        <div style="margin-top:16px;display:flex;flex-direction:column;gap:12px;">
           <button type="button" class="btn-google" id="btn-invite-google">
             <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/></svg>
-            Accept with Google
+            Accept Invitation with Google
           </button>
         </div>
-      </div>
-    </div>
-  `;
+      `;
 
-  setTimeout(() => setupInviteEvents(container, token), 0);
-  return container;
-}
+      const googleBtn = contentEl.querySelector('#btn-invite-google');
+      if (googleBtn) {
+        googleBtn.addEventListener('click', async () => {
+          try {
+            await ensureFirebaseSdk();
+            const auth = window.firebase.auth();
+            const provider = new window.firebase.auth.GoogleAuthProvider();
+            const result = await auth.signInWithPopup(provider);
+            const idToken = await result.user.getIdToken();
 
-export function renderForgotPasswordPage() {
-  const container = document.createElement('div');
-  container.className = 'auth-page-container';
-  container.innerHTML = `
-    <div class="auth-card">
-      <div class="auth-header">
-        <div class="auth-logo">SF</div>
-        <h1 class="auth-title">Reset password</h1>
-        <p class="auth-subtitle">Enter your account email to receive a password reset link.</p>
-      </div>
-
-      <div id="auth-alert" class="auth-alert" style="display:none;" role="alert" aria-live="assertive"></div>
-
-      <form id="forgot-form" class="auth-form" onsubmit="event.preventDefault();">
-        <div class="form-group">
-          <label class="form-label" for="reset-email">Email Address</label>
-          <input type="email" id="reset-email" class="input" required placeholder="owner@yourlibrary.com" />
-        </div>
-
-        <button type="submit" class="btn btn-primary btn-block" id="btn-reset-submit" style="margin-top:12px;">
-          Send Reset Instructions
-        </button>
-      </form>
-
-      <div class="auth-footer">
-        Remember your password? <a href="#/login" class="auth-switch-link">Back to Sign In</a>
-      </div>
-    </div>
-  `;
-
-  setTimeout(() => {
-    const form = container.querySelector('#forgot-form');
-    const emailInput = container.querySelector('#reset-email');
-    const alertBox = container.querySelector('#auth-alert');
-    const btn = container.querySelector('#btn-reset-submit');
-
-    form?.addEventListener('submit', async () => {
-      const email = emailInput?.value?.trim();
-      if (!email) return;
-      btn.disabled = true;
-      btn.textContent = 'Sending...';
-      alertBox.style.display = 'none';
-
-      try {
-        const res = await fetch('/api/auth', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'same-origin',
-          body: JSON.stringify({ action: 'password_reset', email }),
+            await store.sessionFromIdToken(idToken, 'invite', token);
+            window.location.hash = '#/dashboard';
+          } catch (err) {
+            showAuthAlert(alertEl, err.message || 'Invitation acceptance failed');
+          }
         });
-        const json = await res.json();
-        alertBox.className = 'auth-alert alert-success';
-        alertBox.textContent = json.message || 'If an account exists with this email, instructions have been sent.';
-        alertBox.style.display = 'block';
-        form.reset();
-      } catch (e) {
-        alertBox.className = 'auth-alert alert-error';
-        alertBox.textContent = e.message || 'Unable to process reset request.';
-        alertBox.style.display = 'block';
-      } finally {
-        btn.disabled = false;
-        btn.textContent = 'Send Reset Instructions';
       }
-    });
+    } catch (err) {
+      showAuthAlert(alertEl, 'Failed to fetch invitation details.');
+    }
   }, 0);
 
   return container;
 }
 
-// ── Event Handlers ─────────────────────────────────────────────────────────
+// ── Firebase Client SDK Loader ──────────────────────────────────────────────
+let firebaseInitPromise = null;
 
-function showAlert(container, msg, type = 'error') {
-  const alertBox = container.querySelector('#auth-alert');
-  if (!alertBox) return;
-  alertBox.className = `auth-alert alert-${type}`;
-  alertBox.textContent = msg;
-  alertBox.style.display = 'block';
+async function ensureFirebaseSdk() {
+  if (window.firebase && window.firebase.apps && window.firebase.apps.length > 0) {
+    return window.firebase;
+  }
+  if (firebaseInitPromise) return firebaseInitPromise;
+
+  firebaseInitPromise = (async () => {
+    const configRes = await fetch('/api/auth?action=client_config');
+    const configData = await configRes.json();
+    if (!configData.ok || !configData.firebase?.projectId) {
+      throw new Error('Firebase client configuration is not available on this server.');
+    }
+
+    if (!window.firebase) {
+      await loadScript('https://www.gstatic.com/firebasejs/10.9.0/firebase-app-compat.js');
+      await loadScript('https://www.gstatic.com/firebasejs/10.9.0/firebase-auth-compat.js');
+    }
+
+    if (!window.firebase.apps.length) {
+      window.firebase.initializeApp({
+        apiKey: configData.firebase.apiKey,
+        authDomain: configData.firebase.authDomain,
+        projectId: configData.firebase.projectId,
+        appId: configData.firebase.appId,
+      });
+    }
+
+    return window.firebase;
+  })();
+
+  return firebaseInitPromise;
 }
 
-function clearAlert(container) {
-  const alertBox = container.querySelector('#auth-alert');
-  if (alertBox) alertBox.style.display = 'none';
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = src;
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+}
+
+function showAuthAlert(alertEl, message, type = 'error') {
+  if (!alertEl) return;
+  alertEl.textContent = message;
+  alertEl.className = `auth-alert ${type === 'success' ? 'auth-alert-success' : 'auth-alert-error'}`;
+  alertEl.style.display = 'block';
 }
 
 function setupLoginEvents(container) {
-  // Password show/hide toggle
-  const toggleBtn = container.querySelector('.password-toggle-btn');
-  const pwdInput = container.querySelector('#login-password');
-  toggleBtn?.addEventListener('click', () => {
-    const isPwd = pwdInput.type === 'password';
-    pwdInput.type = isPwd ? 'text' : 'password';
-  });
-
-  // Email form submit
-  const emailForm = container.querySelector('#email-login-form');
-  const emailSubmitBtn = container.querySelector('#btn-email-submit');
-  emailForm?.addEventListener('submit', async () => {
-    const email = container.querySelector('#login-email')?.value?.trim();
-    const password = pwdInput?.value;
-    if (!email || !password) return;
-
-    emailSubmitBtn.disabled = true;
-    emailSubmitBtn.textContent = 'Signing in...';
-    clearAlert(container);
-
-    try {
-      const res = await store.login(email, password);
-      toast.show(`Welcome back, ${res.user.name || 'User'}!`, 'success');
-      window.location.hash = res.organization?.onboardingCompleted === false ? '#/dashboard' : '#/dashboard';
-      if (typeof app !== 'undefined') app._navigate();
-    } catch (e) {
-      showAlert(container, e.message || 'Invalid email or password.');
-    } finally {
-      emailSubmitBtn.disabled = false;
-      emailSubmitBtn.textContent = 'Sign In';
-    }
-  });
-
-  // Google Sign-In
+  const alertEl = container.querySelector('#auth-alert');
   const googleBtn = container.querySelector('#btn-google-login');
-  googleBtn?.addEventListener('click', async () => {
-    googleBtn.disabled = true;
-    clearAlert(container);
-    try {
-      await initiateGoogleSignIn(container);
-    } catch (e) {
-      showAlert(container, e.message || 'Google sign-in failed.');
-      googleBtn.disabled = false;
-    }
-  });
+  const form = container.querySelector('#email-login-form');
+  const submitBtn = container.querySelector('#btn-email-submit');
+
+  // Password visibility toggle
+  const pwdToggle = container.querySelector('.password-toggle-btn');
+  const pwdInput = container.querySelector('#login-password');
+  if (pwdToggle && pwdInput) {
+    pwdToggle.addEventListener('click', () => {
+      pwdInput.type = pwdInput.type === 'password' ? 'text' : 'password';
+    });
+  }
+
+  // Google Sign In (AUTH-07: Login intent only, never silently create accounts)
+  if (googleBtn) {
+    googleBtn.addEventListener('click', async () => {
+      alertEl.style.display = 'none';
+      googleBtn.disabled = true;
+      googleBtn.style.opacity = '0.7';
+
+      try {
+        await ensureFirebaseSdk();
+        const auth = window.firebase.auth();
+        const provider = new window.firebase.auth.GoogleAuthProvider();
+        const result = await auth.signInWithPopup(provider);
+        const idToken = await result.user.getIdToken();
+
+        const res = await store.sessionFromIdToken(idToken, 'login');
+
+        if (res.state === 'needs_library') {
+          window.location.hash = '#/setup-library';
+        } else if (res.state === 'needs_onboarding') {
+          window.location.hash = '#/onboarding';
+        } else {
+          window.location.hash = '#/dashboard';
+        }
+      } catch (err) {
+        if (err.code === 'NO_ACCOUNT') {
+          alertEl.innerHTML = `
+            <div>No StudyFlow account found for this Google email.</div>
+            <div style="margin-top:8px;">
+              <a href="#/signup" class="btn btn-sm btn-primary" style="display:inline-block;padding:4px 12px;font-size:12px;">Create a Library</a>
+            </div>
+          `;
+          alertEl.className = 'auth-alert auth-alert-error';
+          alertEl.style.display = 'block';
+        } else {
+          showAuthAlert(alertEl, err.message || 'Google sign in failed');
+        }
+      } finally {
+        googleBtn.disabled = false;
+        googleBtn.style.opacity = '1';
+      }
+    });
+  }
+
+  // Email + Password Sign In
+  if (form) {
+    form.addEventListener('submit', async () => {
+      alertEl.style.display = 'none';
+      const email = container.querySelector('#login-email').value.trim();
+      const password = container.querySelector('#login-password').value;
+
+      if (!email || !password) {
+        showAuthAlert(alertEl, 'Please enter both email and password.');
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Signing in...';
+
+      try {
+        const res = await store.login(email, password);
+        if (res.state === 'needs_library') {
+          window.location.hash = '#/setup-library';
+        } else if (res.state === 'needs_onboarding') {
+          window.location.hash = '#/onboarding';
+        } else {
+          window.location.hash = '#/dashboard';
+        }
+      } catch (err) {
+        showAuthAlert(alertEl, err.message || 'Invalid email or password');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Sign In';
+      }
+    });
+  }
 }
 
 function setupSignupEvents(container) {
-  const toggleBtn = container.querySelector('.password-toggle-btn');
-  const pwdInput = container.querySelector('#reg-password');
-  toggleBtn?.addEventListener('click', () => {
-    const isPwd = pwdInput.type === 'password';
-    pwdInput.type = isPwd ? 'text' : 'password';
-  });
-
-  // Email Signup Form
+  const alertEl = container.querySelector('#auth-alert');
+  const googleBtn = container.querySelector('#btn-google-signup');
   const form = container.querySelector('#email-signup-form');
   const submitBtn = container.querySelector('#btn-signup-submit');
-  form?.addEventListener('submit', async () => {
-    const orgName = container.querySelector('#reg-org-name')?.value?.trim();
-    const name = container.querySelector('#reg-name')?.value?.trim();
-    const email = container.querySelector('#reg-email')?.value?.trim();
-    const phone = container.querySelector('#reg-phone')?.value?.trim();
-    const password = pwdInput?.value;
-    const termsChecked = container.querySelector('#reg-terms-check')?.checked;
 
-    if (!termsChecked) {
-      showAlert(container, 'Please accept the Terms of Service and Privacy Policy to continue.');
-      return;
-    }
+  const pwdToggle = container.querySelector('.password-toggle-btn');
+  const pwdInput = container.querySelector('#reg-password');
+  if (pwdToggle && pwdInput) {
+    pwdToggle.addEventListener('click', () => {
+      pwdInput.type = pwdInput.type === 'password' ? 'text' : 'password';
+    });
+  }
 
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Creating library...';
-    clearAlert(container);
-
-    try {
-      await store.register(orgName, name, email, password, phone ? `+91${phone}` : '');
-      toast.show('Library created! Welcome to StudyFlow.', 'success');
-      window.location.hash = '#/dashboard';
-      if (typeof app !== 'undefined') app._navigate();
-    } catch (e) {
-      showAlert(container, e.message || 'Registration failed.');
-    } finally {
-      submitBtn.disabled = false;
-      submitBtn.textContent = 'Create My Library';
-    }
-  });
-
-  // Google Signup
-  const googleBtn = container.querySelector('#btn-google-signup');
-  googleBtn?.addEventListener('click', async () => {
-    googleBtn.disabled = true;
-    clearAlert(container);
-    try {
-      await initiateGoogleSignIn(container, true /* isSignup */);
-    } catch (e) {
-      showAlert(container, e.message || 'Google sign-up failed.');
-      googleBtn.disabled = false;
-    }
-  });
-
-  // Create Library Form (Step 2)
-  const libForm = container.querySelector('#create-library-form');
-  const libSubmitBtn = container.querySelector('#btn-create-lib-submit');
-  libForm?.addEventListener('submit', async () => {
-    const orgName = container.querySelector('#new-lib-name')?.value?.trim();
-    const city = container.querySelector('#new-lib-city')?.value?.trim();
-    const name = container.querySelector('#new-owner-name')?.value?.trim();
-
-    libSubmitBtn.disabled = true;
-    libSubmitBtn.textContent = 'Setting up library...';
-    clearAlert(container);
-
-    try {
-      await store.createLibrary({ orgName, city, name });
-      toast.show('Library ready! Welcome aboard.', 'success');
-      window.location.hash = '#/dashboard';
-      if (typeof app !== 'undefined') app._navigate();
-    } catch (e) {
-      showAlert(container, e.message || 'Failed to create library.');
-    } finally {
-      libSubmitBtn.disabled = false;
-      libSubmitBtn.textContent = 'Launch Library Dashboard';
-    }
-  });
-}
-
-function setupInviteEvents(container, token) {
-  const subheading = container.querySelector('#invite-subheading');
-  const content = container.querySelector('#invite-card-content');
-  const orgNameEl = container.querySelector('#invite-org-name');
-  const roleEl = container.querySelector('#invite-role-badge');
-  const recipientEl = container.querySelector('#invite-recipient');
-  const googleBtn = container.querySelector('#btn-invite-google');
-
-  // Load invitation public info
-  fetch(`/api/auth?action=invitation_info&token=${encodeURIComponent(token)}`)
-    .then(r => r.json())
-    .then(data => {
-      if (!data.ok) {
-        subheading.textContent = data.error || 'Invitation is invalid or expired.';
+  // Google Sign Up
+  if (googleBtn) {
+    googleBtn.addEventListener('click', async () => {
+      alertEl.style.display = 'none';
+      const termsCheck = container.querySelector('#reg-terms-check');
+      if (termsCheck && !termsCheck.checked) {
+        showAuthAlert(alertEl, 'Please agree to the Terms of Service to create an account.');
+        termsCheck.focus();
         return;
       }
-      subheading.textContent = 'You have been invited to join as staff';
-      orgNameEl.textContent = data.organizationName;
-      roleEl.textContent = data.role;
-      recipientEl.textContent = data.email || data.phone || '';
-      content.style.display = 'block';
-    })
-    .catch(err => {
-      subheading.textContent = 'Unable to load invitation details.';
+
+      googleBtn.disabled = true;
+      googleBtn.style.opacity = '0.7';
+
+      try {
+        await ensureFirebaseSdk();
+        const auth = window.firebase.auth();
+        const provider = new window.firebase.auth.GoogleAuthProvider();
+        const result = await auth.signInWithPopup(provider);
+        const idToken = await result.user.getIdToken();
+
+        await store.sessionFromIdToken(idToken, 'signup', null, true);
+        window.location.hash = '#/setup-library';
+      } catch (err) {
+        showAuthAlert(alertEl, err.message || 'Google sign up failed');
+      } finally {
+        googleBtn.disabled = false;
+        googleBtn.style.opacity = '1';
+      }
     });
-
-  googleBtn?.addEventListener('click', async () => {
-    googleBtn.disabled = true;
-    clearAlert(container);
-    try {
-      await initiateGoogleSignIn(container, false);
-      // Once signed in, accept the invite
-      const acceptRes = await fetch('/api/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
-        body: JSON.stringify({ action: 'accept_invitation', token }),
-      });
-      const acceptJson = await acceptRes.json();
-      if (!acceptJson.ok) throw new Error(acceptJson.error || 'Failed to accept invitation');
-
-      toast.show('Invitation accepted! Welcome to the team.', 'success');
-      await store.load();
-      window.location.hash = '#/dashboard';
-      if (typeof app !== 'undefined') app._navigate();
-    } catch (e) {
-      showAlert(container, e.message || 'Failed to accept invitation.');
-      googleBtn.disabled = false;
-    }
-  });
-}
-
-// ── Firebase Helpers ───────────────────────────────────────────────────────
-
-let confirmationResult = null;
-
-async function ensureFirebaseInitialized() {
-  if (typeof firebase === 'undefined') {
-    throw new Error('Firebase Web SDK is loading. Please refresh the page if this persists.');
-  }
-  if (firebase.apps && firebase.apps.length > 0) {
-    return;
-  }
-  try {
-    const res = await fetch('/api/auth?action=client_config');
-    const json = await res.json();
-    if (json.ok && json.firebase && json.firebase.apiKey) {
-      firebase.initializeApp(json.firebase);
-    }
-  } catch (e) {
-    console.warn('Unable to auto-fetch Firebase client config:', e);
-  }
-}
-
-async function initiateGoogleSignIn(container, isSignup = false) {
-  await ensureFirebaseInitialized();
-  if (typeof firebase === 'undefined' || !firebase.auth) {
-    throw new Error('Google Sign-In service is not ready. Please check your Firebase configuration.');
   }
 
-  const provider = new firebase.auth.GoogleAuthProvider();
-  provider.addScope('email');
-  provider.addScope('profile');
+  // Email + Password Sign Up
+  if (form) {
+    form.addEventListener('submit', async () => {
+      alertEl.style.display = 'none';
+      const name = container.querySelector('#reg-name').value.trim();
+      const email = container.querySelector('#reg-email').value.trim();
+      const phone = container.querySelector('#reg-phone').value.trim();
+      const password = container.querySelector('#reg-password').value;
+      const termsAccepted = container.querySelector('#reg-terms-check').checked;
 
-  const result = await firebase.auth().signInWithPopup(provider);
-  const idToken = await result.user.getIdToken();
-
-  const sessionRes = await store.sessionFromIdToken(idToken);
-  if (sessionRes.needsLibrary) {
-    // Switch to step 2 in signup
-    const step1 = container.querySelector('#signup-step-1');
-    const step2 = container.querySelector('#signup-step-2');
-    if (step1 && step2) {
-      step1.style.display = 'none';
-      step2.style.display = 'block';
-      const nameInput = container.querySelector('#new-owner-name');
-      if (nameInput && result.user.displayName) nameInput.value = result.user.displayName;
-      return;
-    }
-  }
-
-  toast.show(`Signed in as ${result.user.displayName || result.user.email}!`, 'success');
-  window.location.hash = '#/dashboard';
-  if (typeof app !== 'undefined') app._navigate();
-}
-
-function setupPhoneOtpFlow(container) {
-  const phoneInput = container.querySelector('#phone-number-input');
-  const sendBtn = container.querySelector('#btn-send-otp');
-  const otpInput = container.querySelector('#otp-code-input');
-  const verifyBtn = container.querySelector('#btn-verify-otp');
-  const changeBtn = container.querySelector('#btn-change-phone');
-  const resendBtn = container.querySelector('#btn-resend-otp');
-  const inputStep = container.querySelector('#phone-input-step');
-  const verifyStep = container.querySelector('#otp-verify-step');
-  const targetLabel = container.querySelector('#otp-sent-target');
-  const timerSec = container.querySelector('#timer-sec');
-  const timerWrap = container.querySelector('#otp-timer');
-
-  let countdownInterval = null;
-
-  function startTimer(seconds = 30) {
-    let remaining = seconds;
-    timerWrap.style.display = 'inline';
-    resendBtn.style.display = 'none';
-    timerSec.textContent = remaining;
-
-    clearInterval(countdownInterval);
-    countdownInterval = setInterval(() => {
-      remaining--;
-      timerSec.textContent = remaining;
-      if (remaining <= 0) {
-        clearInterval(countdownInterval);
-        timerWrap.style.display = 'none';
-        resendBtn.style.display = 'inline';
-      }
-    }, 1000);
-  }
-
-  sendBtn?.addEventListener('click', async () => {
-    const rawDigits = phoneInput.value.replace(/\D/g, '');
-    if (rawDigits.length !== 10) {
-      showAlert(container, 'Please enter a valid 10-digit mobile number.');
-      return;
-    }
-
-    const fullPhone = `+91${rawDigits}`;
-    sendBtn.disabled = true;
-    sendBtn.textContent = 'Sending SMS...';
-    clearAlert(container);
-
-    try {
-      await ensureFirebaseInitialized();
-      if (typeof firebase === 'undefined' || !firebase.auth) {
-        throw new Error('Phone authentication service is not initialized.');
+      if (!termsAccepted) {
+        showAuthAlert(alertEl, 'Please agree to the Terms of Service to create an account.');
+        return;
       }
 
-      if (!window.recaptchaVerifier) {
-        window.recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', {
-          size: 'invisible',
-        });
+      if (password.length < 10) {
+        showAuthAlert(alertEl, 'Password must be at least 10 characters long.');
+        return;
       }
 
-      confirmationResult = await firebase.auth().signInWithPhoneNumber(fullPhone, window.recaptchaVerifier);
-      inputStep.style.display = 'none';
-      verifyStep.style.display = 'block';
-      targetLabel.textContent = `Code sent to +91 ${rawDigits.slice(0, 2)}••••••${rawDigits.slice(-2)}`;
-      startTimer(30);
-      otpInput.focus();
-    } catch (e) {
-      showAlert(container, e.message || 'Failed to send OTP code.');
-      if (window.recaptchaVerifier) {
-        try { window.recaptchaVerifier.render().then(id => grecaptcha.reset(id)); } catch (_) {}
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Creating Account...';
+
+      try {
+        await store.register(name, email, password, phone, termsAccepted);
+        window.location.hash = '#/setup-library';
+      } catch (err) {
+        showAuthAlert(alertEl, err.message || 'Registration failed');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Continue to Library Setup';
       }
-    } finally {
-      sendBtn.disabled = false;
-      sendBtn.textContent = 'Send OTP Code';
-    }
-  });
-
-  changeBtn?.addEventListener('click', () => {
-    verifyStep.style.display = 'none';
-    inputStep.style.display = 'block';
-    clearInterval(countdownInterval);
-  });
-
-  resendBtn?.addEventListener('click', () => {
-    sendBtn?.click();
-  });
-
-  // Auto-submit OTP on 6 digits
-  otpInput?.addEventListener('input', () => {
-    const val = otpInput.value.replace(/\D/g, '');
-    otpInput.value = val;
-    if (val.length === 6) {
-      verifyBtn?.click();
-    }
-  });
-
-  verifyBtn?.addEventListener('click', async () => {
-    const code = otpInput.value.trim();
-    if (code.length !== 6) {
-      showAlert(container, 'Please enter the 6-digit OTP code.');
-      return;
-    }
-
-    if (!confirmationResult) {
-      showAlert(container, 'Please request an OTP first.');
-      return;
-    }
-
-    verifyBtn.disabled = true;
-    verifyBtn.textContent = 'Verifying...';
-    clearAlert(container);
-
-    try {
-      const result = await confirmationResult.confirm(code);
-      const idToken = await result.user.getIdToken();
-      const sessionRes = await store.sessionFromIdToken(idToken);
-
-      toast.show('Signed in successfully!', 'success');
-      window.location.hash = sessionRes.needsLibrary ? '#/signup' : '#/dashboard';
-      if (typeof app !== 'undefined') app._navigate();
-    } catch (e) {
-      showAlert(container, e.message || 'Incorrect OTP code. Please try again.');
-    } finally {
-      verifyBtn.disabled = false;
-      verifyBtn.textContent = 'Verify & Sign In';
-    }
-  });
+    });
+  }
 }

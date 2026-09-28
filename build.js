@@ -90,6 +90,8 @@ let appContent = fs.readFileSync(appJsPath, 'utf8');
 const routeReplacements = {
   "'/login': () => import('./pages/auth.js').then(m => m.renderLoginPage)": "'/login': () => Promise.resolve(window.Pages.renderLoginPage)",
   "'/signup': () => import('./pages/auth.js').then(m => m.renderSignupPage)": "'/signup': () => Promise.resolve(window.Pages.renderSignupPage)",
+  "'/setup-library': () => import('./pages/auth.js').then(m => m.renderSetupLibraryPage)": "'/setup-library': () => Promise.resolve(window.Pages.renderSetupLibraryPage)",
+  "'/onboarding': () => import('./pages/auth.js').then(m => m.renderOnboardingPage)": "'/onboarding': () => Promise.resolve(window.Pages.renderOnboardingPage)",
   "'/invite': () => import('./pages/auth.js').then(m => m.renderInvitePage)": "'/invite': () => Promise.resolve(window.Pages.renderInvitePage)",
   "'/forgot-password': () => import('./pages/auth.js').then(m => m.renderForgotPasswordPage)": "'/forgot-password': () => Promise.resolve(window.Pages.renderForgotPasswordPage)",
   "'/landing': () => import('./pages/landing.js').then(m => m.renderLanding)": "'/landing': () => Promise.resolve(window.Pages.renderLanding)",

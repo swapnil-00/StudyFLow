@@ -242,20 +242,6 @@ export function renderSettings(container) {
             </div>
           </div>
         </div>
-
-        <!-- Danger Zone -->
-        <div class="card" style="border-color:var(--sf-error-200);">
-          <div class="card-header"><div class="card-title" style="color:var(--sf-error-600);">Danger Zone</div></div>
-          <div class="card-body">
-            <div style="display:flex;align-items:center;justify-content:space-between;">
-              <div>
-                <div style="font-size:var(--text-sm);font-weight:var(--fw-medium);">Reset Demo Data</div>
-                <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);">Clear all data and reload fresh demo</div>
-              </div>
-              <button class="btn btn-danger" onclick="app.resetApp()">Reset</button>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   `;

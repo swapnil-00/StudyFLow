@@ -4,6 +4,8 @@
 const routes = {
   '/login': () => import('./pages/auth.js').then(m => m.renderLoginPage),
   '/signup': () => import('./pages/auth.js').then(m => m.renderSignupPage),
+  '/setup-library': () => import('./pages/auth.js').then(m => m.renderSetupLibraryPage),
+  '/onboarding': () => import('./pages/auth.js').then(m => m.renderOnboardingPage),
   '/invite': () => import('./pages/auth.js').then(m => m.renderInvitePage),
   '/forgot-password': () => import('./pages/auth.js').then(m => m.renderForgotPasswordPage),
   '/landing': () => import('./pages/landing.js').then(m => m.renderLanding),
@@ -57,12 +59,6 @@ class App {
 
     if (typeof dismissAppLoader === 'function') {
       dismissAppLoader();
-    }
-
-    // Automatically prompt onboarding if new organization has 0 branches or hasn't completed setup
-    const org = store.organization;
-    if (store.isAuthenticated() && org && (!org.onboardingCompleted || store.getBranches().length === 0)) {
-      setTimeout(() => this.openOnboardingModal(), 600);
     }
   }
 
@@ -238,11 +234,37 @@ class App {
     const path = rawHash.split('?')[0];
     const params = new URLSearchParams(rawHash.split('?')[1] || '');
 
+    // ── Server Auth State Router Guard (AUTH-05, Plan §3.1) ──────────────
+    const authState = store.authState; // 'anonymous' | 'needs_library' | 'needs_onboarding' | 'ready'
+    const isAnonymousPath = ['/landing', '/login', '/signup', '/forgot-password'].includes(path) || path.startsWith('/invite');
+
+    if (authState === 'anonymous') {
+      if (!isAnonymousPath) {
+        window.location.hash = '#/login';
+        return;
+      }
+    } else if (authState === 'needs_library') {
+      if (path !== '/setup-library' && !path.startsWith('/invite')) {
+        window.location.hash = '#/setup-library';
+        return;
+      }
+    } else if (authState === 'needs_onboarding') {
+      if (path !== '/onboarding' && path !== '/setup-library' && !path.startsWith('/invite')) {
+        window.location.hash = '#/onboarding';
+        return;
+      }
+    } else if (authState === 'ready') {
+      if (['/login', '/signup', '/setup-library', '/onboarding'].includes(path)) {
+        window.location.hash = '#/dashboard';
+        return;
+      }
+    }
+
     this.currentRoute = path;
     this._updateActiveNav(path);
     this.closeMobileSidebar();
 
-    const isAuthRoute = ['/landing', '/login', '/signup', '/forgot-password'].includes(path) || path.startsWith('/invite');
+    const isAuthRoute = ['/landing', '/login', '/signup', '/forgot-password', '/setup-library', '/onboarding'].includes(path) || path.startsWith('/invite');
     const appEl = document.getElementById('app');
     if (appEl) {
       if (isAuthRoute) {
@@ -822,7 +844,7 @@ class App {
 
     if (ok) {
       await store.logout();
-      toast.show('Signed out successfully. Switched to demo environment.', 'info');
+      toast.show('Signed out successfully.', 'info');
       this._render();
       this._navigate();
     }

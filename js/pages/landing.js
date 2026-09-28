@@ -44,7 +44,6 @@ export function renderLanding(container) {
                 ${icons.sun}
               </button>
               <button class="btn btn-ghost btn-sm" onclick="app.openLoginModal()">Sign In</button>
-              <button class="btn btn-secondary btn-sm" onclick="app.navigate('/dashboard')">Launch Demo</button>
               <button class="btn btn-primary btn-sm" onclick="app.openRegisterModal()">⚡ Start Free Trial</button>
             </div>
           </div>
@@ -269,14 +268,14 @@ export function renderLanding(container) {
             <div class="sf-demo-box">
               <div style="max-width:600px;margin:0 auto;text-align:center;">
                 <div style="font-size:48px;margin-bottom:12px;">⚡</div>
-                <h3 style="font-size:22px;font-weight:800;color:var(--color-text-primary);margin-bottom:8px;">Ready to test drive StudyFlow?</h3>
-                <p style="font-size:14px;color:var(--color-text-secondary);margin-bottom:24px;">No registration needed to test. Try assigning seats, recording mock payments, creating students, and generating invoices in real-time.</p>
+                <h3 style="font-size:22px;font-weight:800;color:var(--color-text-primary);margin-bottom:8px;">Ready to modernize your study hall?</h3>
+                <p style="font-size:14px;color:var(--color-text-secondary);margin-bottom:24px;">Manage students, create visual interactive seat layouts, collect payments, and send instant WhatsApp receipts in seconds.</p>
                 <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
-                  <button class="btn btn-primary btn-lg" onclick="app.navigate('/dashboard')">
-                    🚀 Launch Interactive Dashboard
+                  <button class="btn btn-primary btn-lg" onclick="app.openRegisterModal()">
+                    🚀 Start Free Trial (No Card Required)
                   </button>
-                  <button class="btn btn-secondary btn-lg" onclick="app.navigate('/seat-map')">
-                    🪑 View Live Seat Map
+                  <button class="btn btn-secondary btn-lg" onclick="app.openLoginModal()">
+                    🔐 Sign In to Existing Library
                   </button>
                 </div>
               </div>
@@ -521,8 +520,8 @@ export function renderLanding(container) {
               <button class="btn btn-lg" onclick="app.openRegisterModal()" style="background:white;color:var(--color-primary);font-weight:700;padding:14px 28px;">
                 ✨ Start 14-Day Free Trial
               </button>
-              <button class="btn btn-lg" onclick="app.navigate('/dashboard')" style="background:rgba(255,255,255,0.15);color:white;border:1px solid rgba(255,255,255,0.3);padding:14px 24px;">
-                🚀 Test Live Demo
+              <button class="btn btn-lg" onclick="app.openLoginModal()" style="background:rgba(255,255,255,0.15);color:white;border:1px solid rgba(255,255,255,0.3);padding:14px 24px;">
+                🔐 Existing Library Sign In
               </button>
             </div>
           </div>
@@ -547,7 +546,7 @@ export function renderLanding(container) {
                 <a href="#features" onclick="scrollToSection(event, 'features')">Seat Map</a>
                 <a href="#features" onclick="scrollToSection(event, 'features')">WhatsApp Invoicing</a>
                 <a href="#pricing" onclick="scrollToSection(event, 'pricing')">Pricing Plans</a>
-                <a href="javascript:void(0)" onclick="app.navigate('/dashboard')">Live Demo</a>
+                <a href="javascript:void(0)" onclick="app.openRegisterModal()">Free Trial</a>
               </div>
               <div class="sf-footer-col">
                 <div class="sf-footer-col-title">Account</div>

@@ -22,6 +22,8 @@ class Store {
     this._db = null;
     this._organization = null;
     this._currentUser = null;
+    this._authState = 'anonymous';
+    this._libraries = [];
     this._subscribers = [];
     this._loading = false;
     this._loaded = false;
@@ -40,27 +42,58 @@ class Store {
     }
     this._loading = true;
     try {
-      const res = await fetch(`${API_BASE}/api/data`, { credentials: 'same-origin' });
-      const json = await res.json();
-      if (res.ok && json.ok) {
-        this._db = json.db;
-        this._organization = json.organization || null;
-        this._currentUser = json.user || null;
+      // 1. Fetch Auth & Membership State from /api/auth?action=me
+      const meRes = await fetch(`${API_BASE}/api/auth?action=me`, { credentials: 'same-origin' });
+      const meJson = await meRes.json();
+
+      if (meRes.ok && meJson.ok && meJson.state !== 'anonymous') {
+        this._currentUser = meJson.user || null;
+        this._organization = meJson.activeLibrary || null;
+        this._authState = meJson.state || 'anonymous';
+        this._libraries = meJson.libraries || [];
+
+        // 2. Only fetch library data if in 'ready' state
+        if (this._authState === 'ready') {
+          const dataRes = await fetch(`${API_BASE}/api/data`, { credentials: 'same-origin' });
+          const dataJson = await dataRes.json();
+          if (dataRes.ok && dataJson.ok) {
+            this._db = dataJson.db;
+            if (dataJson.organization) this._organization = dataJson.organization;
+          } else {
+            this._db = this._emptyDb();
+          }
+        } else {
+          this._db = this._emptyDb();
+        }
       } else {
         this._currentUser = null;
         this._organization = null;
-        this._db = { branches:[], floors:[], rooms:[], seats:[], students:[], membershipPlans:[], memberships:[], seatAssignments:[], payments:[], expenses:[], notifications:[], activityLog:[], waitlist:[], staff:[], seatTransfers:[], documents:[], settings:{} };
+        this._authState = 'anonymous';
+        this._libraries = [];
+        this._db = this._emptyDb();
       }
       this._loaded = true;
     } catch (e) {
       console.error('Store load failed:', e);
       this._lastLoadError = e.message;
       this._currentUser = null;
-      this._db = { branches:[], floors:[], rooms:[], seats:[], students:[], membershipPlans:[], memberships:[], seatAssignments:[], payments:[], expenses:[], notifications:[], activityLog:[], waitlist:[], staff:[], seatTransfers:[], documents:[], settings:{} };
+      this._organization = null;
+      this._authState = 'anonymous';
+      this._libraries = [];
+      this._db = this._emptyDb();
       this._loaded = true;
     }
     this._loading = false;
     this._notify();
+  }
+
+  _emptyDb() {
+    return {
+      branches: [], floors: [], rooms: [], seats: [], students: [],
+      membershipPlans: [], memberships: [], seatAssignments: [],
+      payments: [], expenses: [], notifications: [], activityLog: [],
+      waitlist: [], staff: [], seatTransfers: [], documents: [], settings: {}
+    };
   }
 
   // ── Multi-Tenant SaaS Auth Methods ──────────────────────────────
@@ -68,19 +101,20 @@ class Store {
     return this._currentUser;
   }
 
+  get authState() {
+    return this._authState || 'anonymous';
+  }
+
   get organization() {
-    return this._organization || {
-      name: 'StudyFlow Library',
-      plan: 'trial',
-      seatLimit: 75,
-      subscriptionStatus: 'active',
-      currency: 'INR',
-      onboardingCompleted: true
-    };
+    return this._organization;
+  }
+
+  get libraries() {
+    return this._libraries || [];
   }
 
   isAuthenticated() {
-    return Boolean(this._currentUser);
+    return Boolean(this._currentUser) && this._authState !== 'anonymous';
   }
 
   async login(email, password) {
@@ -94,57 +128,85 @@ class Store {
     if (!json.ok) throw new Error(json.error || 'Login failed');
 
     this._currentUser = json.user;
-    this._organization = json.organization;
+    this._organization = json.activeLibrary || null;
+    this._authState = json.state || 'ready';
+    this._libraries = json.libraries || [];
     this._loaded = false;
     await this.load();
     return json;
   }
 
-  async register(orgName, name, email, password, phone) {
+  async register(name, email, password, phone, termsAccepted) {
     const res = await fetch(`${API_BASE}/api/auth`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
-      body: JSON.stringify({ action: 'register', orgName, name, email, password, phone })
+      body: JSON.stringify({ action: 'register', name, email, password, phone, termsAccepted })
     });
     const json = await res.json();
     if (!json.ok) throw new Error(json.error || 'Registration failed');
 
     this._currentUser = json.user;
-    this._organization = json.organization;
+    this._organization = null;
+    this._authState = json.state || 'needs_library';
+    this._libraries = [];
     this._loaded = false;
     await this.load();
     return json;
   }
 
-  async sessionFromIdToken(idToken) {
+  async sessionFromIdToken(idToken, intent = 'login', inviteToken = null, termsAccepted = false) {
     const res = await fetch(`${API_BASE}/api/auth`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
-      body: JSON.stringify({ action: 'session', idToken })
+      body: JSON.stringify({ action: 'session', idToken, intent, inviteToken, termsAccepted })
     });
     const json = await res.json();
-    if (!json.ok) throw new Error(json.error || 'Authentication failed');
+    if (!json.ok) {
+      const err = new Error(json.error || 'Authentication failed');
+      err.code = json.code;
+      throw err;
+    }
 
     this._currentUser = json.user;
-    this._organization = json.organization;
+    this._organization = json.activeLibrary || null;
+    this._authState = json.state || 'needs_library';
+    this._libraries = json.libraries || [];
     this._loaded = false;
     await this.load();
     return json;
   }
 
-  async createLibrary({ orgName, city, name }) {
+  async createLibrary({ orgName, city }) {
     const res = await fetch(`${API_BASE}/api/auth`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
-      body: JSON.stringify({ action: 'create_library', orgName, city, name })
+      body: JSON.stringify({ action: 'create_library', orgName, city })
     });
     const json = await res.json();
     if (!json.ok) throw new Error(json.error || 'Failed to create library');
 
-    this._organization = json.organization;
+    this._organization = json.activeLibrary;
+    this._authState = json.state || 'needs_onboarding';
+    this._loaded = false;
+    await this.load();
+    return json;
+  }
+
+  async switchLibrary(organizationId) {
+    const res = await fetch(`${API_BASE}/api/auth`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ action: 'switch_library', organizationId })
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || 'Failed to switch library');
+
+    this._organization = json.activeLibrary;
+    this._authState = json.state;
     this._loaded = false;
     await this.load();
     return json;
@@ -160,6 +222,8 @@ class Store {
 
     this._currentUser = null;
     this._organization = null;
+    this._authState = 'anonymous';
+    this._libraries = [];
     this._loaded = false;
     await this.load();
   }
@@ -174,6 +238,8 @@ class Store {
 
     this._currentUser = null;
     this._organization = null;
+    this._authState = 'anonymous';
+    this._libraries = [];
     this._loaded = false;
     await this.load();
   }
