@@ -31,11 +31,29 @@ function escapeAttr(str) {
     .replace(/>/g, '&gt;');
 }
 
+const PAYMENT_MODES = [
+  { value: 'cash', label: 'Cash' },
+  { value: 'upi', label: 'UPI' },
+  { value: 'card', label: 'Card' },
+  { value: 'bank_transfer', label: 'Bank Transfer' },
+  { value: 'cheque', label: 'Cheque' },
+  { value: 'other', label: 'Other' }
+];
+
+function formatPaymentMode(mode) {
+  if (!mode) return '—';
+  const found = PAYMENT_MODES.find(m => m.value === String(mode).toLowerCase().replace(/\s+/g, '_'));
+  return found ? found.label : (String(mode).charAt(0).toUpperCase() + String(mode).slice(1));
+}
+
 // Global exposure for all pages and components
 if (typeof window !== 'undefined') {
+  window.PAYMENT_MODES = PAYMENT_MODES;
   window.utils = window.utils || {};
   window.utils.escapeHtml = escapeHtml;
   window.utils.escapeAttr = escapeAttr;
+  window.utils.PAYMENT_MODES = PAYMENT_MODES;
+  window.utils.formatPaymentMode = formatPaymentMode;
   window.escapeHtml = escapeHtml;
   window.escapeAttr = escapeAttr;
 

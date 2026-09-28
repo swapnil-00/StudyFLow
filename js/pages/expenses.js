@@ -237,7 +237,7 @@ export function renderExpenses(container) {
         <div class="grid-2" style="gap:var(--space-3);">
           <div class="form-group">
             <label class="form-label">Date <span class="required">*</span></label>
-            <input type="date" class="input" id="exp-date-input" value="${new Date().toISOString().split('T')[0]}">
+            <input type="date" class="input" id="exp-date-input" value="${utils.today()}">
           </div>
           <div class="form-group">
             <label class="form-label">Payment Method</label>
@@ -247,6 +247,7 @@ export function renderExpenses(container) {
               <option value="bank_transfer">Bank Transfer</option>
               <option value="card">Card</option>
               <option value="cheque">Cheque</option>
+              <option value="other">Other</option>
             </select>
           </div>
         </div>
@@ -336,8 +337,15 @@ export function renderExpenses(container) {
           <div class="form-group">
             <label class="form-label">Payment Method</label>
             <select class="select" id="exp-edit-method">
-              ${['cash', 'upi', 'bank_transfer', 'card', 'cheque'].map(m => `
-                <option value="${escAttr(m)}" ${(expense.paymentMode || expense.method) === m ? 'selected' : ''}>${esc(m.toUpperCase())}</option>
+              ${(window.PAYMENT_MODES || [
+                { value: 'cash', label: 'Cash' },
+                { value: 'upi', label: 'UPI' },
+                { value: 'card', label: 'Card' },
+                { value: 'bank_transfer', label: 'Bank Transfer' },
+                { value: 'cheque', label: 'Cheque' },
+                { value: 'other', label: 'Other' }
+              ]).map(m => `
+                <option value="${escAttr(m.value)}" ${(expense.paymentMode || expense.method) === m.value ? 'selected' : ''}>${esc(m.label)}</option>
               `).join('')}
             </select>
           </div>

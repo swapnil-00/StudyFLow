@@ -677,7 +677,12 @@ window.openAssignModal = function(seatId, preselectedStudentId) {
       <div class="form-group">
         <label class="form-label">Payment Method</label>
         <select class="select" id="assign-payment-method">
-          <option>Cash</option><option>UPI</option><option>Card</option><option>Bank Transfer</option><option>Other</option>
+          <option value="cash">Cash</option>
+          <option value="upi">UPI</option>
+          <option value="card">Card</option>
+          <option value="bank_transfer">Bank Transfer</option>
+          <option value="cheque">Cheque</option>
+          <option value="other">Other</option>
         </select>
       </div>
 
@@ -1098,7 +1103,12 @@ window.openPaymentModal = function(studentId, membershipId) {
       <div class="form-group">
         <label class="form-label">Payment Method <span class="required">*</span></label>
         <select class="select" id="pay-method">
-          <option>Cash</option><option>UPI</option><option>Card</option><option>Bank Transfer</option><option>Other</option>
+          <option value="cash">Cash</option>
+          <option value="upi">UPI</option>
+          <option value="card">Card</option>
+          <option value="bank_transfer">Bank Transfer</option>
+          <option value="cheque">Cheque</option>
+          <option value="other">Other</option>
         </select>
       </div>
 
@@ -1109,7 +1119,7 @@ window.openPaymentModal = function(studentId, membershipId) {
 
       <div class="form-group">
         <label class="form-label">Date</label>
-        <input type="date" class="input" id="pay-date" value="${new Date().toISOString().split('T')[0]}">
+        <input type="date" class="input" id="pay-date" value="${utils.today()}">
       </div>
 
       <div class="form-group">
@@ -1273,7 +1283,12 @@ window.openRenewModal = function(studentId, seatId) {
       <div class="form-group">
         <label class="form-label">Payment Method</label>
         <select class="select" id="renew-method">
-          <option>Cash</option><option>UPI</option><option>Card</option><option>Bank Transfer</option>
+          <option value="cash">Cash</option>
+          <option value="upi">UPI</option>
+          <option value="card">Card</option>
+          <option value="bank_transfer">Bank Transfer</option>
+          <option value="cheque">Cheque</option>
+          <option value="other">Other</option>
         </select>
       </div>
     </div>

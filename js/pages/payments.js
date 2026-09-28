@@ -155,6 +155,7 @@ export function renderPayments(container) {
               <option value="card" ${filterMethod === 'card' ? 'selected' : ''}>Card</option>
               <option value="bank_transfer" ${filterMethod === 'bank_transfer' ? 'selected' : ''}>Bank Transfer</option>
               <option value="cheque" ${filterMethod === 'cheque' ? 'selected' : ''}>Cheque</option>
+              <option value="other" ${filterMethod === 'other' ? 'selected' : ''}>Other</option>
             </select>
           </div>
           <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);">
@@ -453,7 +454,7 @@ export function renderPayments(container) {
           </div>
           <div class="form-group">
             <label class="form-label">Payment Date <span class="required">*</span></label>
-            <input type="date" class="input" id="qpay-date" value="${new Date().toISOString().split('T')[0]}">
+            <input type="date" class="input" id="qpay-date" value="${utils.today()}">
           </div>
         </div>
         <div class="grid-2" style="gap:var(--space-3);">
@@ -465,6 +466,7 @@ export function renderPayments(container) {
               <option value="card">Card</option>
               <option value="bank_transfer">Bank Transfer</option>
               <option value="cheque">Cheque</option>
+              <option value="other">Other</option>
             </select>
           </div>
           <div class="form-group">
