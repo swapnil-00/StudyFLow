@@ -25,3 +25,7 @@ js/bundle.js
 SECURITY_REMEDIATION_REVIEW.md
 SECURITY_AUDIT_REPORT.md
 ANTIGRAVITY_FIX_PROMPT.md
+
+# Firebase service account keys
+*firebase-adminsdk*.json
+serviceAccountKey.json
