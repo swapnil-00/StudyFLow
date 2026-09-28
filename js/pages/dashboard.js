@@ -172,6 +172,26 @@ export function renderDashboard(container) {
     el.style.animationDelay = `${i * 40}ms`;
     el.classList.add('animate-fadeInUp');
   });
+
+  // Reconcile financial KPIs with /api/reports authoritative server calculations
+  store.getReports({ branchId }).then(rep => {
+    if (rep && rep.ok) {
+      const revCard = document.querySelector('#stat-revenue .stat-card-value');
+      const revSub = document.querySelector('#stat-revenue .stat-card-change');
+      const duesCard = document.querySelector('#stat-dues .stat-card-value');
+      if (revCard) {
+        const todayStr = utils.today();
+        const serverToday = (rep.dailyRevenue || []).filter(d => d.date === todayStr).reduce((s, d) => s + d.amount, 0);
+        revCard.textContent = utils.formatINR(serverToday);
+      }
+      if (revSub) {
+        revSub.textContent = `${utils.formatINR(rep.totalRevenue)} this month`;
+      }
+      if (duesCard) {
+        duesCard.textContent = utils.formatINR(rep.totalOutstandingDues);
+      }
+    }
+  }).catch(() => {});
 }
 
 function renderStatCard(label, value, sub, id, iconBg, iconColor, iconSvg) {

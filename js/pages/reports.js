@@ -110,6 +110,51 @@ export function renderReports(container) {
     };
   }
 
+  async function syncServerReports() {
+    try {
+      const todayStr = utils.today();
+      const thisMonthPrefix = todayStr.slice(0, 7);
+      let from = null, to = null;
+
+      if (selectedPeriod === 'today') {
+        from = todayStr;
+        to = todayStr;
+      } else if (selectedPeriod === 'this-week') {
+        from = utils.addDays(todayStr, -7);
+        to = todayStr;
+      } else if (selectedPeriod === 'this-month') {
+        from = `${thisMonthPrefix}-01`;
+        to = todayStr;
+      } else if (selectedPeriod === 'last-month') {
+        const [y, m] = todayStr.split('-').map(Number);
+        const lastM = m === 1 ? 12 : m - 1;
+        const lastY = m === 1 ? y - 1 : y;
+        const lastPrefix = `${lastY}-${String(lastM).padStart(2, '0')}`;
+        from = `${lastPrefix}-01`;
+        to = `${lastPrefix}-31`;
+      }
+
+      const rep = await store.getReports({ branchId, from, to });
+      if (rep && rep.ok) {
+        const revEl = document.getElementById('rep-rev-val');
+        const expEl = document.getElementById('rep-exp-val');
+        const netEl = document.getElementById('rep-net-val');
+        const duesEl = document.getElementById('rep-dues-total');
+        const age7El = document.getElementById('rep-age-7');
+        const age30El = document.getElementById('rep-age-30');
+        const ageSevEl = document.getElementById('rep-age-sev');
+
+        if (revEl) revEl.textContent = utils.formatINR(rep.totalRevenue);
+        if (expEl) expEl.textContent = utils.formatINR(rep.totalExpenses);
+        if (netEl) netEl.textContent = utils.formatINR(rep.netProfit);
+        if (duesEl) duesEl.textContent = `Total Due: ${utils.formatINR(rep.totalOutstandingDues)}`;
+        if (age7El && rep.aging) age7El.textContent = utils.formatINR(rep.aging.current || 0);
+        if (age30El && rep.aging) age30El.textContent = utils.formatINR(rep.aging.moderate || 0);
+        if (ageSevEl && rep.aging) ageSevEl.textContent = utils.formatINR(rep.aging.severe || 0);
+      }
+    } catch (_) {}
+  }
+
   function renderView() {
     const data = getPeriodData();
     const revenueChart = store.getRevenueChart(branchId, selectedPeriod === 'today' ? 1 : (selectedPeriod === 'this-week' ? 7 : 30));
@@ -145,17 +190,17 @@ export function renderReports(container) {
       <div class="grid-3" style="margin-bottom:var(--space-6);">
         <div class="stat-card">
           <div class="stat-card-top"><div class="stat-card-label">Revenue (${esc(selectedPeriod.replace('-', ' '))})</div></div>
-          <div class="stat-card-value" style="font-size:var(--text-2xl);color:var(--sf-success-600);">${utils.formatINR(data.totalRevenue)}</div>
+          <div class="stat-card-value" id="rep-rev-val" style="font-size:var(--text-2xl);color:var(--sf-success-600);">${utils.formatINR(data.totalRevenue)}</div>
           <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-top:var(--space-1);">${data.payments.length} transactions</div>
         </div>
         <div class="stat-card">
           <div class="stat-card-top"><div class="stat-card-label">Expenses (${esc(selectedPeriod.replace('-', ' '))})</div></div>
-          <div class="stat-card-value" style="font-size:var(--text-2xl);color:var(--sf-error-600);">${utils.formatINR(data.totalExpenses)}</div>
+          <div class="stat-card-value" id="rep-exp-val" style="font-size:var(--text-2xl);color:var(--sf-error-600);">${utils.formatINR(data.totalExpenses)}</div>
           <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-top:var(--space-1);">${data.expenses.length} expense records</div>
         </div>
         <div class="stat-card" style="background:${data.netProfit >= 0 ? 'var(--sf-success-50)' : 'var(--sf-error-50)'};">
           <div class="stat-card-top"><div class="stat-card-label">Net Operating Profit</div></div>
-          <div class="stat-card-value" style="font-size:var(--text-2xl);color:${data.netProfit >= 0 ? 'var(--sf-success-700)' : 'var(--sf-error-700)'};">${utils.formatINR(data.netProfit)}</div>
+          <div class="stat-card-value" id="rep-net-val" style="font-size:var(--text-2xl);color:${data.netProfit >= 0 ? 'var(--sf-success-700)' : 'var(--sf-error-700)'};">${utils.formatINR(data.netProfit)}</div>
           <div style="font-size:var(--text-xs);color:${data.netProfit >= 0 ? 'var(--sf-success-700)' : 'var(--sf-error-700)'};margin-top:var(--space-1);">Margin: ${data.totalRevenue > 0 ? Math.round((data.netProfit / data.totalRevenue) * 100) : 0}%</div>
         </div>
       </div>
@@ -235,22 +280,22 @@ export function renderReports(container) {
       <div class="card" style="margin-bottom:var(--space-6);">
         <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
           <div class="card-title">Outstanding Dues Aging</div>
-          <div style="font-size:var(--text-sm);font-weight:var(--fw-bold);color:var(--sf-error-600);">Total Due: ${utils.formatINR(data.totalOutstanding)}</div>
+          <div id="rep-dues-total" style="font-size:var(--text-sm);font-weight:var(--fw-bold);color:var(--sf-error-600);">Total Due: ${utils.formatINR(data.totalOutstanding)}</div>
         </div>
         <div class="grid-3" style="padding:var(--space-4);gap:var(--space-4);">
           <div class="card" style="margin:0;background:var(--sf-warning-50);border-color:var(--sf-warning-200);padding:var(--space-3);">
             <div style="font-size:var(--text-xs);color:var(--sf-warning-700);font-weight:600;">0–7 DAYS (RECENT)</div>
-            <div style="font-size:var(--text-xl);font-weight:bold;color:var(--sf-warning-800);margin-top:4px;">${utils.formatINR(data.aging.under7.amount)}</div>
+            <div id="rep-age-7" style="font-size:var(--text-xl);font-weight:bold;color:var(--sf-warning-800);margin-top:4px;">${utils.formatINR(data.aging.under7.amount)}</div>
             <div style="font-size:11px;color:var(--sf-warning-700);">${data.aging.under7.count} memberships</div>
           </div>
           <div class="card" style="margin:0;background:var(--sf-error-50);border-color:var(--sf-error-200);padding:var(--space-3);">
             <div style="font-size:var(--text-xs);color:var(--sf-error-700);font-weight:600;">8–30 DAYS (MODERATE)</div>
-            <div style="font-size:var(--text-xl);font-weight:bold;color:var(--sf-error-800);margin-top:4px;">${utils.formatINR(data.aging.under30.amount)}</div>
+            <div id="rep-age-30" style="font-size:var(--text-xl);font-weight:bold;color:var(--sf-error-800);margin-top:4px;">${utils.formatINR(data.aging.under30.amount)}</div>
             <div style="font-size:11px;color:var(--sf-error-700);">${data.aging.under30.count} memberships</div>
           </div>
           <div class="card" style="margin:0;background:#fef2f2;border-color:#fca5a5;padding:var(--space-3);">
             <div style="font-size:var(--text-xs);color:#991b1b;font-weight:600;">30+ DAYS (SEVERE)</div>
-            <div style="font-size:var(--text-xl);font-weight:bold;color:#991b1b;margin-top:4px;">${utils.formatINR(data.aging.over30.amount)}</div>
+            <div id="rep-age-sev" style="font-size:var(--text-xl);font-weight:bold;color:#991b1b;margin-top:4px;">${utils.formatINR(data.aging.over30.amount)}</div>
             <div style="font-size:11px;color:#991b1b;">${data.aging.over30.count} memberships</div>
           </div>
         </div>
@@ -268,6 +313,8 @@ export function renderReports(container) {
     document.getElementById('rep-export-btn')?.addEventListener('click', () => {
       exportReportCSV(data);
     });
+
+    syncServerReports();
   }
 
   function exportReportCSV(data) {

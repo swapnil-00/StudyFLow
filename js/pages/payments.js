@@ -52,13 +52,31 @@ export function renderPayments(container) {
     return payments.sort((a, b) => (b.date || b.createdAt || '').localeCompare(a.date || a.createdAt || ''));
   }
 
+  async function syncServerReports() {
+    try {
+      const rep = await store.getReports({ branchId });
+      if (rep && rep.ok) {
+        const todayEl = document.getElementById('pay-today-stat');
+        const monthEl = document.getElementById('pay-month-stat');
+        const duesEl = document.getElementById('pay-dues-stat');
+        if (todayEl) {
+          const todayStr = utils.today();
+          const serverToday = (rep.dailyRevenue || []).filter(d => d.date === todayStr).reduce((s, d) => s + d.amount, 0);
+          todayEl.textContent = utils.formatINR(serverToday);
+        }
+        if (monthEl) monthEl.textContent = utils.formatINR(rep.totalRevenue);
+        if (duesEl) duesEl.textContent = utils.formatINR(rep.totalOutstandingDues);
+      }
+    } catch (_) {}
+  }
+
   function renderView() {
     const allBranchPayments = store.getPayments(null, branchId);
     const todayStr = utils.today();
     const currentMonthPrefix = todayStr.slice(0, 7);
 
-    const todayTotal = allBranchPayments.filter(p => p.date === todayStr).reduce((s, p) => s + p.amount, 0);
-    const monthTotal = allBranchPayments.filter(p => p.date && p.date.startsWith(currentMonthPrefix)).reduce((s, p) => s + p.amount, 0);
+    const todayTotal = allBranchPayments.filter(p => p.status === 'recorded' && p.date === todayStr).reduce((s, p) => s + p.amount, 0);
+    const monthTotal = allBranchPayments.filter(p => p.status === 'recorded' && p.date && p.date.startsWith(currentMonthPrefix)).reduce((s, p) => s + p.amount, 0);
 
     const pendingDues = store.getPendingDues(branchId);
     const totalPending = pendingDues.reduce((s, d) => s + d.pendingAmount, 0);
@@ -85,10 +103,10 @@ export function renderPayments(container) {
 
       <!-- Stats Cards -->
       <div class="grid-4" style="margin-bottom:var(--space-6);">
-        ${renderStat('Today\'s Collection', todayTotal, 'success')}
-        ${renderStat('This Month', monthTotal, 'indigo')}
-        ${renderStat('Outstanding Dues', totalPending, 'error')}
-        ${renderStat('Recorded Payments', allBranchPayments.length + '', 'neutral')}
+        ${renderStat('Today\'s Collection', todayTotal, 'success', 'pay-today-stat')}
+        ${renderStat('This Month', monthTotal, 'indigo', 'pay-month-stat')}
+        ${renderStat('Outstanding Dues', totalPending, 'error', 'pay-dues-stat')}
+        ${renderStat('Recorded Payments', allBranchPayments.filter(p => p.status === 'recorded').length + '', 'neutral')}
       </div>
 
       <!-- Navigation Tabs -->
@@ -112,9 +130,10 @@ export function renderPayments(container) {
     document.getElementById('tab-btn-cashbook')?.addEventListener('click', () => { currentTab = 'cashbook'; renderView(); });
 
     bindSectionEvents();
+    syncServerReports();
   }
 
-  function renderStat(label, value, color) {
+  function renderStat(label, value, color, id = '') {
     const colorMap = {
       success: { text: 'var(--sf-success-700)' },
       indigo: { text: 'var(--sf-indigo-700)' },
@@ -125,7 +144,7 @@ export function renderPayments(container) {
     return `
       <div class="stat-card">
         <div class="stat-card-top"><div class="stat-card-label">${label}</div></div>
-        <div class="stat-card-value" style="font-size:var(--text-2xl);color:${c.text};">${typeof value === 'number' ? utils.formatINR(value) : value}</div>
+        <div class="stat-card-value" ${id ? `id="${id}"` : ''} style="font-size:var(--text-2xl);color:${c.text};">${typeof value === 'number' ? utils.formatINR(value) : value}</div>
       </div>
     `;
   }

@@ -925,7 +925,7 @@ class Store {
 
   // ── Payments ──────────────────────────────────────────────────────
   getPayments(membershipId, branchId) {
-    let payments = (this._db?.payments || []).filter(p => p.status !== 'voided');
+    let payments = (this._db?.payments || []).filter(p => p.status !== 'voided' && p.status !== 'refunded');
     if (membershipId) payments = payments.filter(p => p.membershipId === membershipId);
     if (branchId) payments = payments.filter(p => p.branchId === branchId);
     return payments;
