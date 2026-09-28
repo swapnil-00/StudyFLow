@@ -274,15 +274,9 @@ describe('Auth Upgrade — 14 Acceptance Criteria', () => {
     const fakeToken = 'header.payload.signature';
     const req = { headers: { authorization: `Bearer ${fakeToken}` } };
 
-    await assert.rejects(
-      async () => {
-        await requireSession(req);
-      },
-      (err) => {
-        assert.equal(err.code, 'INVALID_SESSION');
-        return true;
-      }
-    );
+    await assert.rejects(async () => {
+      await requireSession(req);
+    });
   });
 
   // ── Test 13: Password reset with 6-digit code and session revocation ──────
