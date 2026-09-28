@@ -3,7 +3,7 @@ export function renderExpenses(container) {
   const esc = (s) => (typeof window !== 'undefined' && window.escapeHtml ? window.escapeHtml(s) : String(s == null ? '' : s));
   const escAttr = (s) => (typeof window !== 'undefined' && window.escapeAttr ? window.escapeAttr(s) : String(s == null ? '' : s));
 
-  const branchId = store.getActiveBranchId();
+  let branchId = store.getActiveBranchId();
   let filterCategory = 'all';
   let filterPeriod = 'this-month';
   let filterSearch = '';
@@ -305,6 +305,12 @@ export function renderExpenses(container) {
         });
         modal.close();
 
+        // If saved to a different branch, switch active branch so it is immediately visible
+        if (expBranchId && expBranchId !== branchId) {
+          store.setActiveBranch(expBranchId);
+          branchId = expBranchId;
+        }
+
         // Navigate period filter to expense date month if needed
         const expMonth = date.slice(0, 7);
         const todayMonth = utils.today().slice(0, 7);
@@ -428,6 +434,12 @@ export function renderExpenses(container) {
           receiptRef
         });
         modal.close();
+
+        if (expBranchId && expBranchId !== branchId) {
+          store.setActiveBranch(expBranchId);
+          branchId = expBranchId;
+        }
+
         toast.show('Expense updated successfully!', 'success');
         renderView();
       } catch (err) {
