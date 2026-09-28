@@ -544,9 +544,28 @@ function setupInviteEvents(container, token) {
 
 let confirmationResult = null;
 
+async function ensureFirebaseInitialized() {
+  if (typeof firebase === 'undefined') {
+    throw new Error('Firebase Web SDK is loading. Please refresh the page if this persists.');
+  }
+  if (firebase.apps && firebase.apps.length > 0) {
+    return;
+  }
+  try {
+    const res = await fetch('/api/auth?action=client_config');
+    const json = await res.json();
+    if (json.ok && json.firebase && json.firebase.apiKey) {
+      firebase.initializeApp(json.firebase);
+    }
+  } catch (e) {
+    console.warn('Unable to auto-fetch Firebase client config:', e);
+  }
+}
+
 async function initiateGoogleSignIn(container, isSignup = false) {
+  await ensureFirebaseInitialized();
   if (typeof firebase === 'undefined' || !firebase.auth) {
-    throw new Error('Google Sign-In is initializing. If you are developing locally, please ensure Firebase configuration is set.');
+    throw new Error('Google Sign-In service is not ready. Please check your Firebase configuration.');
   }
 
   const provider = new firebase.auth.GoogleAuthProvider();
@@ -621,6 +640,7 @@ function setupPhoneOtpFlow(container) {
     clearAlert(container);
 
     try {
+      await ensureFirebaseInitialized();
       if (typeof firebase === 'undefined' || !firebase.auth) {
         throw new Error('Phone authentication service is not initialized.');
       }

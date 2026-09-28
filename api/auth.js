@@ -52,6 +52,20 @@ module.exports = withHandler(async function handler(req, res) {
   const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'ip';
   const userAgent = req.headers['user-agent'] || '';
 
+  // ── 0. CLIENT CONFIG (Public Firebase client parameters) ───────────────────
+  if (action === 'client_config' || action === 'config') {
+    const projectId = process.env.FIREBASE_PROJECT_ID || '';
+    return res.json({
+      ok: true,
+      firebase: {
+        apiKey: process.env.FIREBASE_API_KEY || '',
+        authDomain: process.env.FIREBASE_AUTH_DOMAIN || (projectId ? `${projectId}.firebaseapp.com` : ''),
+        projectId,
+        appId: process.env.FIREBASE_APP_ID || '',
+      },
+    });
+  }
+
   // ── 1. SESSION (Firebase ID Token → Server Session) ────────────────────────
   if (action === 'session') {
     const { idToken } = req.body || {};
