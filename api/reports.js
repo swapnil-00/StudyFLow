@@ -4,7 +4,7 @@ const { query } = require('../lib/db');
 const { ensureMultiTenantSchema } = require('../lib/db-init');
 const { withHandler } = require('../lib/http');
 const { assertBranchAccess } = require('../lib/authorize');
-const { HttpError } = require('../lib/errors');
+const { getTodayIST, daysBetweenIST } = require('../lib/dates');
 
 module.exports = withHandler(async function handler(req, res) {
   await ensureMultiTenantSchema();
@@ -93,30 +93,33 @@ module.exports = withHandler(async function handler(req, res) {
   // 6. Net Profit
   const netProfit = totalRevenue - totalExpenses;
 
-  // 7. Active Memberships & Dues Summary
+  // 7. Active Memberships & Dues Summary (joined with seats and assignments for accurate branch scoping)
   const memParams = [orgId];
   let memWhere = "m.organization_id = $1 AND m.status = 'active'";
   if (branchId) {
     memParams.push(branchId);
-    memWhere += ` AND m.branch_id = $${memParams.length}`;
+    memWhere += ` AND COALESCE(m.branch_id, a.branch_id, s.branch_id) = $${memParams.length}`;
   }
 
   const duesRes = await query(`
     SELECT 
       m.id,
       m.student_id,
-      m.branch_id,
+      COALESCE(m.branch_id, a.branch_id, s.branch_id) AS resolved_branch_id,
       m.price,
       m.discount,
       m.final_amount,
       m.payment_status,
       m.start_date,
       m.end_date,
+      m.due_date,
       COALESCE(SUM(p.amount), 0) AS total_paid
     FROM memberships m
+    LEFT JOIN seat_assignments a ON a.membership_id = m.id AND a.status = 'active'
+    LEFT JOIN seats s ON s.id = m.seat_id
     LEFT JOIN payments p ON p.membership_id = m.id AND p.status = 'recorded' AND p.voided_at IS NULL
     WHERE ${memWhere}
-    GROUP BY m.id, m.student_id, m.branch_id, m.price, m.discount, m.final_amount, m.payment_status, m.start_date, m.end_date
+    GROUP BY m.id, m.student_id, COALESCE(m.branch_id, a.branch_id, s.branch_id), m.price, m.discount, m.final_amount, m.payment_status, m.start_date, m.end_date, m.due_date
   `, memParams);
 
   let totalOutstandingDues = 0;
@@ -126,7 +129,7 @@ module.exports = withHandler(async function handler(req, res) {
     severe: 0,    // 30+ days
   };
 
-  const todayDate = new Date();
+  const todayStr = getTodayIST();
   for (const row of duesRes.rows) {
     const finalAmount = parseFloat(row.final_amount ?? (Number(row.price) - (Number(row.discount) || 0)));
     const totalPaid = parseFloat(row.total_paid);
@@ -134,8 +137,7 @@ module.exports = withHandler(async function handler(req, res) {
 
     if (pending > 0) {
       totalOutstandingDues += pending;
-      const start = new Date(row.start_date);
-      const daysDue = Math.max(0, Math.ceil((todayDate - start) / (1000 * 60 * 60 * 24)));
+      const daysDue = Math.max(0, daysBetweenIST(String(row.start_date).split('T')[0], todayStr));
       if (daysDue <= 7) aging.current += pending;
       else if (daysDue <= 30) aging.moderate += pending;
       else aging.severe += pending;

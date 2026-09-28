@@ -12,26 +12,25 @@ export function renderReports(container) {
     const allExpenses = store.getExpenses(branchId, false);
 
     const todayStr = utils.today();
+    const [y, m, d] = todayStr.split('-').map(Number);
     const thisMonthPrefix = todayStr.slice(0, 7);
 
-    const lastMonthDate = new Date();
-    lastMonthDate.setMonth(lastMonthDate.getMonth() - 1);
-    const lastMonthPrefix = lastMonthDate.toISOString().slice(0, 7);
+    const lastM = m === 1 ? 12 : m - 1;
+    const lastY = m === 1 ? y - 1 : y;
+    const lastMonthPrefix = `${lastY}-${String(lastM).padStart(2, '0')}`;
 
-    // Week start (7 days ago)
-    const weekAgo = new Date();
-    weekAgo.setDate(weekAgo.getDate() - 7);
-    const weekAgoStr = weekAgo.toISOString().slice(0, 10);
+    // Week start (7 days ago) in IST
+    const weekAgoStr = utils.addDays(todayStr, -7);
 
-    let payments = allPayments;
-    let expenses = allExpenses;
+    let payments = allPayments.filter(p => p.status === 'recorded');
+    let expenses = allExpenses.filter(e => e.status !== 'voided');
 
     if (selectedPeriod === 'today') {
       payments = payments.filter(p => p.date === todayStr);
       expenses = expenses.filter(e => e.date === todayStr);
     } else if (selectedPeriod === 'this-week') {
-      payments = payments.filter(p => p.date && p.date >= weekAgoStr);
-      expenses = expenses.filter(e => e.date && e.date >= weekAgoStr);
+      payments = payments.filter(p => p.date && p.date >= weekAgoStr && p.date <= todayStr);
+      expenses = expenses.filter(e => e.date && e.date >= weekAgoStr && e.date <= todayStr);
     } else if (selectedPeriod === 'this-month') {
       payments = payments.filter(p => p.date && p.date.startsWith(thisMonthPrefix));
       expenses = expenses.filter(e => e.date && e.date.startsWith(thisMonthPrefix));

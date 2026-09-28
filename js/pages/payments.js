@@ -14,10 +14,11 @@ export function renderPayments(container) {
     let payments = store.getAllPayments(branchId);
 
     const todayStr = utils.today();
+    const [y, m] = todayStr.split('-').map(Number);
     const thisMonthPrefix = todayStr.slice(0, 7);
-    const lastMonthDate = new Date();
-    lastMonthDate.setMonth(lastMonthDate.getMonth() - 1);
-    const lastMonthPrefix = lastMonthDate.toISOString().slice(0, 7);
+    const lastM = m === 1 ? 12 : m - 1;
+    const lastY = m === 1 ? y - 1 : y;
+    const lastMonthPrefix = `${lastY}-${String(lastM).padStart(2, '0')}`;
 
     // Period filter by payment date
     if (filterPeriod === 'today') {

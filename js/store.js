@@ -1299,6 +1299,19 @@ class Store {
     this._notify();
   }
 
+  // ── Financial Reports Endpoint (/api/reports) ─────────────────────
+  async getReports(params = {}) {
+    const q = new URLSearchParams();
+    if (params.branchId) q.set('branchId', params.branchId);
+    if (params.from) q.set('from', params.from);
+    if (params.to) q.set('to', params.to);
+    const qs = q.toString();
+    const res = await fetch(`${API_BASE}/api/reports${qs ? '?' + qs : ''}`, { credentials: 'same-origin' });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || 'Failed to fetch reports');
+    return json;
+  }
+
   // ── Aggregations ──────────────────────────────────────────────────
   getDashboardStats(branchId) {
     const activeBranchId = branchId || this.getActiveBranchId();
@@ -1308,12 +1321,12 @@ class Store {
     let occupied = 0, available = 0, reserved = 0, maintenance = 0;
     seats.forEach(seat => {
       const status = this.getSeatStatus(seat.id);
-      if (status === 'occupied' || status === 'payment-due' || status === 'expiring') occupied++;
+      if (status === 'occupied' || status === 'payment-due' || status === 'payment-pending' || status === 'expiring') occupied++;
       else if (status === 'available') available++;
       else if (status === 'maintenance' || status === 'blocked') maintenance++;
     });
 
-    const branchPayments = this.getPayments(null, activeBranchId);
+    const branchPayments = this.getPayments(null, activeBranchId).filter(p => p.status === 'recorded');
     const todayStr = today();
     const currentMonthPrefix = todayStr.slice(0, 7);
 
@@ -1324,18 +1337,17 @@ class Store {
     const monthRevenue = monthPayments.reduce((sum, p) => sum + p.amount, 0);
 
     const activeMemberships = (this._db?.memberships || []).filter(m => {
-      const students = this.getStudents(activeBranchId).map(s => s.id);
-      return students.includes(m.studentId) && m.status === 'active';
+      const memBranch = m.branchId || (this.getStudentAssignment(m.studentId)?.branchId);
+      if (activeBranchId && memBranch && memBranch !== activeBranchId) return false;
+      return m.status === 'active';
     });
     let totalPending = 0;
     activeMemberships.forEach(m => { totalPending += this.getPendingAmount(m.id); });
 
-    const todayDate = new Date();
-    const nextWeek = new Date(todayDate);
-    nextWeek.setDate(nextWeek.getDate() + 7);
+    const todayDate = today();
+    const nextWeek = addDays(todayDate, 7);
     const expiringCount = activeMemberships.filter(m => {
-      const exp = new Date(m.endDate);
-      return exp >= todayDate && exp <= nextWeek;
+      return m.endDate && m.endDate >= todayDate && m.endDate <= nextWeek;
     }).length;
 
     const activeMembershipsCount = activeMemberships.length;
@@ -1345,23 +1357,21 @@ class Store {
 
   getExpiringMemberships(branchId, days = 7) {
     const activeBranchId = branchId || this.getActiveBranchId();
-    const today_ = new Date();
-    const future = new Date(today_);
-    future.setDate(future.getDate() + days);
+    const todayStr = today();
+    const future = addDays(todayStr, days);
 
-    const studentIds = this.getStudents(activeBranchId).map(s => s.id);
     return (this._db?.memberships || [])
       .filter(m => {
-        if (!studentIds.includes(m.studentId)) return false;
+        const memBranch = m.branchId || (this.getStudentAssignment(m.studentId)?.branchId);
+        if (activeBranchId && memBranch && memBranch !== activeBranchId) return false;
         if (m.status !== 'active') return false;
-        const exp = new Date(m.endDate);
-        return exp >= today_ && exp <= future;
+        return m.endDate && m.endDate >= todayStr && m.endDate <= future;
       })
       .map(m => {
         const student = this.getStudent(m.studentId);
         const assignment = this.getStudentAssignment(m.studentId);
         const seat = assignment ? this.getSeat(assignment.seatId) : null;
-        const daysLeft = Math.ceil((new Date(m.endDate) - today_) / (1000 * 60 * 60 * 24));
+        const daysLeft = daysUntil(m.endDate);
         return { ...m, student, seat, daysLeft };
       })
       .sort((a, b) => a.daysLeft - b.daysLeft);
@@ -1369,20 +1379,21 @@ class Store {
 
   getPendingDues(branchId) {
     const activeBranchId = branchId || this.getActiveBranchId();
-    const studentIds = this.getStudents(activeBranchId).map(s => s.id);
     const result = [];
-    const today_ = new Date();
+    const todayStr = today();
 
     (this._db?.memberships || []).forEach(m => {
-      if (!studentIds.includes(m.studentId)) return;
       if (m.status !== 'active') return;
+      const memBranch = m.branchId || (this.getStudentAssignment(m.studentId)?.branchId);
+      if (activeBranchId && memBranch && memBranch !== activeBranchId) return;
+
       const pending = this.getPendingAmount(m.id);
       if (pending <= 0) return;
 
       const student = this.getStudent(m.studentId);
       const assignment = this.getStudentAssignment(m.studentId);
       const seat = assignment ? this.getSeat(assignment.seatId) : null;
-      const daysDue = Math.ceil((today_ - new Date(m.startDate)) / (1000 * 60 * 60 * 24));
+      const daysDue = Math.max(0, daysUntil(m.startDate) ? -daysUntil(m.startDate) : 0);
 
       result.push({ membership: m, student, seat, pendingAmount: pending, daysDue });
     });
@@ -1392,21 +1403,20 @@ class Store {
 
   getRevenueChart(branchId, days = 7) {
     const activeBranchId = branchId || this.getActiveBranchId();
-    const branchPayments = this.getPayments(null, activeBranchId);
+    const branchPayments = this.getPayments(null, activeBranchId).filter(p => p.status === 'recorded');
     const result = [];
-    const todayDate = new Date();
+    const todayStr = today();
 
     for (let i = days - 1; i >= 0; i--) {
-      const d = new Date(todayDate);
-      d.setDate(d.getDate() - i);
-      const dateIso = d.toISOString().split('T')[0];
-
+      const dateIso = addDays(todayStr, -i);
       const dayPayments = branchPayments.filter(p => p.date === dateIso);
       const amount = dayPayments.reduce((sum, p) => sum + p.amount, 0);
+      const [y, m, d] = dateIso.split('-').map(Number);
+      const dt = new Date(y, m - 1, d);
       result.push({
-        date: d,
+        date: dt,
         isoDate: dateIso,
-        label: d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
+        label: dt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
         amount
       });
     }
