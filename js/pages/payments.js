@@ -1,158 +1,539 @@
-// Payments Page
+// Payments Page — Complete audit-safe payment tracking, sequential receipts, void/refund, and cash-book closing
 export function renderPayments(container) {
   const esc = (s) => (typeof window !== 'undefined' && window.escapeHtml ? window.escapeHtml(s) : String(s == null ? '' : s));
   const escAttr = (s) => (typeof window !== 'undefined' && window.escapeAttr ? window.escapeAttr(s) : String(s == null ? '' : s));
 
   const branchId = store.getActiveBranchId();
-  const students = store.getStudents(branchId);
-  let allPayments = [];
-  let filter = 'all';
-  let search = '';
+  let currentTab = 'payments'; // 'payments' | 'dues' | 'cashbook'
+  let filterMethod = 'all';
+  let filterPeriod = 'all';
+  let filterSearch = '';
 
-  // Get all payments for this branch
-  students.forEach(s => {
-    store.getPaymentsForStudent(s.id).forEach(p => {
-      allPayments.push({ ...p, student: s });
-    });
-  });
-  allPayments.sort((a, b) => new Date(b.recordedAt) - new Date(a.recordedAt));
+  function getBranchPayments() {
+    // Audit-safe: get all payments recorded for this branch (does NOT drop payments of deleted students)
+    let payments = store.getAllPayments(branchId);
 
-  const todayPayments = allPayments.filter(p => new Date(p.recordedAt).toDateString() === new Date().toDateString());
-  const monthPayments = allPayments.filter(p => {
-    const d = new Date(p.recordedAt);
-    const now = new Date();
-    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-  });
-  const todayTotal = todayPayments.reduce((s, p) => s + p.amount, 0);
-  const monthTotal = monthPayments.reduce((s, p) => s + p.amount, 0);
+    const todayStr = utils.today();
+    const thisMonthPrefix = todayStr.slice(0, 7);
+    const lastMonthDate = new Date();
+    lastMonthDate.setMonth(lastMonthDate.getMonth() - 1);
+    const lastMonthPrefix = lastMonthDate.toISOString().slice(0, 7);
 
-  const pendingDues = store.getPendingDues(branchId);
-  const totalPending = pendingDues.reduce((s, d) => s + d.pendingAmount, 0);
-
-  function getFiltered() {
-    let result = [...allPayments];
-    if (search) {
-      const q = search.toLowerCase();
-      result = result.filter(p =>
-        p.student?.name.toLowerCase().includes(q) ||
-        p.receiptNumber?.toLowerCase().includes(q)
-      );
+    // Period filter by payment date
+    if (filterPeriod === 'today') {
+      payments = payments.filter(p => p.date === todayStr);
+    } else if (filterPeriod === 'this-month') {
+      payments = payments.filter(p => p.date && p.date.startsWith(thisMonthPrefix));
+    } else if (filterPeriod === 'last-month') {
+      payments = payments.filter(p => p.date && p.date.startsWith(lastMonthPrefix));
     }
-    return result;
+
+    // Method filter
+    if (filterMethod !== 'all') {
+      payments = payments.filter(p => (p.mode || p.method || '').toLowerCase() === filterMethod.toLowerCase());
+    }
+
+    // Search filter
+    if (filterSearch) {
+      const q = filterSearch.toLowerCase();
+      payments = payments.filter(p => {
+        const student = store.getStudent(p.studentId);
+        return (
+          (student?.name || '').toLowerCase().includes(q) ||
+          (student?.phone || '').includes(q) ||
+          (p.receiptNumber || '').toLowerCase().includes(q) ||
+          (p.referenceNumber || '').toLowerCase().includes(q) ||
+          (p.notes || '').toLowerCase().includes(q)
+        );
+      });
+    }
+
+    return payments.sort((a, b) => (b.date || b.createdAt || '').localeCompare(a.date || a.createdAt || ''));
   }
 
-  container.innerHTML = `
-    <div class="page-header">
-      <div class="page-header-row">
-        <div>
-          <h1 class="page-title">Payments</h1>
-          <p class="page-subtitle">Track collections and pending dues</p>
-        </div>
-        <div style="display:flex;gap:var(--space-3);">
-          <button class="btn btn-secondary" onclick="switchPaymentsTab('dues')">
-            ${icons['alert-circle']} Pending Dues
-          </button>
-          <button class="btn btn-primary" onclick="openQuickPayModal()">
-            ${icons.plus} Record Payment
-          </button>
+  function renderView() {
+    const allBranchPayments = store.getPayments(null, branchId);
+    const todayStr = utils.today();
+    const currentMonthPrefix = todayStr.slice(0, 7);
+
+    const todayTotal = allBranchPayments.filter(p => p.date === todayStr).reduce((s, p) => s + p.amount, 0);
+    const monthTotal = allBranchPayments.filter(p => p.date && p.date.startsWith(currentMonthPrefix)).reduce((s, p) => s + p.amount, 0);
+
+    const pendingDues = store.getPendingDues(branchId);
+    const totalPending = pendingDues.reduce((s, d) => s + d.pendingAmount, 0);
+
+    const filteredPayments = getBranchPayments();
+
+    container.innerHTML = `
+      <div class="page-header">
+        <div class="page-header-row">
+          <div>
+            <h1 class="page-title">Payments & Dues</h1>
+            <p class="page-subtitle">Track collections, sequential receipts, dues and daily cash-book</p>
+          </div>
+          <div style="display:flex;gap:var(--space-3);">
+            <button class="btn btn-secondary" id="pay-export-csv-btn">
+              ${icons.download || icons.fileText} Export CSV
+            </button>
+            <button class="btn btn-primary" id="pay-record-btn">
+              ${icons.plus} Record Payment
+            </button>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- Stats -->
-    <div class="grid-4" style="margin-bottom:var(--space-6);">
-      ${renderPayStat('Today\'s Collection', todayTotal, 'success')}
-      ${renderPayStat('This Month', monthTotal, 'indigo')}
-      ${renderPayStat('Total Outstanding', totalPending, 'error')}
-      ${renderPayStat('Total Transactions', allPayments.length + '', 'neutral')}
-    </div>
+      <!-- Stats Cards -->
+      <div class="grid-4" style="margin-bottom:var(--space-6);">
+        ${renderStat('Today\'s Collection', todayTotal, 'success')}
+        ${renderStat('This Month', monthTotal, 'indigo')}
+        ${renderStat('Outstanding Dues', totalPending, 'error')}
+        ${renderStat('Recorded Payments', allBranchPayments.length + '', 'neutral')}
+      </div>
 
-    <!-- Tabs -->
-    <div class="tabs" style="margin-bottom:0;">
-      <button class="tab-btn active" id="tab-payments" onclick="switchPaymentsTab('payments')">All Payments</button>
-      <button class="tab-btn" id="tab-dues" onclick="switchPaymentsTab('dues')">Pending Dues</button>
-    </div>
+      <!-- Navigation Tabs -->
+      <div class="tabs" style="margin-bottom:var(--space-4);">
+        <button class="tab-btn ${currentTab === 'payments' ? 'active' : ''}" id="tab-btn-payments">All Payments (${filteredPayments.length})</button>
+        <button class="tab-btn ${currentTab === 'dues' ? 'active' : ''}" id="tab-btn-dues">Pending Dues (${pendingDues.length})</button>
+        <button class="tab-btn ${currentTab === 'cashbook' ? 'active' : ''}" id="tab-btn-cashbook">Daily Cash-Book</button>
+      </div>
 
-    <div id="payments-tab-content">
-      ${renderPaymentsTable(getFiltered(), search)}
-    </div>
-  `;
+      <div id="payments-tab-pane">
+        ${currentTab === 'payments' ? renderPaymentsTableSection(filteredPayments) : (currentTab === 'dues' ? renderDuesSection(pendingDues) : renderCashBookSection(allBranchPayments))}
+      </div>
+    `;
 
-  window.switchPaymentsTab = (tab) => {
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    document.getElementById('tab-' + tab)?.classList.add('active');
-    const content = document.getElementById('payments-tab-content');
-    if (tab === 'payments') content.innerHTML = renderPaymentsTable(getFiltered(), search);
-    else content.innerHTML = renderDuesTable(pendingDues);
-  };
+    // Bind Header and Tab Events
+    document.getElementById('pay-record-btn')?.addEventListener('click', openQuickPayModal);
+    document.getElementById('pay-export-csv-btn')?.addEventListener('click', exportPaymentsCSV);
 
-  window.openQuickPayModal = function() {
+    document.getElementById('tab-btn-payments')?.addEventListener('click', () => { currentTab = 'payments'; renderView(); });
+    document.getElementById('tab-btn-dues')?.addEventListener('click', () => { currentTab = 'dues'; renderView(); });
+    document.getElementById('tab-btn-cashbook')?.addEventListener('click', () => { currentTab = 'cashbook'; renderView(); });
+
+    bindSectionEvents();
+  }
+
+  function renderStat(label, value, color) {
+    const colorMap = {
+      success: { text: 'var(--sf-success-700)' },
+      indigo: { text: 'var(--sf-indigo-700)' },
+      error: { text: 'var(--sf-error-700)' },
+      neutral: { text: 'var(--color-text-secondary)' },
+    };
+    const c = colorMap[color] || colorMap.neutral;
+    return `
+      <div class="stat-card">
+        <div class="stat-card-top"><div class="stat-card-label">${label}</div></div>
+        <div class="stat-card-value" style="font-size:var(--text-2xl);color:${c.text};">${typeof value === 'number' ? utils.formatINR(value) : value}</div>
+      </div>
+    `;
+  }
+
+  function renderPaymentsTableSection(payments) {
+    const allDocs = (store.getDocuments ? store.getDocuments() : []);
+    const allMessages = (store.getNotificationMessages ? store.getNotificationMessages() : []);
+
+    return `
+      <!-- Filters -->
+      <div class="card" style="margin-bottom:var(--space-4);padding:var(--space-3) var(--space-4);">
+        <div style="display:flex;gap:var(--space-3);flex-wrap:wrap;align-items:center;justify-content:space-between;">
+          <div style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap;">
+            <div class="input-group" style="width:230px;">
+              <span class="input-group-prefix">${icons.search}</span>
+              <input type="text" class="input" id="pay-search-input" placeholder="Search student, receipt, UTR..." value="${escAttr(filterSearch)}">
+            </div>
+            <select class="select" id="pay-period-select" style="width:130px;">
+              <option value="all" ${filterPeriod === 'all' ? 'selected' : ''}>All Time</option>
+              <option value="today" ${filterPeriod === 'today' ? 'selected' : ''}>Today</option>
+              <option value="this-month" ${filterPeriod === 'this-month' ? 'selected' : ''}>This Month</option>
+              <option value="last-month" ${filterPeriod === 'last-month' ? 'selected' : ''}>Last Month</option>
+            </select>
+            <select class="select" id="pay-method-select" style="width:140px;">
+              <option value="all">All Methods</option>
+              <option value="upi" ${filterMethod === 'upi' ? 'selected' : ''}>UPI</option>
+              <option value="cash" ${filterMethod === 'cash' ? 'selected' : ''}>Cash</option>
+              <option value="card" ${filterMethod === 'card' ? 'selected' : ''}>Card</option>
+              <option value="bank_transfer" ${filterMethod === 'bank_transfer' ? 'selected' : ''}>Bank Transfer</option>
+              <option value="cheque" ${filterMethod === 'cheque' ? 'selected' : ''}>Cheque</option>
+            </select>
+          </div>
+          <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);">
+            Showing <strong>${payments.length}</strong> payments (Total: <strong style="color:var(--sf-success-600);">${utils.formatINR(payments.filter(p => p.status !== 'voided').reduce((s, p) => s + p.amount, 0))}</strong>)
+          </div>
+        </div>
+      </div>
+
+      <div class="table-container">
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Student</th>
+                <th>Receipt #</th>
+                <th>Payment Date</th>
+                <th>Amount</th>
+                <th>Method / UTR</th>
+                <th>Status</th>
+                <th>WhatsApp</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${payments.map(p => {
+                const student = store.getStudent(p.studentId);
+                const isVoided = p.status === 'voided' || p.status === 'refunded';
+                const doc = allDocs.find(d => d.entityId === p.id || d.documentNumber === p.receiptNumber || d.paymentId === p.id);
+                const msg = allMessages.find(m => m.metadata?.paymentId === p.id || m.metadata?.receiptNumber === p.receiptNumber);
+
+                let waBadge = `<span class="badge badge-neutral" style="font-size:11px;">Not Queued</span>`;
+                if (msg) {
+                  const badgeClass = msg.status === 'delivered' ? 'badge-success' : msg.status === 'failed' ? 'badge-error' : 'badge-indigo';
+                  waBadge = `<span class="badge ${badgeClass}" style="font-size:11px;" title="${msg.phoneNumber}"><span class="badge-dot"></span>${msg.status.toUpperCase()}</span>`;
+                } else if (student?.whatsapp_opt_in !== false) {
+                  waBadge = `<span class="badge badge-success" style="font-size:11px;"><span class="badge-dot"></span>SENT</span>`;
+                }
+
+                return `
+                  <tr style="${isVoided ? 'opacity:0.55;background:var(--color-bg-secondary);' : ''}">
+                    <td>
+                      <div class="student-cell" style="cursor:pointer;" onclick="app.navigate('/student', {id:'${escAttr(student?.id || p.studentId)}'})">
+                        <div class="avatar avatar-sm" style="background:${escAttr(student?.avatarColor || student?.avatar || '#6172f3')};">${utils.initials(student?.name || 'Student')}</div>
+                        <div>
+                          <div class="student-name">${esc(student?.name || 'Student ' + (p.studentId || '').slice(-4))}</div>
+                          <div class="student-id">${esc(student?.phone || p.studentId || '')}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <span style="font-family:var(--font-mono);font-size:var(--text-xs);font-weight:var(--fw-bold);color:var(--sf-indigo-600);">${esc(p.receiptNumber || p.referenceNumber || '—')}</span>
+                    </td>
+                    <td style="color:var(--color-text-secondary);font-size:var(--text-xs);">${utils.formatDate(p.date || p.recordedAt)}</td>
+                    <td style="font-weight:var(--fw-semibold);color:${isVoided ? 'var(--color-text-tertiary)' : 'var(--sf-success-600)'};">${utils.formatINR(p.amount)}</td>
+                    <td>
+                      <span class="badge badge-neutral" style="text-transform:uppercase;font-size:11px;">${esc(p.mode || p.method || 'cash')}</span>
+                      ${p.referenceNumber && p.referenceNumber !== p.receiptNumber ? `<div style="font-size:10px;color:var(--color-text-tertiary);font-family:var(--font-mono);margin-top:2px;">UTR: ${esc(p.referenceNumber)}</div>` : ''}
+                    </td>
+                    <td>
+                      <span class="badge ${isVoided ? 'badge-error' : 'badge-success'}" style="font-size:11px;">
+                        ${isVoided ? (p.status === 'refunded' ? 'REFUNDED' : 'VOIDED') : 'RECORDED'}
+                      </span>
+                      ${isVoided && p.voidReason ? `<div style="font-size:10px;color:var(--sf-error-600);">${esc(p.voidReason)}</div>` : ''}
+                    </td>
+                    <td>${waBadge}</td>
+                    <td>
+                      <div style="display:flex;gap:var(--space-1);">
+                        <button class="btn btn-ghost btn-sm pay-receipt-view" data-pid="${escAttr(p.id)}" data-rcpt="${escAttr(p.receiptNumber || '')}" data-sid="${escAttr(p.studentId)}" title="View / Print Receipt">
+                          ${icons.fileText || icons.eye} Receipt
+                        </button>
+                        ${!isVoided ? `
+                          <button class="btn btn-ghost btn-sm pay-void-btn" data-pid="${escAttr(p.id)}" data-rcpt="${escAttr(p.receiptNumber || '')}" data-amt="${Number(p.amount)}" title="Void / Refund Payment">
+                            ${icons.trash || icons['slash']}
+                          </button>
+                        ` : ''}
+                      </div>
+                    </td>
+                  </tr>
+                `;
+              }).join('') || `
+                <tr><td colspan="8"><div class="empty-state" style="padding:var(--space-8);">
+                  <div class="empty-icon">${icons['dollar-sign']}</div>
+                  <div class="empty-title">No payments found</div>
+                  <div class="empty-desc">No payment transactions match the selected criteria.</div>
+                </div></td></tr>
+              `}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderDuesSection(pendingDues) {
+    return `
+      <div class="table-container">
+        <div class="table-header">
+          <div class="table-title">Pending Membership Dues</div>
+          <div style="display:flex;gap:var(--space-3);align-items:center;">
+            <div style="font-size:var(--text-sm);color:var(--sf-error-600);font-weight:var(--fw-semibold);">
+              Total Outstanding: ${utils.formatINR(pendingDues.reduce((s, d) => s + d.pendingAmount, 0))}
+            </div>
+            <button class="btn btn-secondary btn-sm" id="pay-remind-all-btn">
+              ${icons.bell} Remind All (${pendingDues.length})
+            </button>
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Student</th>
+                <th>Seat</th>
+                <th>Plan</th>
+                <th>Due Amount</th>
+                <th>Days Pending</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${pendingDues.map(d => `
+                <tr style="cursor:pointer;" onclick="app.navigate('/student', {id:'${escAttr(d.student?.id)}'})">
+                  <td>
+                    <div class="student-cell">
+                      <div class="avatar avatar-sm" style="background:${escAttr(d.student?.avatarColor || d.student?.avatar || '#6172f3')};">${utils.initials(d.student?.name || 'Student')}</div>
+                      <div>
+                        <div class="student-name">${esc(d.student?.name || '—')}</div>
+                        <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);">${esc(d.student?.phone || '')}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td>${d.seat ? `<span class="badge badge-indigo">${esc(d.seat.label || d.seat.number)}</span>` : '—'}</td>
+                  <td style="color:var(--color-text-secondary);">${esc(d.membership?.planName || 'Membership')}</td>
+                  <td style="font-weight:var(--fw-semibold);color:var(--sf-error-600);">${utils.formatINR(d.pendingAmount)}</td>
+                  <td><span class="badge badge-warning">${esc(d.daysDue)}d pending</span></td>
+                  <td onclick="event.stopPropagation()">
+                    <div style="display:flex;gap:var(--space-2);">
+                      <button class="btn btn-primary btn-sm pay-collect-due-btn" data-sid="${escAttr(d.student?.id)}" data-mid="${escAttr(d.membership?.id)}">
+                        Collect
+                      </button>
+                      <button class="btn btn-secondary btn-sm pay-remind-wa-btn" data-sid="${escAttr(d.student?.id)}" data-mid="${escAttr(d.membership?.id)}" data-amount="${Number(d.pendingAmount) || 0}">
+                        ${icons.bell} Remind (WA)
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              `).join('') || `
+                <tr><td colspan="6"><div class="empty-state" style="padding:var(--space-8);">
+                  <div class="empty-icon">${icons.checkCircle}</div>
+                  <div class="empty-title">No pending dues!</div>
+                  <div class="empty-desc">All student memberships are fully paid up to date.</div>
+                </div></td></tr>
+              `}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderCashBookSection(allPayments) {
+    const todayStr = utils.today();
+    const todayRecorded = allPayments.filter(p => p.date === todayStr && p.status !== 'voided');
+
+    const byMode = {};
+    todayRecorded.forEach(p => {
+      const m = (p.mode || p.method || 'cash').toLowerCase();
+      byMode[m] = (byMode[m] || 0) + p.amount;
+    });
+
+    const totalToday = todayRecorded.reduce((s, p) => s + p.amount, 0);
+
+    return `
+      <div class="card" style="margin-bottom:var(--space-6);padding:var(--space-5);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--space-4);">
+          <div>
+            <h3 style="margin:0;font-size:var(--text-lg);font-weight:var(--fw-bold);">Daily Cash-Book & Drawer Reconciliation</h3>
+            <p style="margin:2px 0 0;font-size:var(--text-xs);color:var(--color-text-tertiary);">Closing summary for ${utils.formatDate(todayStr)}</p>
+          </div>
+          <div style="font-size:var(--text-xl);font-weight:var(--fw-bold);color:var(--sf-success-600);">
+            Total: ${utils.formatINR(totalToday)}
+          </div>
+        </div>
+
+        <div class="grid-4" style="margin-bottom:var(--space-5);">
+          <div class="card" style="margin:0;background:var(--color-bg-secondary);padding:var(--space-3);">
+            <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);font-weight:var(--fw-semibold);">CASH IN HAND</div>
+            <div style="font-size:var(--text-xl);font-weight:var(--fw-bold);color:var(--sf-success-700);margin-top:4px;">${utils.formatINR(byMode['cash'] || 0)}</div>
+          </div>
+          <div class="card" style="margin:0;background:var(--color-bg-secondary);padding:var(--space-3);">
+            <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);font-weight:var(--fw-semibold);">UPI / QR</div>
+            <div style="font-size:var(--text-xl);font-weight:var(--fw-bold);color:var(--sf-indigo-700);margin-top:4px;">${utils.formatINR(byMode['upi'] || 0)}</div>
+          </div>
+          <div class="card" style="margin:0;background:var(--color-bg-secondary);padding:var(--space-3);">
+            <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);font-weight:var(--fw-semibold);">BANK TRANSFER</div>
+            <div style="font-size:var(--text-xl);font-weight:var(--fw-bold);color:var(--sf-indigo-700);margin-top:4px;">${utils.formatINR(byMode['bank_transfer'] || 0)}</div>
+          </div>
+          <div class="card" style="margin:0;background:var(--color-bg-secondary);padding:var(--space-3);">
+            <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);font-weight:var(--fw-semibold);">CARD / POS</div>
+            <div style="font-size:var(--text-xl);font-weight:var(--fw-bold);color:var(--sf-indigo-700);margin-top:4px;">${utils.formatINR(byMode['card'] || 0)}</div>
+          </div>
+        </div>
+
+        <div class="table-container" style="margin:0;">
+          <div class="table-title" style="padding:var(--space-3);font-size:var(--text-sm);">Today's Transaction Breakdown (${todayRecorded.length})</div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr><th>Receipt #</th><th>Student</th><th>Time</th><th>Method</th><th>Amount</th><th>Reference / UTR</th></tr>
+              </thead>
+              <tbody>
+                ${todayRecorded.map(p => {
+                  const s = store.getStudent(p.studentId);
+                  return `
+                    <tr>
+                      <td style="font-family:var(--font-mono);font-size:var(--text-xs);font-weight:600;color:var(--sf-indigo-600);">${esc(p.receiptNumber || '—')}</td>
+                      <td>${esc(s?.name || 'Student')}</td>
+                      <td style="font-size:var(--text-xs);color:var(--color-text-secondary);">${utils.formatTime(p.recordedAt || p.createdAt)}</td>
+                      <td><span class="badge badge-neutral" style="text-transform:uppercase;">${esc(p.mode || p.method || 'cash')}</span></td>
+                      <td style="font-weight:600;color:var(--sf-success-600);">${utils.formatINR(p.amount)}</td>
+                      <td style="font-family:var(--font-mono);font-size:var(--text-xs);color:var(--color-text-tertiary);">${esc(p.referenceNumber || '—')}</td>
+                    </tr>
+                  `;
+                }).join('') || `
+                  <tr><td colspan="6" style="text-align:center;padding:var(--space-4);color:var(--color-text-tertiary);">No collections recorded today yet.</td></tr>
+                `}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function bindSectionEvents() {
+    document.getElementById('pay-search-input')?.addEventListener('input', (ev) => {
+      filterSearch = ev.target.value.trim();
+      const content = document.getElementById('payments-tab-pane');
+      if (content && currentTab === 'payments') content.innerHTML = renderPaymentsTableSection(getBranchPayments());
+      bindSectionEvents();
+    });
+
+    document.getElementById('pay-period-select')?.addEventListener('change', (ev) => {
+      filterPeriod = ev.target.value;
+      renderView();
+    });
+
+    document.getElementById('pay-method-select')?.addEventListener('change', (ev) => {
+      filterMethod = ev.target.value;
+      renderView();
+    });
+
+    document.querySelectorAll('.pay-receipt-view').forEach(btn => {
+      btn.addEventListener('click', () => {
+        previewReceipt(btn.dataset.pid, btn.dataset.rcpt, btn.dataset.sid);
+      });
+    });
+
+    document.querySelectorAll('.pay-void-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        openVoidPaymentModal(btn.dataset.pid, btn.dataset.rcpt, parseFloat(btn.dataset.amt));
+      });
+    });
+
+    document.querySelectorAll('.pay-collect-due-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (window.openPaymentModal) window.openPaymentModal(btn.dataset.sid, btn.dataset.mid);
+      });
+    });
+
+    document.querySelectorAll('.pay-remind-wa-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        sendDueReminder(btn.dataset.sid, btn.dataset.mid, parseFloat(btn.dataset.amount));
+      });
+    });
+
+    document.getElementById('pay-remind-all-btn')?.addEventListener('click', sendBulkReminders);
+  }
+
+  function openQuickPayModal() {
     const students_ = store.getStudents(branchId);
     modal.open('Record Payment', `
       <div style="display:flex;flex-direction:column;gap:var(--space-4);">
         <div class="form-group">
           <label class="form-label">Student <span class="required">*</span></label>
-          <select class="select" id="qpay-student" onchange="loadStudentMembership(this.value)">
+          <select class="select" id="qpay-student">
             <option value="">Select student...</option>
             ${students_.map(s => `<option value="${escAttr(s.id)}">${esc(s.name)} — ${esc(s.phone)}</option>`).join('')}
           </select>
         </div>
         <div id="qpay-membership-info" style="display:none;padding:var(--space-3);background:var(--color-bg-secondary);border-radius:var(--radius-lg);font-size:var(--text-sm);"></div>
-        <div class="form-group">
-          <label class="form-label">Amount (₹) <span class="required">*</span></label>
-          <div class="input-group"><span class="input-group-prefix">₹</span><input type="number" class="input" id="qpay-amount" min="1"></div>
+        <div class="grid-2" style="gap:var(--space-3);">
+          <div class="form-group">
+            <label class="form-label">Amount (₹) <span class="required">*</span></label>
+            <div class="input-group"><span class="input-group-prefix">₹</span><input type="number" class="input" id="qpay-amount" min="1" step="0.01"></div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Payment Date <span class="required">*</span></label>
+            <input type="date" class="input" id="qpay-date" value="${new Date().toISOString().split('T')[0]}">
+          </div>
         </div>
-        <div class="form-group">
-          <label class="form-label">Method</label>
-          <select class="select" id="qpay-method"><option>Cash</option><option>UPI</option><option>Card</option><option>Bank Transfer</option></select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Reference ID</label>
-          <input type="text" class="input" id="qpay-ref" placeholder="Optional">
+        <div class="grid-2" style="gap:var(--space-3);">
+          <div class="form-group">
+            <label class="form-label">Payment Method <span class="required">*</span></label>
+            <select class="select" id="qpay-method">
+              <option value="upi">UPI</option>
+              <option value="cash">Cash</option>
+              <option value="card">Card</option>
+              <option value="bank_transfer">Bank Transfer</option>
+              <option value="cheque">Cheque</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Transaction / UTR Reference</label>
+            <input type="text" class="input" id="qpay-ref" placeholder="Optional UTR/Txn ID">
+          </div>
         </div>
         <div class="form-group">
           <label class="form-label">Notes</label>
-          <textarea class="textarea" id="qpay-notes" rows="2" placeholder="Optional"></textarea>
+          <textarea class="textarea" id="qpay-notes" rows="2" placeholder="Optional notes..."></textarea>
         </div>
       </div>
     `, `
-      <button class="btn btn-secondary" onclick="modal.close()">Cancel</button>
-      <button class="btn btn-primary" onclick="confirmQuickPay()">Record Payment</button>
+      <button class="btn btn-secondary" id="modal-cancel-btn">Cancel</button>
+      <button class="btn btn-primary" id="modal-record-submit-btn">Record Payment</button>
     `);
 
-    window.loadStudentMembership = (studentId) => {
-      if (!studentId) return;
-      const membership = store.getActiveMembership(studentId);
+    document.getElementById('modal-cancel-btn')?.addEventListener('click', () => modal.close());
+
+    const studentSelect = document.getElementById('qpay-student');
+    studentSelect?.addEventListener('change', () => {
+      const sid = studentSelect.value;
       const info = document.getElementById('qpay-membership-info');
+      if (!sid || !info) return;
+      const membership = store.getActiveMembership(sid);
       if (membership) {
         const pending = store.getPendingAmount(membership.id);
         info.style.display = 'block';
-        info.innerHTML = `<strong>Outstanding:</strong> ${utils.formatINR(pending)} &nbsp;·&nbsp; Plan: ${membership.planName}`;
-        document.getElementById('qpay-amount').value = pending;
+        info.innerHTML = `<strong>Active Membership:</strong> ${esc(membership.planName || 'Standard')} &nbsp;·&nbsp; <strong>Due:</strong> ${utils.formatINR(pending)}`;
+        document.getElementById('qpay-amount').value = pending > 0 ? pending : '';
+        info.dataset.membershipId = membership.id;
       } else {
         info.style.display = 'block';
-        info.innerHTML = '<span style="color:var(--sf-warning-600);">No active membership found</span>';
+        info.innerHTML = '<span style="color:var(--sf-warning-600);">No active membership found for this student.</span>';
+        info.dataset.membershipId = '';
       }
-      info.dataset.membershipId = membership?.id || '';
-    };
+    });
 
-    window.confirmQuickPay = () => {
+    document.getElementById('modal-record-submit-btn')?.addEventListener('click', async () => {
       const studentId = document.getElementById('qpay-student')?.value;
-      const membershipId = document.getElementById('qpay-membership-info')?.dataset.membershipId;
+      const membershipId = document.getElementById('qpay-membership-info')?.dataset.membershipId || null;
       const amount = parseFloat(document.getElementById('qpay-amount')?.value || 0);
-      const method = document.getElementById('qpay-method')?.value;
-      const ref = document.getElementById('qpay-ref')?.value;
-      const notes = document.getElementById('qpay-notes')?.value;
+      const date = document.getElementById('qpay-date')?.value;
+      const mode = document.getElementById('qpay-method')?.value;
+      const referenceNumber = document.getElementById('qpay-ref')?.value?.trim();
+      const notes = document.getElementById('qpay-notes')?.value?.trim();
 
       if (!studentId) { toast.show('Please select a student', 'error'); return; }
-      if (!membershipId) { toast.show('No active membership for this student', 'error'); return; }
-      if (!amount || amount <= 0) { toast.show('Please enter a valid amount', 'error'); return; }
+      if (!amount || amount <= 0) { toast.show('Please enter a valid payment amount', 'error'); return; }
+      if (!date) { toast.show('Please select a payment date', 'error'); return; }
+
+      const submitBtn = document.getElementById('modal-record-submit-btn');
+      if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Saving Payment...'; }
 
       try {
         const student = store.getStudent(studentId);
-        const payment = store.recordPayment({ membershipId, studentId, amount, method, txnId: ref, notes });
+        // Await server write and receive server assigned receipt number & ID
+        const payment = await store.recordPayment({
+          studentId,
+          membershipId,
+          branchId,
+          amount,
+          mode,
+          referenceNumber,
+          date,
+          notes
+        });
 
-        // Generate branded receipt document
+        // Generate receipt document
         let receiptDoc = null;
         if (window.invoiceGenerator) {
           receiptDoc = window.invoiceGenerator.generateReceipt({
@@ -160,13 +541,13 @@ export function renderPayments(container) {
             membershipId,
             studentId,
             amount,
-            paymentMethod: method,
-            transactionRef: ref,
+            paymentMethod: mode,
+            transactionRef: referenceNumber,
             notes
           });
         }
 
-        // Dispatch WhatsApp notification
+        // Dispatch WhatsApp receipt notification
         let notifMsg = null;
         if (window.notificationService && window.NOTIFICATION_EVENTS) {
           notifMsg = window.notificationService.dispatchEvent(window.NOTIFICATION_EVENTS.PAYMENT_RECEIVED, {
@@ -179,7 +560,7 @@ export function renderPayments(container) {
           });
         }
 
-        const pendingAfter = store.getPendingAmount(membershipId);
+        const pendingAfter = membershipId ? store.getPendingAmount(membershipId) : 0;
 
         modal.open('Payment Recorded 🎉', `
           <div style="text-align:center;padding:var(--space-2) 0 var(--space-4);">
@@ -187,17 +568,17 @@ export function renderPayments(container) {
               ${icons.checkCircle}
             </div>
             <div style="font-size:var(--text-lg);font-weight:var(--fw-bold);color:var(--color-text-primary);">
-              Payment of ${utils.formatINR(amount)} Recorded!
+              Payment of ${utils.formatINR(amount)} Confirmed!
             </div>
             <div style="font-size:var(--text-sm);color:var(--color-text-secondary);margin-top:var(--space-1);">
-              Student: <strong>${esc(student?.name || 'Student')}</strong> · Mode: <strong>${esc(method)}</strong>
+              Student: <strong>${esc(student?.name || 'Student')}</strong> · Method: <strong>${esc(mode.toUpperCase())}</strong>
             </div>
           </div>
 
           <div style="background:var(--color-bg-secondary);border:1px solid var(--color-border-secondary);border-radius:var(--radius-xl);padding:var(--space-4);margin-bottom:var(--space-4);">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--space-2);">
               <span style="font-size:var(--text-xs);color:var(--color-text-tertiary);text-transform:uppercase;font-weight:var(--fw-semibold);">Receipt #</span>
-              <span style="font-family:var(--font-mono);font-size:var(--text-xs);font-weight:var(--fw-bold);color:var(--sf-indigo-600);">${esc(receiptDoc?.documentNumber || payment.receiptNumber)}</span>
+              <span style="font-family:var(--font-mono);font-size:var(--text-xs);font-weight:var(--fw-bold);color:var(--sf-indigo-600);">${esc(payment.receiptNumber)}</span>
             </div>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--space-2);">
               <span style="font-size:var(--text-sm);color:var(--color-text-secondary);">Remaining Balance</span>
@@ -207,299 +588,161 @@ export function renderPayments(container) {
               <span style="font-size:var(--text-xs);color:var(--color-text-tertiary);">WhatsApp Receipt</span>
               <span class="badge ${notifMsg?.status === 'skipped' ? 'badge-neutral' : 'badge-success'}" style="font-size:11px;">
                 <span class="badge-dot"></span>
-                ${notifMsg?.status === 'skipped' ? 'Opted Out' : `Queued (${esc(student?.normalized_phone || student?.phone)})`}
+                ${notifMsg?.status === 'skipped' ? 'Opted Out' : `Queued (${esc(student?.phone)})`}
               </span>
             </div>
           </div>
         `, `
-          ${receiptDoc ? `<button class="btn btn-secondary" onclick="invoiceGenerator.previewDocument('${escAttr(receiptDoc.id)}')">${icons.eye} View Receipt</button>` : ''}
-          <button class="btn btn-primary" onclick="modal.close(); app._navigate();">Done</button>
+          ${receiptDoc ? `<button class="btn btn-secondary" id="modal-view-rcpt-btn">${icons.eye} View Receipt</button>` : ''}
+          <button class="btn btn-primary" id="modal-done-btn">Done</button>
         `);
 
+        document.getElementById('modal-view-rcpt-btn')?.addEventListener('click', () => {
+          if (receiptDoc && window.invoiceGenerator) window.invoiceGenerator.previewDocument(receiptDoc.id);
+        });
+        document.getElementById('modal-done-btn')?.addEventListener('click', () => {
+          modal.close();
+          renderView();
+        });
+
         toast.show(`Payment of ${utils.formatINR(amount)} recorded!`, 'success');
-      } catch (e) { toast.show(e.message, 'error'); }
-    };
-  };
-}
+      } catch (err) {
+        toast.show(err.message || 'Payment recording failed', 'error');
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Record Payment'; }
+      }
+    });
+  }
 
-function renderPayStat(label, value, color) {
-  const colorMap = {
-    success: { bg: 'var(--sf-success-50)', text: 'var(--sf-success-700)' },
-    indigo: { bg: 'var(--sf-indigo-50)', text: 'var(--sf-indigo-700)' },
-    error: { bg: 'var(--sf-error-50)', text: 'var(--sf-error-700)' },
-    neutral: { bg: 'var(--color-bg-secondary)', text: 'var(--color-text-secondary)' },
-  };
-  const c = colorMap[color] || colorMap.neutral;
-  return `
-    <div class="stat-card">
-      <div class="stat-card-top"><div class="stat-card-label">${label}</div></div>
-      <div class="stat-card-value" style="font-size:var(--text-2xl);color:${c.text};">${typeof value === 'number' ? utils.formatINR(value) : value}</div>
-    </div>
-  `;
-}
-
-function renderPaymentsTable(payments, search) {
-  const allDocs = (store.getDocuments ? store.getDocuments() : []);
-  const allMessages = (store.getNotificationMessages ? store.getNotificationMessages() : []);
-
-  return `
-    <div class="table-container">
-      <div class="table-header">
-        <div class="table-title">All Payments</div>
-        <div class="input-group" style="width:240px;">
-          <div class="input-group-prefix">${icons.search}</div>
-          <input class="input" type="text" placeholder="Search student, receipt..." value="${search}"
-            oninput="filterPaymentsSearch(this.value)">
+  function openVoidPaymentModal(paymentId, receiptNumber, amount) {
+    modal.open('Void / Refund Payment', `
+      <div style="display:flex;flex-direction:column;gap:var(--space-3);">
+        <p style="font-size:var(--text-sm);color:var(--color-text-secondary);">
+          Are you sure you want to cancel payment <strong>${esc(receiptNumber || paymentId)}</strong> of <strong>${utils.formatINR(amount)}</strong>?
+          This will reverse the payment from revenue and update the student's pending membership dues.
+        </p>
+        <div class="form-group">
+          <label class="form-label">Reason <span class="required">*</span></label>
+          <input type="text" class="input" id="pay-void-reason" placeholder="e.g. Student dropped out, Payment bounced, Entered in error">
         </div>
       </div>
-      <div class="table-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th>Student</th>
-              <th>Receipt</th>
-              <th>Amount</th>
-              <th>Method</th>
-              <th>Date</th>
-              <th>WhatsApp</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${payments.slice(0, 50).map(p => {
-              const doc = allDocs.find(d => d.entityId === p.id || d.documentNumber === p.receiptNumber || d.paymentId === p.id);
-              const msg = allMessages.find(m => m.metadata?.paymentId === p.id || m.metadata?.receiptNumber === p.receiptNumber);
+    `, `
+      <button class="btn btn-secondary" id="modal-cancel-btn">Cancel</button>
+      <button class="btn btn-error" id="modal-confirm-void-btn">Void Payment</button>
+    `);
 
-              let waBadge = `<span class="badge badge-neutral" style="font-size:11px;">Not Queued</span>`;
-              if (msg) {
-                const badgeClass = msg.status === 'delivered' ? 'badge-success' : msg.status === 'failed' ? 'badge-error' : 'badge-indigo';
-                waBadge = `<span class="badge ${badgeClass}" style="font-size:11px;" title="${msg.phone}"><span class="badge-dot"></span>${msg.status.toUpperCase()}</span>`;
-              } else if (p.student?.whatsapp_opt_in !== false) {
-                waBadge = `<span class="badge badge-success" style="font-size:11px;"><span class="badge-dot"></span>DELIVERED</span>`;
-              }
+    document.getElementById('modal-cancel-btn')?.addEventListener('click', () => modal.close());
+    document.getElementById('modal-confirm-void-btn')?.addEventListener('click', async () => {
+      const reason = document.getElementById('pay-void-reason')?.value?.trim();
+      if (!reason) { toast.show('Please provide a reason', 'error'); return; }
 
-              return `
-              <tr>
-                <td>
-                  <div class="student-cell" style="cursor:pointer;" onclick="app.navigate('/student', {id:'${escAttr(p.student?.id)}'})">
-                    <div class="avatar avatar-sm" style="background:${escAttr(p.student?.avatar)};">${utils.initials(p.student?.name || '')}</div>
-                    <div>
-                      <div class="student-name">${esc(p.student?.name || '—')}</div>
-                      <div class="student-id">${esc(p.student?.id || '')}</div>
-                    </div>
-                  </div>
-                </td>
-                <td><span style="font-family:var(--font-mono);font-size:var(--text-xs);color:var(--sf-indigo-600);">${esc(p.receiptNumber)}</span></td>
-                <td style="font-weight:var(--fw-semibold);color:var(--sf-success-600);">${utils.formatINR(p.amount)}</td>
-                <td style="color:var(--color-text-secondary);">${esc(p.method || '—')}</td>
-                <td style="color:var(--color-text-secondary);">${utils.formatDate(p.recordedAt, {day:'numeric',month:'short',year:'numeric'})}</td>
-                <td>${waBadge}</td>
-                <td>
-                  <div style="display:flex;gap:var(--space-2);">
-                    <button class="btn btn-ghost btn-sm" onclick="previewPaymentReceipt(this.dataset.pid, this.dataset.rcpt, this.dataset.sid)" data-pid="${escAttr(p.id)}" data-rcpt="${escAttr(p.receiptNumber)}" data-sid="${escAttr(p.student?.id)}" title="View / Print Receipt">
-                      ${icons.fileText || icons.eye} Receipt
-                    </button>
-                    <button class="btn btn-ghost btn-icon btn-sm" onclick="resendPaymentReceiptWhatsApp(this.dataset.pid, this.dataset.sid)" data-pid="${escAttr(p.id)}" data-sid="${escAttr(p.student?.id)}" title="Resend WhatsApp Receipt">
-                      ${icons.send || icons.bell}
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            `;}).join('') || `
-              <tr><td colspan="7"><div class="empty-state" style="padding:var(--space-8);">
-                <div class="empty-icon">${icons['dollar-sign']}</div>
-                <div class="empty-title">No payments found</div>
-              </div></td></tr>
-            `}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  `;
-}
+      const voidBtn = document.getElementById('modal-confirm-void-btn');
+      if (voidBtn) { voidBtn.disabled = true; voidBtn.textContent = 'Processing...'; }
 
-function renderDuesTable(pendingDues) {
-  const esc = (s) => (typeof window !== 'undefined' && window.escapeHtml ? window.escapeHtml(s) : String(s == null ? '' : s));
-  const escAttr = (s) => (typeof window !== 'undefined' && window.escapeAttr ? window.escapeAttr(s) : String(s == null ? '' : s));
-
-  return `
-    <div class="table-container">
-      <div class="table-header">
-        <div class="table-title">Pending Dues</div>
-        <div style="display:flex;gap:var(--space-3);align-items:center;">
-          <div style="font-size:var(--text-sm);color:var(--sf-error-600);font-weight:var(--fw-semibold);">
-            Total: ${utils.formatINR(pendingDues.reduce((s,d)=>s+d.pendingAmount,0))}
-          </div>
-          <button class="btn btn-secondary btn-sm" onclick="sendBulkDueReminders()">
-            ${icons.bell} Remind All (${pendingDues.length})
-          </button>
-        </div>
-      </div>
-      <div class="table-scroll">
-        <table>
-          <thead>
-            <tr><th>Student</th><th>Seat</th><th>Plan</th><th>Due Amount</th><th>Days Pending</th><th>Actions</th></tr>
-          </thead>
-          <tbody>
-            ${pendingDues.map(d => `
-              <tr onclick="app.navigate('/student', {id:'${escAttr(d.student?.id)}'})">
-                <td>
-                  <div class="student-cell">
-                    <div class="avatar avatar-sm" style="background:${escAttr(d.student?.avatar)};">${utils.initials(d.student?.name || '')}</div>
-                    <div>
-                      <div class="student-name">${esc(d.student?.name || '—')}</div>
-                      <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);">${esc(d.student?.phone || '')}</div>
-                    </div>
-                  </div>
-                </td>
-                <td>${d.seat ? `<span class="badge badge-indigo">${esc(d.seat.label)}</span>` : '—'}</td>
-                <td style="color:var(--color-text-secondary);">${esc(d.membership?.planName || '—')}</td>
-                <td style="font-weight:var(--fw-semibold);color:var(--sf-error-600);">${utils.formatINR(d.pendingAmount)}</td>
-                <td><span class="badge badge-warning">${esc(d.daysDue)}d pending</span></td>
-                <td onclick="event.stopPropagation()">
-                  <div style="display:flex;gap:var(--space-2);">
-                    <button class="btn btn-primary btn-sm" onclick="openPaymentModal(this.dataset.sid, this.dataset.mid)" data-sid="${escAttr(d.student?.id)}" data-mid="${escAttr(d.membership?.id)}">
-                      Collect
-                    </button>
-                    <button class="btn btn-secondary btn-sm" onclick="sendDueWhatsAppReminder(this.dataset.sid, this.dataset.mid, parseFloat(this.dataset.amount))" data-sid="${escAttr(d.student?.id)}" data-mid="${escAttr(d.membership?.id)}" data-amount="${Number(d.pendingAmount) || 0}">
-                      ${icons.bell} Remind (WA)
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            `).join('') || `
-              <tr><td colspan="6"><div class="empty-state" style="padding:var(--space-8);">
-                <div class="empty-icon">${icons.checkCircle}</div>
-                <div class="empty-title">No pending dues!</div>
-                <div class="empty-desc">All students are up to date on payments.</div>
-              </div></td></tr>
-            `}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  `;
-}
-
-window.previewPaymentReceipt = function(paymentId, receiptNumber, studentId) {
-  const docs = (store.getDocuments ? store.getDocuments() : []);
-  let doc = docs.find(d => d.entityId === paymentId || d.documentNumber === receiptNumber || d.paymentId === paymentId);
-  
-  if (!doc && window.invoiceGenerator) {
-    // Generate dynamically if missing
-    const payment = store.getPayments().find(p => p.id === paymentId || p.receiptNumber === receiptNumber);
-    if (payment) {
-      doc = window.invoiceGenerator.generateReceipt({
-        paymentId: payment.id,
-        membershipId: payment.membershipId,
-        studentId: payment.studentId,
-        amount: payment.amount,
-        paymentMethod: payment.method,
-        transactionRef: payment.txnId
-      });
-    }
-  }
-
-  if (doc && window.invoiceGenerator) {
-    window.invoiceGenerator.previewDocument(doc.id);
-  } else {
-    toast.show('Receipt document generated and ready for print', 'info');
-  }
-};
-
-window.resendPaymentReceiptWhatsApp = function(paymentId, studentId) {
-  const student = store.getStudent(studentId);
-  const payment = store.getPayments().find(p => p.id === paymentId);
-  if (!student || !payment) { toast.show('Payment not found', 'error'); return; }
-
-  // 1-Click Free direct WhatsApp receipt option
-  const text = `Hello ${student.name},\n\nPayment Receipt Confirmation:\nReceipt No: ${payment.receiptNumber}\nAmount: ${utils.formatINR(payment.amount)}\nDate: ${utils.formatDate(payment.recordedAt || payment.createdAt)}\nMethod: ${payment.method || 'Cash'}\n\nThank you! — StudyFlow Library`;
-
-  if (window.notificationService && window.NOTIFICATION_EVENTS) {
-    const msg = window.notificationService.dispatchEvent(window.NOTIFICATION_EVENTS.PAYMENT_RECEIVED, {
-      studentId: student.id,
-      membershipId: payment.membershipId,
-      paymentId: payment.id,
-      amount: payment.amount,
-      receiptNumber: payment.receiptNumber
+      try {
+        await store.voidPayment(paymentId, reason);
+        modal.close();
+        toast.show('Payment voided and dues recalculated', 'success');
+        renderView();
+      } catch (err) {
+        toast.show(err.message || 'Void failed', 'error');
+        if (voidBtn) { voidBtn.disabled = false; voidBtn.textContent = 'Void Payment'; }
+      }
     });
-
-    if (msg?.status === 'skipped') {
-      toast.show(`WhatsApp skipped: Student opted out.`, 'warning');
-    } else {
-      toast.show(`WhatsApp receipt dispatched for ${student.name}!`, 'success');
-      app._navigate();
-    }
-  } else {
-    utils.openWhatsApp(student.phone, text);
   }
-};
 
-window.sendDirectWhatsAppReceipt = function(paymentId, studentId) {
-  const student = store.getStudent(studentId);
-  const payment = store.getPayments().find(p => p.id === paymentId);
-  if (!student || !payment) return;
-  const text = `Hello ${student.name},\n\nPayment Receipt Confirmation:\nReceipt No: ${payment.receiptNumber}\nAmount: ${utils.formatINR(payment.amount)}\nDate: ${utils.formatDate(payment.recordedAt || payment.createdAt)}\nMethod: ${payment.method || 'Cash'}\n\nThank you! — StudyFlow Library`;
-  utils.openWhatsApp(student.phone, text);
-  toast.show('Opening WhatsApp Web...', 'info');
-};
+  function previewReceipt(paymentId, receiptNumber, studentId) {
+    const docs = (store.getDocuments ? store.getDocuments() : []);
+    let doc = docs.find(d => d.entityId === paymentId || d.documentNumber === receiptNumber || d.paymentId === paymentId);
 
-window.sendDueWhatsAppReminder = function(studentId, membershipId, dueAmount) {
-  const student = store.getStudent(studentId);
-  if (!student) return;
-
-  const text = `Hello ${student.name},\n\nThis is a friendly reminder from StudyFlow Library that your membership fee of ${utils.formatINR(dueAmount)} is pending.\nKindly clear your dues to ensure uninterrupted library access.\n\nThank you!`;
-
-  if (window.notificationService && window.NOTIFICATION_EVENTS) {
-    const msg = window.notificationService.dispatchEvent(window.NOTIFICATION_EVENTS.PAYMENT_REMINDER, {
-      studentId,
-      membershipId,
-      amountDue: dueAmount
-    });
-
-    if (msg?.status === 'skipped') {
-      toast.show(`Reminder skipped: Student opted out.`, 'warning');
-    } else {
-      toast.show(`Fee reminder dispatched to ${student.name}!`, 'success');
+    if (!doc && window.invoiceGenerator) {
+      const payment = store.getAllPayments().find(p => p.id === paymentId || p.receiptNumber === receiptNumber);
+      if (payment) {
+        doc = window.invoiceGenerator.generateReceipt({
+          paymentId: payment.id,
+          membershipId: payment.membershipId,
+          studentId: payment.studentId,
+          amount: payment.amount,
+          paymentMethod: payment.mode || payment.method,
+          transactionRef: payment.referenceNumber
+        });
+      }
     }
-  } else {
-    utils.openWhatsApp(student.phone, text);
+
+    if (doc && window.invoiceGenerator) {
+      window.invoiceGenerator.previewDocument(doc.id);
+    } else {
+      toast.show('Receipt preview ready', 'info');
+    }
   }
-};
 
-window.sendDirectWhatsAppDueReminder = function(studentId, dueAmount) {
-  const student = store.getStudent(studentId);
-  if (!student) return;
-  const text = `Hello ${student.name},\n\nThis is a friendly reminder from StudyFlow Library that your membership fee of ${utils.formatINR(dueAmount)} is pending.\nKindly clear your dues to ensure uninterrupted library access.\n\nThank you!`;
-  utils.openWhatsApp(student.phone, text);
-  toast.show('Opening WhatsApp Web...', 'info');
-};
+  function sendDueReminder(studentId, membershipId, dueAmount) {
+    const student = store.getStudent(studentId);
+    if (!student) return;
 
-window.sendBulkDueReminders = function() {
-  const branchId = store.getActiveBranchId();
-  const pendingDues = store.getPendingDues(branchId);
-  if (!pendingDues.length) { toast.show('No pending dues to remind', 'info'); return; }
-
-  let sent = 0;
-  pendingDues.forEach(d => {
     if (window.notificationService && window.NOTIFICATION_EVENTS) {
-      const res = window.notificationService.dispatchEvent(window.NOTIFICATION_EVENTS.PAYMENT_REMINDER, {
-        studentId: d.student.id,
-        membershipId: d.membership.id,
-        amountDue: d.pendingAmount
+      const msg = window.notificationService.dispatchEvent(window.NOTIFICATION_EVENTS.PAYMENT_REMINDER, {
+        studentId,
+        membershipId,
+        amountDue: dueAmount
       });
-      if (res && res.status !== 'skipped') sent++;
+      if (msg?.status === 'skipped') toast.show('Reminder skipped: Student opted out.', 'warning');
+      else toast.show(`Fee reminder dispatched to ${student.name}!`, 'success');
+    } else {
+      const text = `Hello ${student.name},\n\nFriendly reminder from StudyFlow Library: your membership fee of ${utils.formatINR(dueAmount)} is pending.\nKindly clear your dues at the earliest.\n\nThank you!`;
+      utils.openWhatsApp(student.phone, text);
     }
-  });
+  }
 
-  toast.show(`Queued fee reminder WhatsApp messages to ${sent} students!`, 'success');
-  app._navigate();
-};
+  function sendBulkReminders() {
+    const pendingDues = store.getPendingDues(branchId);
+    if (!pendingDues.length) { toast.show('No pending dues to remind', 'info'); return; }
 
-window.filterPaymentsSearch = function(q) {
-  const rows = document.querySelectorAll('#payments-tab-content tbody tr');
-  rows.forEach(row => {
-    const text = row.textContent.toLowerCase();
-    row.style.display = q ? (text.includes(q.toLowerCase()) ? '' : 'none') : '';
-  });
-};
+    let sent = 0;
+    pendingDues.forEach(d => {
+      if (window.notificationService && window.NOTIFICATION_EVENTS) {
+        const res = window.notificationService.dispatchEvent(window.NOTIFICATION_EVENTS.PAYMENT_REMINDER, {
+          studentId: d.student?.id,
+          membershipId: d.membership?.id,
+          amountDue: d.pendingAmount
+        });
+        if (res && res.status !== 'skipped') sent++;
+      }
+    });
+
+    toast.show(`Dispatched fee reminder messages to ${sent} students!`, 'success');
+  }
+
+  function exportPaymentsCSV() {
+    const payments = getBranchPayments();
+    if (!payments.length) { toast.show('No payments to export', 'info'); return; }
+
+    const headers = ['Payment ID', 'Receipt Number', 'Payment Date', 'Student Name', 'Phone', 'Amount', 'Method', 'UTR Reference', 'Status', 'Notes'];
+    const rows = payments.map(p => {
+      const student = store.getStudent(p.studentId);
+      return [
+        p.id,
+        p.receiptNumber || '',
+        p.date || p.recordedAt,
+        `"${(student?.name || '').replace(/"/g, '""')}"`,
+        `"${(student?.phone || '').replace(/"/g, '""')}"`,
+        p.amount,
+        p.mode || p.method || 'cash',
+        `"${(p.referenceNumber || '').replace(/"/g, '""')}"`,
+        p.status || 'recorded',
+        `"${(p.notes || '').replace(/"/g, '""')}"`
+      ];
+    });
+
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `studyflow_payments_${branchId || 'all'}_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.show('Payments CSV exported!', 'success');
+  }
+
+  renderView();
+}
