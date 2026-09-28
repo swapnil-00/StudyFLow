@@ -882,7 +882,7 @@ module.exports = withHandler(async function handler(req, res) {
   }
 
   // ── 14. PASSWORD RESET REQUEST & CONFIRM (AUTH-10) ────────────────────────
-  if (action === 'password_reset_request') {
+  if (action === 'password_reset_request' || action === 'password_reset') {
     const { email } = req.body || {};
     if (!email) throw new HttpError(400, 'MISSING_EMAIL', 'Email address is required.');
 
@@ -1001,6 +1001,10 @@ module.exports = withHandler(async function handler(req, res) {
       await query('UPDATE users SET name = $1, phone = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3', [name.trim(), phone ? phone.trim() : '', session.userId]);
       return res.json({ ok: true, message: 'Profile updated successfully!' });
     }
+  }
+
+  if (action === 'upgrade_plan') {
+    throw new HttpError(403, 'UPGRADE_DISABLED', 'Plan upgrade via this endpoint is disabled. Contact sales/support.');
   }
 
   throw new HttpError(400, 'UNKNOWN_ACTION', 'Unknown auth action');
