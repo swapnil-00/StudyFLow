@@ -728,56 +728,46 @@ window.confirmAssignSeat = async function() {
   if (!seatId) { toast.show('Please select a seat', 'error'); return; }
   if (!planId) { toast.show('Please select a membership plan', 'error'); return; }
   if (!startDate) { toast.show('Please enter a start date', 'error'); return; }
-  if (!price || price <= 0) { toast.show('Please enter a valid amount', 'error'); return; }
+  if (isNaN(price) || price <= 0) { toast.show('Please enter a valid amount', 'error'); return; }
+  if (discount > price) { toast.show('Discount cannot exceed the plan price', 'error'); return; }
 
-  const plan = store.getMembershipPlan(planId);
-  const endDate = utils.addDays(startDate, plan.duration);
+  const activeTab = document.querySelector('#assign-payment-status-tabs .filter-tab.active');
+  const payStatus = activeTab?.dataset.status || 'paid';
+  let payAmount = price - discount;
+
+  if (payStatus === 'partial') {
+    payAmount = parseFloat(document.getElementById('assign-pay-amt')?.value || 0);
+  } else if (payStatus === 'pending') {
+    payAmount = 0;
+  }
+
+  const btn = document.querySelector('.modal-footer .btn-primary');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner-sm"></span> Assigning Seat...`;
+  }
 
   try {
-    // Create membership
-    const membership = await store.addMembership({
+    const bookingResult = await store.bookSeat({
+      seatId,
       studentId,
       planId,
-      planName: plan.name,
       startDate,
-      endDate,
       price,
       discount,
+      payStatus,
+      payAmount,
+      mode: payMethod,
+      method: payMethod,
       notes
     });
 
-    // Assign seat
-    await store.assignSeat({
-      studentId,
-      seatId,
-      membershipId: membership.id,
-      startDate,
-      endDate
-    });
+    const membership = bookingResult.membership;
+    const paymentRecord = bookingResult.payment;
+    const plan = store.getMembershipPlan(planId);
+    const endDate = membership?.endDate || utils.addDays(startDate, plan?.duration || 30);
 
-    // Record payment
-    const activeTab = document.querySelector('#assign-payment-status-tabs .filter-tab.active');
-    const payStatus = activeTab?.dataset.status || 'paid';
-    let payAmount = price - discount;
-
-    if (payStatus === 'partial') {
-      payAmount = parseFloat(document.getElementById('assign-pay-amt')?.value || 0);
-    } else if (payStatus === 'pending') {
-      payAmount = 0;
-    }
-
-    let paymentRecord = null;
-    if (payAmount > 0) {
-      paymentRecord = await store.recordPayment({
-        membershipId: membership.id,
-        studentId,
-        amount: payAmount,
-        method: payMethod,
-        notes
-      });
-    }
-
-    // ── Generate Invoice & Receipt Documents ──
+    // ── Generate Invoice & Receipt Documents ONLY AFTER SUCCESSFUL BOOKING ──
     const student = store.getStudent(studentId);
     const seat = store.getSeat(seatId);
     const room = seat?.roomId ? store.getRoom(seat.roomId) : null;
@@ -786,7 +776,7 @@ window.confirmAssignSeat = async function() {
     let invoice = null;
     let receipt = null;
 
-    if (window.invoiceGenerator) {
+    if (window.invoiceGenerator && membership) {
       invoice = invoiceGenerator.generateInvoice({
         membershipId: membership.id,
         studentId,
@@ -803,7 +793,7 @@ window.confirmAssignSeat = async function() {
     }
 
     // ── Dispatch Asynchronous WhatsApp Notification ──
-    if (window.notificationService) {
+    if (window.notificationService && membership) {
       notificationService.dispatch(NOTIFICATION_EVENTS.SEAT_ASSIGNED, {
         studentId,
         entityId: membership.id,
@@ -815,7 +805,7 @@ window.confirmAssignSeat = async function() {
           seat_number: seat?.label || seat?.number || 'N/A',
           branch_name: branch?.name || 'StudyFlow Library',
           room_name: room?.name || 'Study Hall',
-          membership_name: plan.name,
+          membership_name: plan?.name || 'Membership',
           start_date: startDate,
           expiry_date: endDate,
           amount: (price - discount).toLocaleString('en-IN'),
@@ -833,9 +823,9 @@ window.confirmAssignSeat = async function() {
         <div style="width:54px;height:54px;border-radius:50%;background:var(--sf-success-50);color:var(--sf-success-600);display:flex;align-items:center;justify-content:center;margin:0 auto var(--space-3);font-size:24px;">
           ✓
         </div>
-        <h3 style="font-size:var(--text-lg);font-weight:var(--fw-bold);color:var(--color-text-primary);">Seat ${seat?.label} is Booked!</h3>
+        <h3 style="font-size:var(--text-lg);font-weight:var(--fw-bold);color:var(--color-text-primary);">Seat ${window.escapeHtml ? window.escapeHtml(seat?.label) : seat?.label} is Booked!</h3>
         <p style="font-size:var(--text-sm);color:var(--color-text-secondary);margin-top:4px;">
-          Assigned to <strong>${student?.name}</strong> for ${plan.name} (${startDate} to ${endDate})
+          Assigned to <strong>${window.escapeHtml ? window.escapeHtml(student?.name) : student?.name}</strong> for ${window.escapeHtml ? window.escapeHtml(plan?.name || '') : plan?.name} (${startDate} to ${endDate})
         </p>
       </div>
 
@@ -850,7 +840,7 @@ window.confirmAssignSeat = async function() {
           <div>
             <span style="color:var(--color-text-tertiary);">Invoice Number:</span>
             <div style="font-weight:var(--fw-semibold);color:var(--color-text-primary);margin-top:2px;">
-              ${invoice ? invoice.documentNumber : 'Generated'}
+              ${invoice ? window.escapeHtml(invoice.documentNumber) : (bookingResult.receiptNumber || 'Generated')}
             </div>
           </div>
         </div>
@@ -865,7 +855,7 @@ window.confirmAssignSeat = async function() {
             WhatsApp Confirmation Queued
           </div>
           <div style="font-size:var(--text-xs);color:#099250;">
-            Sent to ${student?.normalized_phone || student?.phone || 'student phone'} with PDF invoice attached.
+            Sent to ${window.escapeHtml ? window.escapeHtml(student?.normalized_phone || student?.phone || '') : (student?.normalized_phone || student?.phone)} with PDF invoice attached.
           </div>
         </div>
         <span class="badge badge-success"><span class="badge-dot"></span>Queued</span>
@@ -880,7 +870,7 @@ window.confirmAssignSeat = async function() {
           ` : ''}
         </div>
         <div style="display:flex;gap:var(--space-2);">
-          <button class="btn btn-secondary btn-sm" onclick="modal.close(); app.navigate('/student?id=${studentId}')">
+          <button class="btn btn-secondary btn-sm" onclick="modal.close(); app.navigate('/student', { id: '${studentId}' })">
             View Student
           </button>
           <button class="btn btn-primary btn-sm" onclick="modal.close()">
@@ -892,6 +882,10 @@ window.confirmAssignSeat = async function() {
 
     app._navigate();
   } catch (e) {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = `${icons['user-plus']} Assign Seat`;
+    }
     toast.show(e.message, 'error');
   }
 };
@@ -1044,15 +1038,24 @@ window.openReleaseModal = function(seatId) {
   `);
 };
 
-window.confirmRelease = function(seatId) {
-  const reason = document.getElementById('release-reason')?.value;
+window.confirmRelease = async function(seatId) {
+  const reason = document.getElementById('release-reason')?.value || 'Student left';
+  const btn = document.querySelector('.modal-footer .btn-danger');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Releasing...';
+  }
   try {
-    store.releaseSeat(seatId, reason, 'admin');
+    await store.releaseSeat(seatId, reason, 'admin');
     modal.close();
     drawer.close();
     toast.show('Seat released successfully', 'success');
     app._navigate();
   } catch (e) {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Release Seat';
+    }
     toast.show(e.message, 'error');
   }
 };
@@ -1298,61 +1301,55 @@ window.openRenewModal = function(studentId, seatId) {
   };
 };
 
-window.confirmRenew = function(studentId, seatId) {
+window.confirmRenew = async function(studentId, seatId) {
   const planId = document.getElementById('renew-plan')?.value;
   const startDate = document.getElementById('renew-start')?.value;
   const price = parseFloat(document.getElementById('renew-price')?.value || 0);
-  const method = document.getElementById('renew-method')?.value;
+  const method = document.getElementById('renew-method')?.value || 'cash';
 
   if (!planId) { toast.show('Please select a plan', 'error'); return; }
   if (!startDate) { toast.show('Please enter a start date', 'error'); return; }
 
   const plan = store.getMembershipPlan(planId);
-  const endDate = utils.addDays(startDate, plan.duration);
+  const endDate = utils.addDays(startDate, plan?.duration || 30);
+
+  const btn = document.querySelector('.modal-footer .btn-primary');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner-sm"></span> Renewing...`;
+  }
 
   try {
-    // Cancel old membership
-    const oldMem = store.getActiveMembership(studentId);
-    if (oldMem) store.updateMembership(oldMem.id, { status: 'renewed' });
-
-    // Create new membership
-    const newMem = store.addMembership({
-      studentId, planId, planName: plan.name, startDate, endDate, price, discount: 0
+    const renewResult = await store.renewBooking({
+      studentId,
+      seatId,
+      planId,
+      startDate,
+      endDate,
+      price,
+      discount: 0,
+      mode: method,
+      method,
+      payAmount: price
     });
 
-    // Update assignment
-    const assignment = store.getStudentAssignment(studentId);
-    if (assignment) {
-      const db = store.db;
-      const idx = db.seatAssignments.findIndex(a => a.id === assignment.id);
-      if (idx !== -1) { db.seatAssignments[idx].membershipId = newMem.id; db.seatAssignments[idx].endDate = endDate; store._save(db); }
-    }
+    const newMem = renewResult.membership;
+    const renewPayment = renewResult.payment;
+    const assignment = renewResult.assignment || store.getStudentAssignment(studentId);
 
-    // Auto-generate renewal invoice
+    // Auto-generate renewal invoice ONLY AFTER SUCCESSFUL RENEWAL
     let renewInvoiceDoc = null;
-    if (window.invoiceGenerator) {
+    let renewReceiptDoc = null;
+    if (window.invoiceGenerator && newMem) {
       renewInvoiceDoc = window.invoiceGenerator.generateInvoice({
         membershipId: newMem.id,
         studentId,
-        seatId: assignment?.seatId,
+        seatId: assignment?.seatId || seatId,
         planId: plan.id,
         amount: price,
         discount: 0
       });
-    }
-
-    // Record payment if price > 0
-    let renewPayment = null;
-    let renewReceiptDoc = null;
-    if (price > 0) {
-      renewPayment = await store.recordPayment({
-        membershipId: newMem.id,
-        studentId,
-        branchId: newMem.branchId || branchId,
-        amount: price,
-        mode: method
-      });
-      if (window.invoiceGenerator) {
+      if (renewPayment) {
         renewReceiptDoc = window.invoiceGenerator.generateReceipt({
           paymentId: renewPayment.id,
           membershipId: newMem.id,
@@ -1364,28 +1361,29 @@ window.confirmRenew = function(studentId, seatId) {
     }
 
     // Dispatch MEMBERSHIP_RENEWED WhatsApp event
-    let notifMsg = null;
-    if (window.notificationService && window.NOTIFICATION_EVENTS) {
-      notifMsg = window.notificationService.dispatchEvent(window.NOTIFICATION_EVENTS.MEMBERSHIP_RENEWED, {
+    if (window.notificationService && window.NOTIFICATION_EVENTS && newMem) {
+      window.notificationService.dispatchEvent(window.NOTIFICATION_EVENTS.MEMBERSHIP_RENEWED, {
         studentId,
         membershipId: newMem.id,
-        seatId: assignment?.seatId,
-        planName: plan.name,
+        seatId: assignment?.seatId || seatId,
+        planName: plan?.name || 'Membership',
         newEndDate: endDate,
         amount: price,
         invoiceNumber: renewInvoiceDoc?.documentNumber,
-        receiptNumber: renewReceiptDoc?.documentNumber,
+        receiptNumber: renewReceiptDoc?.documentNumber || renewResult.receiptNumber,
         documentId: renewInvoiceDoc?.id
       });
     }
-
-    store.addActivity({ action: 'membership_renewed', entity: 'membership', entityId: newMem.id, description: `Membership renewed for ${store.getStudent(studentId)?.name}` });
 
     modal.close();
     drawer.close();
     toast.show('Membership renewed successfully! WhatsApp confirmation queued.', 'success');
     app._navigate();
   } catch (e) {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = `${icons.repeat} Renew Membership`;
+    }
     toast.show(e.message, 'error');
   }
 };

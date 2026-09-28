@@ -708,6 +708,73 @@ class Store {
     });
   }
 
+  async bookSeat(data) {
+    const idempotencyKey = data.idempotencyKey || `BOOK-${Date.now()}-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
+    const res = await apiWrite('bookings', 'create', { ...data, idempotencyKey }, null, { 'Idempotency-Key': idempotencyKey });
+    
+    if (res && res.membership) {
+      const memIdx = (this._db.memberships || []).findIndex(m => m.id === res.membership.id);
+      if (memIdx !== -1) this._db.memberships[memIdx] = res.membership;
+      else (this._db.memberships = this._db.memberships || []).push(res.membership);
+
+      if (res.assignment) {
+        const asnIdx = (this._db.seatAssignments || []).findIndex(a => a.id === res.assignment.id);
+        if (asnIdx !== -1) this._db.seatAssignments[asnIdx] = res.assignment;
+        else (this._db.seatAssignments = this._db.seatAssignments || []).push(res.assignment);
+
+        const seat = this.getSeat(res.assignment.seatId);
+        if (seat) {
+          seat.status = 'occupied';
+          seat.currentStudentId = res.assignment.studentId;
+        }
+      }
+
+      if (res.payment) {
+        const payIdx = (this._db.payments || []).findIndex(p => p.id === res.payment.id);
+        if (payIdx !== -1) this._db.payments[payIdx] = res.payment;
+        else (this._db.payments = this._db.payments || []).push(res.payment);
+      }
+
+      this.addActivity({
+        action: 'seat_assigned',
+        entity: 'seat',
+        entityId: data.seatId,
+        description: `Seat booked for student with membership`,
+        meta: { membershipId: res.membership.id, seatId: data.seatId }
+      });
+      this._notify();
+    }
+    return res;
+  }
+
+  async renewBooking(data) {
+    const idempotencyKey = data.idempotencyKey || `RENEW-${Date.now()}-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
+    const res = await apiWrite('bookings', 'renew', { ...data, idempotencyKey }, null, { 'Idempotency-Key': idempotencyKey });
+
+    if (res && res.membership) {
+      (this._db.memberships = this._db.memberships || []).push(res.membership);
+
+      if (res.assignment) {
+        const asnIdx = (this._db.seatAssignments || []).findIndex(a => a.id === res.assignment.id);
+        if (asnIdx !== -1) this._db.seatAssignments[asnIdx] = res.assignment;
+      }
+
+      if (res.payment) {
+        (this._db.payments = this._db.payments || []).push(res.payment);
+      }
+
+      this.addActivity({
+        action: 'membership_renewed',
+        entity: 'membership',
+        entityId: res.membership.id,
+        description: `Membership renewed for student`,
+        meta: { membershipId: res.membership.id }
+      });
+      this._notify();
+    }
+    return res;
+  }
+
   async assignSeat(data) {
     const existing = this.getActiveAssignment(data.seatId);
     if (existing) throw new Error('Seat is already occupied. Please choose a different seat.');

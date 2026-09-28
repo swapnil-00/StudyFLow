@@ -10,6 +10,7 @@ const { validate } = require('../lib/validate');
 const { audit } = require('../lib/audit');
 const { encrypt } = require('../lib/crypto');
 const { HttpError } = require('../lib/errors');
+const { getTodayIST, addDaysIST } = require('../lib/dates');
 
 function uid(prefix) {
   return `${prefix}-${crypto.randomUUID().replace(/-/g, '').substring(0, 9).toUpperCase()}`;
@@ -653,6 +654,405 @@ module.exports = withHandler(async function handler(req, res) {
 
         await audit(client, session, 'seat.transfer', 'seats', toSeatId, { fromSeatId, toSeatId, studentId: old.student_id });
         return { ok: true, id: newAssignmentId, transferId };
+      });
+
+      return res.json(result);
+    }
+  }
+
+  // ── Bookings: Atomic One-Transaction Seat Booking & Renewal (SEC-008, SEC-010, S1-S6) ──
+  if (table === 'bookings') {
+    if (action === 'create' || action === 'insert') {
+      const b = data;
+      const idempotencyKey = req.headers['idempotency-key'] || b.idempotencyKey || null;
+
+      const result = await withTransaction(async client => {
+        // 1. Idempotency check: if key supplied and booking exists, replay response
+        if (idempotencyKey) {
+          const dupMem = await client.query(
+            `SELECT m.id, m.branch_id, m.plan_id, m.price, m.discount, m.final_amount, m.start_date, m.end_date, m.due_date, m.status, m.payment_status,
+                    a.id as assignment_id, a.seat_id,
+                    p.id as payment_id, p.amount as payment_amount, p.receipt_number, p.mode as payment_mode
+             FROM memberships m
+             LEFT JOIN seat_assignments a ON a.membership_id = m.id AND a.status = 'active'
+             LEFT JOIN payments p ON p.membership_id = m.id
+             WHERE m.organization_id = $1 AND m.idempotency_key = $2`,
+            [orgId, idempotencyKey]
+          );
+          if (dupMem.rows.length > 0) {
+            const row = dupMem.rows[0];
+            return {
+              ok: true,
+              duplicate: true,
+              membership: {
+                id: row.id,
+                studentId: b.studentId,
+                planId: row.plan_id,
+                branchId: row.branch_id,
+                seatId: row.seat_id,
+                startDate: row.start_date,
+                endDate: row.end_date,
+                dueDate: row.due_date,
+                price: parseFloat(row.price),
+                discount: parseFloat(row.discount) || 0,
+                finalAmount: parseFloat(row.final_amount),
+                status: row.status,
+                paymentStatus: row.payment_status
+              },
+              assignment: row.assignment_id ? {
+                id: row.assignment_id,
+                seatId: row.seat_id,
+                studentId: b.studentId,
+                membershipId: row.id,
+                branchId: row.branch_id,
+                startDate: row.start_date,
+                endDate: row.end_date,
+                status: 'active'
+              } : null,
+              payment: row.payment_id ? {
+                id: row.payment_id,
+                amount: parseFloat(row.payment_amount),
+                receiptNumber: row.receipt_number,
+                mode: row.payment_mode
+              } : null,
+              receiptNumber: row.receipt_number || null
+            };
+          }
+        }
+
+        // 2. Lock Seat & verify
+        const seatRes = await client.query(
+          `SELECT s.id, s.branch_id, s.room_id, s.seat_number, s.status, s.current_student_id
+           FROM seats s WHERE s.id = $1 AND s.organization_id = $2 FOR UPDATE`,
+          [b.seatId, orgId]
+        );
+        if (seatRes.rows.length === 0) {
+          throw new HttpError(404, 'SEAT_NOT_FOUND', 'Selected seat does not exist.');
+        }
+        const seat = seatRes.rows[0];
+        if (seat.status === 'maintenance') {
+          throw new HttpError(400, 'SEAT_UNAVAILABLE', 'Seat is under maintenance.');
+        }
+        assertBranchAccess(session, seat.branch_id);
+
+        // 3. Verify student exists and has no other active seat
+        await assertForeignEntity(client, 'students', b.studentId, orgId);
+        const stuAssign = await client.query(
+          `SELECT id, seat_id FROM seat_assignments WHERE student_id = $1 AND status = 'active' AND organization_id = $2`,
+          [b.studentId, orgId]
+        );
+        if (stuAssign.rows.length > 0) {
+          throw new HttpError(400, 'STUDENT_ALREADY_ASSIGNED', 'Student already has an active seat assignment.');
+        }
+
+        // 4. Verify seat has no active assignment
+        const seatAssign = await client.query(
+          `SELECT id, student_id FROM seat_assignments WHERE seat_id = $1 AND status = 'active' AND organization_id = $2`,
+          [b.seatId, orgId]
+        );
+        if (seatAssign.rows.length > 0) {
+          throw new HttpError(400, 'SEAT_ALREADY_ASSIGNED', 'Seat is already occupied. Please choose a different seat.');
+        }
+
+        // 5. Load Plan & calculate financial amounts
+        const planRes = await client.query(
+          `SELECT id, name, price, duration, duration_unit FROM membership_plans WHERE id = $1 AND organization_id = $2`,
+          [b.planId, orgId]
+        );
+        if (planRes.rows.length === 0) {
+          throw new HttpError(404, 'PLAN_NOT_FOUND', 'Membership plan not found.');
+        }
+        const plan = planRes.rows[0];
+        const planPrice = parseFloat(plan.price);
+        const discount = b.discount !== undefined ? Math.max(0, parseFloat(b.discount)) : 0;
+
+        if (discount > 0 && session.role !== 'owner' && session.role !== 'manager') {
+          throw new HttpError(403, 'DISCOUNT_NOT_ALLOWED', 'Only owners and managers are authorized to apply discounts.');
+        }
+        if (discount > planPrice) {
+          throw new HttpError(400, 'INVALID_DISCOUNT', 'Discount amount cannot exceed the plan price.');
+        }
+        const finalAmount = planPrice - discount;
+
+        // 6. Dates calculation
+        const startDate = b.startDate ? String(b.startDate).split('T')[0] : getTodayIST();
+        const durationDays = parseInt(plan.duration, 10) || 30;
+        const endDate = b.endDate ? String(b.endDate).split('T')[0] : addDaysIST(startDate, durationDays);
+        const dueDate = addDaysIST(startDate, 3); // 3 days grace period
+
+        // 7. Insert Membership (guaranteed branch_id = seat.branch_id)
+        const memId = uid('MEM');
+        await client.query(
+          `INSERT INTO memberships (id, organization_id, student_id, plan_id, branch_id, seat_id, start_date, end_date, due_date, price, discount, final_amount, status, payment_status, notes, idempotency_key)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+          [memId, orgId, b.studentId, plan.id, seat.branch_id, seat.id, startDate, endDate, dueDate, planPrice, discount, finalAmount, 'active', 'pending', b.notes || '', idempotencyKey]
+        );
+
+        // 8. Insert Seat Assignment
+        const assignId = uid('ASN');
+        await client.query(
+          `INSERT INTO seat_assignments (id, organization_id, seat_id, student_id, membership_id, branch_id, start_date, end_date, status)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active')`,
+          [assignId, orgId, seat.id, b.studentId, memId, seat.branch_id, startDate, endDate]
+        );
+
+        // 9. Update Seat status
+        await client.query(
+          `UPDATE seats SET status = 'occupied', current_student_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND organization_id = $3`,
+          [b.studentId, seat.id, orgId]
+        );
+
+        // 10. Process Payment if requested
+        let paymentRecord = null;
+        let generatedReceipt = null;
+        let computedPaymentStatus = 'pending';
+
+        let payAmount = 0;
+        if (b.payStatus === 'paid') {
+          payAmount = finalAmount;
+        } else if (b.payStatus === 'partial' || b.payAmount > 0) {
+          payAmount = Math.max(0, parseFloat(b.payAmount || 0));
+        }
+
+        if (payAmount > 0) {
+          if (payAmount > finalAmount) {
+            throw new HttpError(400, 'INVALID_PAYMENT_AMOUNT', 'Payment amount cannot exceed the total amount due.');
+          }
+
+          const allowedModes = ['cash', 'upi', 'card', 'bank_transfer', 'cheque', 'other'];
+          let mode = b.mode || b.method || 'cash';
+          mode = String(mode).toLowerCase().replace(/\s+/g, '_');
+          if (!allowedModes.includes(mode)) {
+            throw new HttpError(400, 'VALIDATION_ERROR', `Payment mode must be one of: ${allowedModes.join(', ')}`);
+          }
+
+          // Atomic sequential receipt allocation
+          const seqRes = await client.query(
+            `INSERT INTO receipt_sequences (organization_id, current_number)
+             VALUES ($1, 1)
+             ON CONFLICT (organization_id)
+             DO UPDATE SET current_number = receipt_sequences.current_number + 1, updated_at = CURRENT_TIMESTAMP
+             RETURNING current_number`,
+            [orgId]
+          );
+          const currentSeq = seqRes.rows[0].current_number;
+          const year = new Date().getFullYear();
+          generatedReceipt = `REC-${year}-${String(currentSeq).padStart(6, '0')}`;
+
+          const payId = uid('PAY');
+          const payIdempKey = idempotencyKey ? `${idempotencyKey}-PAY` : null;
+
+          await client.query(
+            `INSERT INTO payments (id,organization_id,student_id,membership_id,branch_id,amount,mode,reference_number,receipt_number,date,notes,status,idempotency_key)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+            [payId, orgId, b.studentId, memId, seat.branch_id, payAmount, mode, b.referenceNumber || '', generatedReceipt, startDate, b.notes || '', 'recorded', payIdempKey]
+          );
+
+          computedPaymentStatus = payAmount >= finalAmount ? 'paid' : 'partial';
+          await client.query(
+            `UPDATE memberships SET payment_status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND organization_id = $3`,
+            [computedPaymentStatus, memId, orgId]
+          );
+
+          paymentRecord = {
+            id: payId,
+            studentId: b.studentId,
+            membershipId: memId,
+            branchId: seat.branch_id,
+            amount: payAmount,
+            mode,
+            receiptNumber: generatedReceipt,
+            date: startDate,
+            status: 'recorded'
+          };
+        }
+
+        // 11. Audit log
+        await audit(client, session, 'booking.create', 'memberships', memId, {
+          studentId: b.studentId,
+          seatId: seat.id,
+          branchId: seat.branch_id,
+          planId: plan.id,
+          finalAmount,
+          payAmount,
+          paymentStatus: computedPaymentStatus
+        });
+
+        return {
+          ok: true,
+          membership: {
+            id: memId,
+            studentId: b.studentId,
+            planId: plan.id,
+            planName: plan.name,
+            branchId: seat.branch_id,
+            seatId: seat.id,
+            startDate,
+            endDate,
+            dueDate,
+            price: planPrice,
+            discount,
+            finalAmount,
+            status: 'active',
+            paymentStatus: computedPaymentStatus,
+            notes: b.notes || ''
+          },
+          assignment: {
+            id: assignId,
+            seatId: seat.id,
+            studentId: b.studentId,
+            membershipId: memId,
+            branchId: seat.branch_id,
+            startDate,
+            endDate,
+            status: 'active'
+          },
+          payment: paymentRecord,
+          receiptNumber: generatedReceipt
+        };
+      });
+
+      return res.json(result);
+    }
+
+    if (action === 'renew') {
+      const b = data;
+      const idempotencyKey = req.headers['idempotency-key'] || b.idempotencyKey || null;
+
+      const result = await withTransaction(async client => {
+        await assertForeignEntity(client, 'students', b.studentId, orgId);
+
+        // Load plan
+        const planRes = await client.query(
+          `SELECT id, name, price, duration, duration_unit FROM membership_plans WHERE id = $1 AND organization_id = $2`,
+          [b.planId, orgId]
+        );
+        if (planRes.rows.length === 0) throw new HttpError(404, 'PLAN_NOT_FOUND', 'Membership plan not found.');
+        const plan = planRes.rows[0];
+        const planPrice = parseFloat(plan.price);
+        const discount = b.discount !== undefined ? Math.max(0, parseFloat(b.discount)) : 0;
+        const finalAmount = planPrice - discount;
+
+        // Get active assignment
+        const assignRes = await client.query(
+          `SELECT id, seat_id, branch_id, membership_id, end_date FROM seat_assignments WHERE student_id = $1 AND status = 'active' AND organization_id = $2`,
+          [b.studentId, orgId]
+        );
+        const activeAssign = assignRes.rows[0] || null;
+        const branchId = activeAssign?.branch_id || b.branchId || null;
+        const seatId = activeAssign?.seat_id || b.seatId || null;
+
+        // Start & End dates
+        const startDate = b.startDate ? String(b.startDate).split('T')[0] : getTodayIST();
+        const durationDays = parseInt(plan.duration, 10) || 30;
+        const endDate = b.endDate ? String(b.endDate).split('T')[0] : addDaysIST(startDate, durationDays);
+        const dueDate = addDaysIST(startDate, 3);
+
+        // Mark previous active membership as renewed
+        if (activeAssign?.membership_id) {
+          await client.query(
+            `UPDATE memberships SET status = 'renewed', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND organization_id = $2`,
+            [activeAssign.membership_id, orgId]
+          );
+        }
+
+        // Insert new membership
+        const newMemId = uid('MEM');
+        await client.query(
+          `INSERT INTO memberships (id, organization_id, student_id, plan_id, branch_id, seat_id, start_date, end_date, due_date, price, discount, final_amount, status, payment_status, notes, idempotency_key)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+          [newMemId, orgId, b.studentId, plan.id, branchId, seatId, startDate, endDate, dueDate, planPrice, discount, finalAmount, 'active', 'pending', b.notes || '', idempotencyKey]
+        );
+
+        // Update active assignment
+        if (activeAssign) {
+          await client.query(
+            `UPDATE seat_assignments SET membership_id = $1, end_date = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3 AND organization_id = $4`,
+            [newMemId, endDate, activeAssign.id, orgId]
+          );
+        }
+
+        // Record payment if paid
+        let renewPayment = null;
+        let generatedReceipt = null;
+        const payAmount = b.payAmount !== undefined ? parseFloat(b.payAmount) : planPrice;
+        if (payAmount > 0) {
+          const allowedModes = ['cash', 'upi', 'card', 'bank_transfer', 'cheque', 'other'];
+          let mode = b.mode || b.method || 'cash';
+          mode = String(mode).toLowerCase().replace(/\s+/g, '_');
+          if (!allowedModes.includes(mode)) mode = 'cash';
+
+          const seqRes = await client.query(
+            `INSERT INTO receipt_sequences (organization_id, current_number)
+             VALUES ($1, 1)
+             ON CONFLICT (organization_id)
+             DO UPDATE SET current_number = receipt_sequences.current_number + 1, updated_at = CURRENT_TIMESTAMP
+             RETURNING current_number`,
+            [orgId]
+          );
+          const currentSeq = seqRes.rows[0].current_number;
+          const year = new Date().getFullYear();
+          generatedReceipt = `REC-${year}-${String(currentSeq).padStart(6, '0')}`;
+
+          const payId = uid('PAY');
+          await client.query(
+            `INSERT INTO payments (id,organization_id,student_id,membership_id,branch_id,amount,mode,reference_number,receipt_number,date,notes,status)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+            [payId, orgId, b.studentId, newMemId, branchId, payAmount, mode, b.referenceNumber || '', generatedReceipt, startDate, b.notes || '', 'recorded']
+          );
+
+          const computedStatus = payAmount >= finalAmount ? 'paid' : 'partial';
+          await client.query(
+            `UPDATE memberships SET payment_status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND organization_id = $3`,
+            [computedStatus, newMemId, orgId]
+          );
+
+          renewPayment = {
+            id: payId,
+            studentId: b.studentId,
+            membershipId: newMemId,
+            branchId,
+            amount: payAmount,
+            mode,
+            receiptNumber: generatedReceipt,
+            date: startDate,
+            status: 'recorded'
+          };
+        }
+
+        await audit(client, session, 'booking.renew', 'memberships', newMemId, { studentId: b.studentId, planId: plan.id, payAmount });
+
+        return {
+          ok: true,
+          membership: {
+            id: newMemId,
+            studentId: b.studentId,
+            planId: plan.id,
+            planName: plan.name,
+            branchId,
+            seatId,
+            startDate,
+            endDate,
+            dueDate,
+            price: planPrice,
+            discount,
+            finalAmount,
+            status: 'active',
+            paymentStatus: payAmount >= finalAmount ? 'paid' : 'pending'
+          },
+          assignment: activeAssign ? {
+            id: activeAssign.id,
+            seatId,
+            studentId: b.studentId,
+            membershipId: newMemId,
+            branchId,
+            startDate: activeAssign.start_date || startDate,
+            endDate,
+            status: 'active'
+          } : null,
+          payment: renewPayment,
+          receiptNumber: generatedReceipt
+        };
       });
 
       return res.json(result);
