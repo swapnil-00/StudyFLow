@@ -105,6 +105,11 @@
   --seat-reserved-text: #b93815;
   --seat-reserved-dot: #ef6820;
 
+  --seat-payment-pending-bg: #fffaeb;
+  --seat-payment-pending-border: #fedf89;
+  --seat-payment-pending-text: #b54708;
+  --seat-payment-pending-dot: #f79009;
+
   --seat-payment-due-bg: #fef3f2;
   --seat-payment-due-border: #fecdca;
   --seat-payment-due-text: #b42318;
@@ -276,6 +281,10 @@
   --seat-reserved-bg: #511c10;
   --seat-reserved-border: #b93815;
   --seat-reserved-text: #f9dbaf;
+
+  --seat-payment-pending-bg: #4e2d09;
+  --seat-payment-pending-border: #93370d;
+  --seat-payment-pending-text: #fec84b;
 
   --seat-payment-due-bg: #55160c;
   --seat-payment-due-border: #b42318;

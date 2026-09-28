@@ -87,7 +87,7 @@ module.exports = withHandler(async function handler(req, res) {
     return { id: p.id, name: p.name, duration: p.duration, durationUnit: p.duration_unit, price: parseFloat(p.price), description: p.description, active: p.active, accessHours: p.access_hours, createdAt: p.created_at };
   }
   function mapMembership(m) {
-    return { id: m.id, studentId: m.student_id, planId: m.plan_id, branchId: m.branch_id, seatId: m.seat_id, startDate: m.start_date, endDate: m.end_date, price: parseFloat(m.price), discount: parseFloat(m.discount) || 0, finalAmount: parseFloat(m.final_amount), status: m.status, paymentStatus: m.payment_status, createdAt: m.created_at };
+    return { id: m.id, studentId: m.student_id, planId: m.plan_id, branchId: m.branch_id, seatId: m.seat_id, startDate: m.start_date, endDate: m.end_date, dueDate: m.due_date, price: parseFloat(m.price), discount: parseFloat(m.discount) || 0, finalAmount: parseFloat(m.final_amount), status: m.status, paymentStatus: m.payment_status, notes: m.notes, idempotencyKey: m.idempotency_key, createdAt: m.created_at };
   }
   function mapAssignment(a) {
     return { id: a.id, seatId: a.seat_id, studentId: a.student_id, membershipId: a.membership_id, branchId: a.branch_id, startDate: a.start_date, endDate: a.end_date, slotType: a.slot_type, status: a.status, createdAt: a.created_at };

@@ -96,10 +96,10 @@ export function renderSeatMap(container, params = {}) {
 
           <!-- Filter -->
           <div class="filter-tabs" id="seat-filters">
-            ${['all','available','occupied','payment-due','expiring','maintenance','blocked'].map(f => `
+            ${['all','available','occupied','payment-pending','payment-due','expiring','maintenance','blocked'].map(f => `
               <button class="filter-tab ${state.filter === f ? 'active' : ''}"
                 onclick="handleFilterChange('${f}')">
-                ${f === 'all' ? 'All' : capitalizeFirst(f)}
+                ${f === 'all' ? 'All' : f === 'payment-pending' ? 'Payment Pending' : f === 'payment-due' ? 'Payment Due' : capitalizeFirst(f)}
               </button>
             `).join('')}
           </div>
@@ -110,6 +110,7 @@ export function renderSeatMap(container, params = {}) {
           ${[
             { status: 'available', label: 'Available', bg: 'var(--seat-available-dot)' },
             { status: 'occupied', label: 'Occupied', bg: 'var(--seat-occupied-dot)' },
+            { status: 'payment-pending', label: 'Payment Pending', bg: 'var(--seat-payment-pending-dot)' },
             { status: 'payment-due', label: 'Payment Due', bg: 'var(--seat-payment-due-dot)' },
             { status: 'expiring', label: 'Expiring Soon', bg: 'var(--seat-expiring-dot)' },
             { status: 'maintenance', label: 'Maintenance', bg: 'var(--seat-maintenance-dot)' },
@@ -458,7 +459,7 @@ function renderStudentSection(student, membership, plan, paymentStatus, paidAmou
       <div class="drawer-row">
         <span class="drawer-row-label">Days Left</span>
         <span class="drawer-row-value" style="color:${daysLeft !== null && daysLeft <= 7 ? 'var(--sf-warning-600)' : 'var(--color-text-primary)'}">
-          ${daysLeft !== null ? (daysLeft > 0 ? daysLeft + ' days' : 'Expired') : '—'}
+          ${daysLeft !== null ? (daysLeft > 0 ? daysLeft + ' days' : (daysLeft === 0 ? 'Expires today' : 'Expired')) : '—'}
         </span>
       </div>
     </div>

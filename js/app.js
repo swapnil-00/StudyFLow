@@ -1191,7 +1191,8 @@ function seatStatusBadge(status) {
     'available': { cls: 'badge-success', label: 'Available' },
     'occupied': { cls: 'badge-indigo', label: 'Occupied' },
     'reserved': { cls: 'badge-orange', label: 'Reserved' },
-    'payment-due': { cls: 'badge-error', label: 'Payment Due' },
+    'payment-pending': { cls: 'badge-warning', label: 'Payment Pending' },
+    'payment-due': { cls: 'badge-error', label: 'Payment Overdue' },
     'expiring': { cls: 'badge-warning', label: 'Expiring Soon' },
     'maintenance': { cls: 'badge-neutral', label: 'Maintenance' },
     'blocked': { cls: 'badge-neutral', label: 'Blocked' },
@@ -1204,7 +1205,7 @@ function paymentStatusBadge(status) {
   const map = {
     'paid': { cls: 'badge-success', label: 'Paid' },
     'partial': { cls: 'badge-warning', label: 'Partial' },
-    'pending': { cls: 'badge-error', label: 'Pending' },
+    'pending': { cls: 'badge-warning', label: 'Pending' },
     'overdue': { cls: 'badge-error', label: 'Overdue' },
   };
   const { cls, label } = map[status] || { cls: 'badge-neutral', label: capitalizeFirst(status) };

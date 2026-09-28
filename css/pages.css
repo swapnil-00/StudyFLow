@@ -249,6 +249,13 @@
 }
 .seat-reserved .seat-status-dot { background: var(--seat-reserved-dot); }
 
+.seat-payment-pending {
+  background: var(--seat-payment-pending-bg, #fffaeb);
+  border-color: var(--seat-payment-pending-border, #fedf89);
+  color: var(--seat-payment-pending-text, #b54708);
+}
+.seat-payment-pending .seat-status-dot { background: var(--seat-payment-pending-dot, #f79009); }
+
 .seat-payment-due {
   background: var(--seat-payment-due-bg);
   border-color: var(--seat-payment-due-border);
@@ -1126,6 +1133,15 @@ tbody td {
 .floor-plan-seat.reserved .seat-led {
   background: #fb923c;
   box-shadow: 0 0 6px #f97316;
+}
+
+.floor-plan-seat.payment-pending {
+  background: #451a03;
+  border-color: #f59e0b;
+}
+.floor-plan-seat.payment-pending .seat-led {
+  background: #fbbf24;
+  box-shadow: 0 0 6px #f59e0b;
 }
 
 .floor-plan-seat.payment-due {

@@ -562,7 +562,7 @@ module.exports = withHandler(async function handler(req, res) {
           `INSERT INTO seat_assignments (id,organization_id,seat_id,student_id,membership_id,branch_id,start_date,end_date,slot_type,status)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'active')`,
           [newId, orgId, a.seatId, a.studentId, a.membershipId || null, seat.branch_id || a.branchId || null,
-           a.startDate || now().split('T')[0], a.endDate || null, a.slotType || 'full-day']
+           a.startDate || getTodayIST(), a.endDate || null, a.slotType || 'full-day']
         );
 
         // 5. Update seat status
@@ -642,14 +642,14 @@ module.exports = withHandler(async function handler(req, res) {
         await client.query(
           `INSERT INTO seat_assignments (id,organization_id,seat_id,student_id,membership_id,branch_id,start_date,end_date,slot_type,status)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'active')`,
-          [newAssignmentId, orgId, toSeatId, old.student_id, old.membership_id, toSeatRes.rows[0].branch_id || old.branch_id, now().split('T')[0], old.end_date, old.slot_type]
+          [newAssignmentId, orgId, toSeatId, old.student_id, old.membership_id, toSeatRes.rows[0].branch_id || old.branch_id, getTodayIST(), old.end_date, old.slot_type]
         );
 
         await client.query(`UPDATE seats SET status = 'occupied', current_student_id = $1 WHERE id = $2 AND organization_id = $3`, [old.student_id, toSeatId, orgId]);
 
         await client.query(
           `INSERT INTO seat_transfers (id,organization_id,student_id,from_seat_id,to_seat_id,date,reason) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-          [transferId, orgId, old.student_id, fromSeatId, toSeatId, now(), reason || '']
+          [transferId, orgId, old.student_id, fromSeatId, toSeatId, getTodayIST(), reason || '']
         );
 
         await audit(client, session, 'seat.transfer', 'seats', toSeatId, { fromSeatId, toSeatId, studentId: old.student_id });
@@ -1122,12 +1122,13 @@ module.exports = withHandler(async function handler(req, res) {
         const generatedReceiptNumber = p.receiptNumber || `REC-${year}-${String(currentSeq).padStart(6, '0')}`;
 
         // 3. Insert payment record
+        const paymentDate = p.date || getTodayIST();
         await client.query(
           `INSERT INTO payments (id,organization_id,student_id,membership_id,branch_id,amount,mode,reference_number,receipt_number,date,notes,status,idempotency_key)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
           [newId, orgId, p.studentId, p.membershipId || null, resolvedBranchId || null,
            p.amount, p.mode || 'upi', p.referenceNumber || '', generatedReceiptNumber,
-           p.date || now().split('T')[0], p.notes || '', 'recorded', idempotencyKey]
+           paymentDate, p.notes || '', 'recorded', idempotencyKey]
         );
 
         // 4. Server computes membership payment_status (paid / partial / pending) from SUM(payments)
@@ -1165,7 +1166,7 @@ module.exports = withHandler(async function handler(req, res) {
           id: newId,
           receiptNumber: generatedReceiptNumber,
           amount: p.amount,
-          date: p.date || now().split('T')[0],
+          date: paymentDate,
           paymentStatus: computedPaymentStatus
         };
       });
@@ -1244,7 +1245,7 @@ module.exports = withHandler(async function handler(req, res) {
           `INSERT INTO expenses (id,organization_id,branch_id,category,title,amount,date,payment_mode,vendor,receipt_ref,notes,status,is_recurring,recurring_frequency,recorded_by)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
           [newId, orgId, e.branchId || null, e.category || 'General', e.title,
-           e.amount, e.date || now().split('T')[0], e.paymentMode || 'cash',
+           e.amount, e.date || getTodayIST(), e.paymentMode || 'cash',
            e.vendor || '', e.receiptRef || '', e.notes || '', 'active',
            Boolean(e.isRecurring), e.recurringFrequency || '', session.userId]
         );

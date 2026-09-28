@@ -435,18 +435,17 @@ class Store {
     const membership = this.getMembership(assignment.membershipId || assignment.membership_id);
     if (!membership) return 'occupied';
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = today();
     const expiryDate = membership.endDate || assignment.endDate || assignment.end_date;
     const expiryStr = typeof expiryDate === 'string' ? expiryDate.split('T')[0] : (expiryDate ? new Date(expiryDate).toISOString().split('T')[0] : '');
 
     const payment = this.getPaymentStatus(membership.id);
-    if (payment === 'overdue' || payment === 'pending') return 'payment-due';
+    if (payment === 'overdue') return 'payment-due';
+    if (payment === 'pending' || payment === 'partial') return 'payment-pending';
 
     if (expiryDate) {
-      const today = new Date();
-      const expiry = new Date(expiryDate);
-      const daysLeft = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
-      if (daysLeft <= 7 && daysLeft > 0) return 'expiring';
+      const daysLeft = daysUntil(expiryDate);
+      if (daysLeft !== null && daysLeft <= 7 && daysLeft >= 0) return 'expiring';
       if (expiryStr && expiryStr < todayStr) return 'available';
     }
 
@@ -963,12 +962,12 @@ class Store {
       : (membership.price - (membership.discount || 0));
 
     if (totalPaid >= finalAmount) return 'paid';
-    if (totalPaid > 0) return 'partial';
 
-    const todayDate = new Date();
-    const startDate = new Date(membership.startDate);
-    if (todayDate > startDate) return 'overdue';
-    return 'pending';
+    const todayStr = today();
+    const dueDateStr = membership.dueDate || membership.due_date || (membership.startDate ? addDays(membership.startDate, 3) : todayStr);
+
+    if (todayStr > dueDateStr) return 'overdue';
+    return totalPaid > 0 ? 'partial' : 'pending';
   }
 
   getPaidAmount(membershipId) {
@@ -1441,7 +1440,9 @@ function uid(prefix) {
 }
 
 function now() { return new Date().toISOString(); }
-function today() { return new Date().toISOString().split('T')[0]; }
+function today() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+}
 
 function formatINR(amount) {
   if (amount === undefined || amount === null) return '—';
@@ -1497,15 +1498,21 @@ function formatRelative(iso) {
 
 function daysUntil(iso) {
   if (!iso) return null;
-  const d = new Date(iso);
-  const now_ = new Date();
-  return Math.ceil((d - now_) / (1000 * 60 * 60 * 24));
+  const cleanTarget = String(iso).split('T')[0];
+  const todayStr = today();
+  const [y1, m1, d1] = todayStr.split('-').map(Number);
+  const [y2, m2, d2] = cleanTarget.split('-').map(Number);
+  const dt1 = Date.UTC(y1, m1 - 1, d1);
+  const dt2 = Date.UTC(y2, m2 - 1, d2);
+  return Math.round((dt2 - dt1) / (1000 * 60 * 60 * 24));
 }
 
 function addDays(date, days) {
-  const d = new Date(date);
-  d.setDate(d.getDate() + days);
-  return d.toISOString().split('T')[0];
+  if (!date) date = today();
+  const cleanStr = String(date).split('T')[0];
+  const [y, m, d] = cleanStr.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + days));
+  return dt.toISOString().split('T')[0];
 }
 
 function normalizePhone(phone, defaultCountry = '+91') {
