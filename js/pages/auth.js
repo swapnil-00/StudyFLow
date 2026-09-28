@@ -14,7 +14,7 @@ export function renderLoginPage() {
 
       <div id="auth-alert" class="auth-alert" style="display:none;" role="alert" aria-live="assertive"></div>
 
-      <!-- Social & Phone Identity Options -->
+      <!-- Social & Google Identity Option -->
       <div class="auth-identity-buttons">
         <button type="button" class="btn-google" id="btn-google-login">
           <svg width="18" height="18" viewBox="0 0 24 24">
@@ -25,42 +25,6 @@ export function renderLoginPage() {
           </svg>
           Continue with Google
         </button>
-
-        <button type="button" class="btn-phone" id="btn-phone-toggle">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
-          Continue with Phone OTP
-        </button>
-      </div>
-
-      <!-- Phone OTP Flow Section (Collapsible) -->
-      <div id="phone-auth-section" class="phone-auth-section" style="display:none;">
-        <div id="phone-input-step">
-          <label class="form-label" for="phone-number-input">Mobile Number</label>
-          <div class="phone-input-group">
-            <span class="phone-prefix">+91</span>
-            <input type="tel" id="phone-number-input" class="input" placeholder="98765 43210" maxlength="10" inputmode="numeric" />
-          </div>
-          <div id="recaptcha-container"></div>
-          <button type="button" class="btn btn-primary btn-block" id="btn-send-otp" style="margin-top:12px;">
-            Send OTP Code
-          </button>
-        </div>
-
-        <div id="otp-verify-step" style="display:none;">
-          <div class="otp-header">
-            <span id="otp-sent-target" style="font-size:13px;color:var(--color-text-secondary);"></span>
-            <button type="button" class="btn-link" id="btn-change-phone" style="font-size:12px;">Change</button>
-          </div>
-          <label class="form-label" for="otp-code-input" style="margin-top:12px;">Enter 6-Digit OTP</label>
-          <input type="text" id="otp-code-input" class="input otp-input" placeholder="••••••" maxlength="6" inputmode="numeric" autocomplete="one-time-code" />
-          <div class="otp-footer">
-            <span id="otp-timer" style="font-size:12px;color:var(--color-text-tertiary);">Resend in <b id="timer-sec">30</b>s</span>
-            <button type="button" class="btn-link" id="btn-resend-otp" style="display:none;font-size:12px;">Resend Code</button>
-          </div>
-          <button type="button" class="btn btn-primary btn-block" id="btn-verify-otp" style="margin-top:12px;">
-            Verify & Sign In
-          </button>
-        </div>
       </div>
 
       <div class="auth-divider">
@@ -384,13 +348,6 @@ function setupLoginEvents(container) {
     }
   });
 
-  // Phone section toggle
-  const phoneToggleBtn = container.querySelector('#btn-phone-toggle');
-  const phoneSection = container.querySelector('#phone-auth-section');
-  phoneToggleBtn?.addEventListener('click', () => {
-    phoneSection.style.display = phoneSection.style.display === 'none' ? 'block' : 'none';
-  });
-
   // Google Sign-In
   const googleBtn = container.querySelector('#btn-google-login');
   googleBtn?.addEventListener('click', async () => {
@@ -403,9 +360,6 @@ function setupLoginEvents(container) {
       googleBtn.disabled = false;
     }
   });
-
-  // Phone OTP Flow
-  setupPhoneOtpFlow(container);
 }
 
 function setupSignupEvents(container) {
