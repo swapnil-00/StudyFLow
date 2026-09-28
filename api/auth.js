@@ -860,10 +860,7 @@ module.exports = withHandler(async function handler(req, res) {
         }
 
         const defaultPlans = plans.length > 0 ? plans : [
-          { name: 'Monthly Full Day', duration: 30, price: 1500, accessHours: '06:00 – 23:00', desc: 'Full day reserved study seat' },
-          { name: 'Monthly Half Day (Morning)', duration: 30, price: 900, accessHours: '06:00 – 14:00', desc: 'Morning slot access' },
-          { name: 'Monthly Half Day (Evening)', duration: 30, price: 900, accessHours: '14:00 – 23:00', desc: 'Evening slot access' },
-          { name: 'Quarterly (3 Months)', duration: 90, price: 4000, accessHours: '06:00 – 23:00', desc: 'Discounted 3-month pass' },
+          { name: 'Monthly Membership', duration: 30, price: 500, accessHours: '06:00 – 23:00', desc: 'Full day study seat access' },
         ];
 
         for (const p of defaultPlans) {

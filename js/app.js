@@ -183,7 +183,6 @@ class App {
     const navSections = [
       { label: 'OVERVIEW', items: [
         { route: '/dashboard', label: 'Dashboard', icon: 'grid' },
-        { route: '/landing', label: 'Landing Page', icon: 'home' },
       ]},
       { label: 'OPERATIONS', items: [
         { route: '/seat-map', label: 'Seat Map', icon: 'map' },
@@ -639,23 +638,13 @@ class App {
         <div class="card" style="margin:0;padding:var(--space-4);border-color:var(--color-border-secondary);">
           <div style="font-size:var(--text-sm);font-weight:var(--fw-bold);margin-bottom:var(--space-3);display:flex;align-items:center;gap:6px;">
             <span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;background:var(--color-primary);color:white;border-radius:50%;font-size:11px;">3</span>
-            Starter Membership Plans
+            Starter Membership Plan
           </div>
           <div style="display:flex;flex-direction:column;gap:var(--space-2);font-size:var(--text-xs);">
-            <label style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--color-bg-secondary);border-radius:var(--radius-md);cursor:pointer;">
+            <label style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--color-bg-secondary);border-radius:var(--radius-md);cursor:pointer;">
               <input type="checkbox" id="ob-plan-std" checked style="accent-color:var(--color-primary);">
-              <span style="font-weight:600;flex:1;">Full Day Reserved (24 Hours)</span>
-              <span style="color:var(--color-text-tertiary);">₹1,800 / mo</span>
-            </label>
-            <label style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--color-bg-secondary);border-radius:var(--radius-md);cursor:pointer;">
-              <input type="checkbox" id="ob-plan-morn" checked style="accent-color:var(--color-primary);">
-              <span style="font-weight:600;flex:1;">Morning Shift (6 AM - 2 PM)</span>
-              <span style="color:var(--color-text-tertiary);">₹1,100 / mo</span>
-            </label>
-            <label style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--color-bg-secondary);border-radius:var(--radius-md);cursor:pointer;">
-              <input type="checkbox" id="ob-plan-eve" checked style="accent-color:var(--color-primary);">
-              <span style="font-weight:600;flex:1;">Evening Shift (2 PM - 10 PM)</span>
-              <span style="color:var(--color-text-tertiary);">₹1,100 / mo</span>
+              <span style="font-weight:600;flex:1;">Monthly Standard Plan (Full Day Access)</span>
+              <span style="color:var(--color-primary);font-weight:700;">₹500 / mo</span>
             </label>
           </div>
         </div>
@@ -672,22 +661,15 @@ class App {
 
   async submitOnboarding() {
     const branchName = document.getElementById('ob-branch-name')?.value?.trim() || 'Main Branch';
-    const city = document.getElementById('ob-city')?.value?.trim() || 'Pune';
-    const phone = document.getElementById('ob-phone')?.value?.trim() || '+919876543210';
+    const city = document.getElementById('ob-city')?.value?.trim() || '';
+    const phone = document.getElementById('ob-phone')?.value?.trim() || '';
     const floorName = document.getElementById('ob-floor-name')?.value?.trim() || 'Ground Floor';
     const roomName = document.getElementById('ob-room-name')?.value?.trim() || 'Main Reading Hall';
     const seatCount = parseInt(document.getElementById('ob-seat-count')?.value, 10) || 30;
 
-    const plans = [];
-    if (document.getElementById('ob-plan-std')?.checked) {
-      plans.push({ name: 'Full Day Reserved', shift: '24-hour', price: 1800, durationMonths: 1, deposit: 500 });
-    }
-    if (document.getElementById('ob-plan-morn')?.checked) {
-      plans.push({ name: 'Morning Shift', shift: 'morning', price: 1100, durationMonths: 1, deposit: 300 });
-    }
-    if (document.getElementById('ob-plan-eve')?.checked) {
-      plans.push({ name: 'Evening Shift', shift: 'evening', price: 1100, durationMonths: 1, deposit: 300 });
-    }
+    const plans = [
+      { name: 'Monthly Standard Plan', shift: '24-hour', price: 500, durationMonths: 1, deposit: 0 }
+    ];
 
     const btn = document.getElementById('ob-submit-btn');
     if (btn) { btn.disabled = true; btn.textContent = 'Generating Room & Seats...'; }
