@@ -8,15 +8,27 @@ module.exports = withHandler(async function handler(req, res) {
   // Ensure tables and columns exist
   await ensureMultiTenantSchema();
 
-  // SEC-001: orgId comes ONLY from the verified session (set by withHandler)
+  // SEC-001 & AUTH-05: orgId comes ONLY from the verified session (set by withHandler)
   const session = req.session;
   const orgId = session.orgId;
+
+  if (!orgId) {
+    return res.status(409).json({
+      ok: false,
+      code: 'NEEDS_LIBRARY',
+      error: 'No active library selected. Please create a library or join one via invitation.',
+    });
+  }
 
   // Fetch tenant organization metadata
   const orgRes = await query('SELECT * FROM organizations WHERE id = $1', [orgId]);
   const org = orgRes.rows[0];
   if (!org) {
-    return res.status(404).json({ ok: false, error: 'Organization not found' });
+    return res.status(409).json({
+      ok: false,
+      code: 'NEEDS_LIBRARY',
+      error: 'Organization not found. Please select or create a library.',
+    });
   }
 
   const [
