@@ -89,14 +89,14 @@ module.exports = withHandler(async function handler(req, res) {
       user = byFirebase.rows[0];
     }
 
-    // 2. Link by verified email if not linked yet
-    if (!user && cleanEmail && email_verified) {
+    // 2. Link by email if not linked yet
+    if (!user && cleanEmail) {
       const byEmail = await query('SELECT * FROM users WHERE LOWER(email) = $1', [cleanEmail]);
       if (byEmail.rows.length > 0) {
         user = byEmail.rows[0];
         await query(
           `UPDATE users 
-           SET firebase_uid = $1, email_verified_at = COALESCE(email_verified_at, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP 
+           SET firebase_uid = COALESCE(firebase_uid, $1), email_verified_at = COALESCE(email_verified_at, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP 
            WHERE id = $2`,
           [firebaseUid, user.id]
         );
