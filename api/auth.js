@@ -21,6 +21,7 @@ const {
 const { verifyFirebaseIdToken } = require('../lib/firebase');
 const { checkRateLimit } = require('../lib/ratelimit');
 const { withHandler } = require('../lib/http');
+const { HttpError } = require('../lib/errors');
 const { activeProvider, sendMail, sendPasswordResetCode, sendPasswordChangedNotice } = require('../lib/mailer');
 
 const RESET_CODE_TTL_MINUTES = 10;
@@ -59,6 +60,49 @@ function describeMailError(err) {
   return { error: raw.slice(0, 400), hint };
 }
 
+const invalidResetCode = () =>
+  new HttpError(400, 'INVALID_CODE', 'That code is incorrect or has expired. Use the code from the most recent email, or request a new one.');
+
+// The newest reset request for an email. Older codes stop working as soon as a new one is sent.
+async function loadLatestResetRequest(cleanEmail) {
+  const userRes = await query('SELECT id, email, status FROM users WHERE LOWER(email) = $1', [cleanEmail]);
+  if (userRes.rows.length === 0) throw invalidResetCode();
+  const user = userRes.rows[0];
+  if (user.status !== 'active') {
+    throw new HttpError(403, 'ACCOUNT_DISABLED', 'Your account has been disabled. Please contact support.');
+  }
+  const evtRes = await query(
+    `SELECT id, metadata FROM auth_events
+     WHERE user_id = $1 AND event = 'password_reset_requested'
+     ORDER BY created_at DESC LIMIT 1`,
+    [user.id]
+  );
+  if (evtRes.rows.length === 0) throw invalidResetCode();
+  return { user, evt: evtRes.rows[0] };
+}
+
+// Checks an emailed code against the newest request: unused, unexpired, under the attempt
+// limit, timing-safe comparison. Wrong codes consume an attempt. Does not mark the code used.
+async function checkResetCode(cleanEmail, code) {
+  const { user, evt } = await loadLatestResetRequest(cleanEmail);
+  const meta = evt.metadata || {};
+  if (meta.used || (meta.attempts || 0) >= RESET_CODE_MAX_ATTEMPTS || !meta.expiresAt || new Date() > new Date(meta.expiresAt)) {
+    throw invalidResetCode();
+  }
+  const givenHash = crypto.createHash('sha256').update(String(code).replace(/\D/g, '')).digest('hex');
+  const matches = typeof meta.codeHash === 'string' && meta.codeHash.length === givenHash.length &&
+    crypto.timingSafeEqual(Buffer.from(meta.codeHash), Buffer.from(givenHash));
+  if (!matches) {
+    const attempts = (meta.attempts || 0) + 1;
+    await query(`UPDATE auth_events SET metadata = metadata || $1::jsonb WHERE id = $2`, [JSON.stringify({ attempts }), evt.id]);
+    const left = RESET_CODE_MAX_ATTEMPTS - attempts;
+    throw new HttpError(400, 'INVALID_CODE', left > 0
+      ? `That code is incorrect. ${left} attempt${left === 1 ? '' : 's'} left.`
+      : 'Too many incorrect attempts. Request a new code.');
+  }
+  return { user, evt };
+}
+
 // Gmail files mail that an account sends to itself under "Sent"/"All Mail", not the Inbox.
 function selfSendNote(to) {
   const smtp = process.env.SMTP_URL || '';
@@ -68,7 +112,6 @@ function selfSendNote(to) {
     ? ' This address is also the sending Gmail account, so Gmail files the email under "Sent" / "All Mail" instead of the Inbox. Use a separate Gmail account for SMTP_URL to avoid this.'
     : '';
 }
-const { HttpError } = require('../lib/errors');
 
 function uid(prefix) {
   return `${prefix}-${crypto.randomUUID().replace(/-/g, '').substring(0, 9).toUpperCase()}`;
@@ -1070,10 +1113,33 @@ module.exports = withHandler(async function handler(req, res) {
     });
   }
 
+  // Step 2 of reset: check the emailed code on its own. A correct code is consumed and exchanged
+  // for a one-time reset token (10 min), so the password form is only shown after the code is
+  // known to be right, and typing passwords never burns code attempts.
+  if (action === 'password_reset_verify') {
+    const { email, code } = req.body || {};
+    if (!email || !code) throw new HttpError(400, 'MISSING_FIELDS', 'Email and code are required.');
+    const cleanEmail = String(email).toLowerCase().trim();
+    await checkRateLimit(query, `pwconfirm:ip:${ip}`, 20, 3600);
+    await checkRateLimit(query, `pwconfirm:acc:${cleanEmail}`, 10, 3600);
+
+    const { evt } = await checkResetCode(cleanEmail, code);
+    const resetToken = crypto.randomBytes(32).toString('base64url');
+    const tokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
+    const tokenExpiresAt = new Date(Date.now() + RESET_CODE_TTL_MINUTES * 60 * 1000).toISOString();
+    await query(
+      `UPDATE auth_events SET metadata = metadata || $1::jsonb WHERE id = $2`,
+      [JSON.stringify({ used: true, tokenHash, tokenExpiresAt, tokenUsed: false }), evt.id]
+    );
+    return res.json({ ok: true, resetToken, message: 'Code verified. Now choose your new password.' });
+  }
+
+  // Step 3 of reset: set the password with the reset token from step 2 (or, for older clients,
+  // the code itself), then sign this device in.
   if (action === 'password_reset_confirm') {
-    const { email, code, newPassword } = req.body || {};
-    if (!email || !code || !newPassword) {
-      throw new HttpError(400, 'MISSING_FIELDS', 'Email, reset code, and new password are required.');
+    const { email, code, resetToken, newPassword } = req.body || {};
+    if (!email || (!code && !resetToken) || !newPassword) {
+      throw new HttpError(400, 'MISSING_FIELDS', 'Email, verification and new password are required.');
     }
 
     const cleanEmail = String(email).toLowerCase().trim();
@@ -1081,46 +1147,23 @@ module.exports = withHandler(async function handler(req, res) {
     await checkRateLimit(query, `pwconfirm:acc:${cleanEmail}`, 10, 3600);
     validatePasswordStrength(newPassword);
 
-    const invalid = () => new HttpError(400, 'INVALID_CODE', 'That code is incorrect or has expired. Request a new code and try again.');
-
-    const userRes = await query('SELECT id, email, status FROM users WHERE LOWER(email) = $1', [cleanEmail]);
-    if (userRes.rows.length === 0) throw invalid();
-    const user = userRes.rows[0];
-
-    // Only the most recent request is valid; older codes die when a new one is sent.
-    const evtRes = await query(
-      `SELECT id, metadata FROM auth_events
-       WHERE user_id = $1 AND event = 'password_reset_requested'
-       ORDER BY created_at DESC LIMIT 1`,
-      [user.id]
-    );
-    if (evtRes.rows.length === 0) throw invalid();
-
-    const evt = evtRes.rows[0];
-    const meta = evt.metadata || {};
-    if (meta.used || (meta.attempts || 0) >= RESET_CODE_MAX_ATTEMPTS || !meta.expiresAt || new Date() > new Date(meta.expiresAt)) {
-      throw invalid();
+    let user;
+    let evt;
+    if (resetToken) {
+      ({ user, evt } = await loadLatestResetRequest(cleanEmail));
+      const meta = evt.metadata || {};
+      const givenHash = crypto.createHash('sha256').update(String(resetToken)).digest('hex');
+      const ok = typeof meta.tokenHash === 'string' && meta.tokenHash.length === givenHash.length &&
+        crypto.timingSafeEqual(Buffer.from(meta.tokenHash), Buffer.from(givenHash)) &&
+        !meta.tokenUsed && meta.tokenExpiresAt && new Date() <= new Date(meta.tokenExpiresAt);
+      if (!ok) {
+        throw new HttpError(400, 'RESET_EXPIRED', 'This reset session has expired. Request a new code and try again.');
+      }
+      await query(`UPDATE auth_events SET metadata = metadata || '{"tokenUsed": true}'::jsonb WHERE id = $1`, [evt.id]);
+    } else {
+      ({ user, evt } = await checkResetCode(cleanEmail, code));
+      await query(`UPDATE auth_events SET metadata = metadata || '{"used": true}'::jsonb WHERE id = $1`, [evt.id]);
     }
-
-    const givenHash = crypto.createHash('sha256').update(String(code).trim()).digest('hex');
-    const matches = typeof meta.codeHash === 'string' && meta.codeHash.length === givenHash.length &&
-      crypto.timingSafeEqual(Buffer.from(meta.codeHash), Buffer.from(givenHash));
-
-    if (!matches) {
-      const attempts = (meta.attempts || 0) + 1;
-      await query(`UPDATE auth_events SET metadata = metadata || $1::jsonb WHERE id = $2`, [JSON.stringify({ attempts }), evt.id]);
-      const left = RESET_CODE_MAX_ATTEMPTS - attempts;
-      throw new HttpError(400, 'INVALID_CODE', left > 0
-        ? `That code is incorrect. ${left} attempt${left === 1 ? '' : 's'} left.`
-        : 'Too many incorrect attempts. Request a new code.');
-    }
-
-    if (user.status !== 'active') {
-      throw new HttpError(403, 'ACCOUNT_DISABLED', 'Your account has been disabled. Please contact support.');
-    }
-
-    // Single use: mark consumed before changing anything else.
-    await query(`UPDATE auth_events SET metadata = metadata || '{"used": true}'::jsonb WHERE id = $1`, [evt.id]);
 
     await query(
       `UPDATE users
@@ -1143,8 +1186,12 @@ module.exports = withHandler(async function handler(req, res) {
     const sessionData = await validateSession(sessionToken);
 
     await logAuthEvent({ userId: user.id, organizationId: sessionData.orgId, event: 'password_reset_completed', method: 'code', ip, userAgent, success: true });
-    sendPasswordChangedNotice({ to: user.email, ip, when: new Date() })
-      .catch(err => console.error(`[${req.correlationId}] Password changed notice failed:`, err.message));
+    // Awaited: on serverless, work left running after the response can be frozen and lost.
+    try {
+      await sendPasswordChangedNotice({ to: user.email, ip, when: new Date() });
+    } catch (err) {
+      console.error(`[${req.correlationId}] Password changed notice failed:`, err.message);
+    }
 
     return res.json({ ok: true, state: sessionData.state, message: 'Your password has been set. You are now signed in.' });
   }

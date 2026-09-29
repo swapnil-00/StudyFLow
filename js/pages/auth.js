@@ -344,6 +344,7 @@ export function renderForgotPasswordPage(_container, params = {}) {
   const container = document.createElement('div');
   container.className = 'auth-page-container';
   const eyeIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+  const spinner = '<span class="spinner" style="width:16px;height:16px;border-width:2px;border-color:rgba(255,255,255,0.3);border-top-color:#ffffff;display:inline-block;vertical-align:middle;margin-right:8px;"></span>';
   container.innerHTML = `
     <div class="auth-card">
       <div class="auth-header">
@@ -354,9 +355,15 @@ export function renderForgotPasswordPage(_container, params = {}) {
           : 'Enter the email you use for StudyFlow and we will send you a 6-digit code.'}</p>
       </div>
 
+      <ol class="auth-steps" aria-label="Progress" style="display:flex;gap:6px;list-style:none;padding:0;margin:0 0 16px;">
+        <li data-step="1" style="flex:1;height:4px;border-radius:2px;background:var(--color-primary);"></li>
+        <li data-step="2" style="flex:1;height:4px;border-radius:2px;background:var(--color-border);"></li>
+        <li data-step="3" style="flex:1;height:4px;border-radius:2px;background:var(--color-border);"></li>
+      </ol>
+
       <div id="auth-alert" class="auth-alert" style="display:none;" role="alert" aria-live="assertive"></div>
 
-      <!-- Step 1: Request Code -->
+      <!-- Step 1: email -->
       <form id="forgot-request-form" class="auth-form" novalidate onsubmit="event.preventDefault();">
         <div class="form-group">
           <label class="form-label" for="reset-email">Email address</label>
@@ -365,33 +372,44 @@ export function renderForgotPasswordPage(_container, params = {}) {
         <button type="submit" class="btn btn-primary btn-block" id="btn-request-reset">Send code</button>
       </form>
 
-      <!-- Step 2: Enter Code & New Password -->
-      <form id="forgot-confirm-form" class="auth-form" style="display:none;" novalidate onsubmit="event.preventDefault();">
-        <input type="email" id="reset-email-hidden" autocomplete="username" style="display:none;" tabindex="-1" aria-hidden="true" />
+      <!-- Step 2: verify the code -->
+      <form id="forgot-verify-form" class="auth-form" style="display:none;" novalidate onsubmit="event.preventDefault();">
         <div class="form-group">
           <label class="form-label" for="reset-code">6-digit code</label>
-          <input type="text" id="reset-code" class="input" required placeholder="123456" maxlength="6" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" style="letter-spacing:6px;font-weight:700;font-size:18px;text-align:center;" />
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:12px;color:var(--color-text-secondary);">
-            <span>Check your inbox and spam folder.</span>
-            <button type="button" id="btn-resend-code" style="background:none;border:none;color:var(--color-primary);font-weight:600;cursor:pointer;padding:0;" disabled>Resend code</button>
-          </div>
+          <input type="text" id="reset-code" class="input" required placeholder="••••••" maxlength="6" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" style="letter-spacing:10px;font-weight:700;font-size:22px;text-align:center;" />
+          <p style="margin:8px 0 0;font-size:12px;color:var(--color-text-secondary);line-height:1.5;">
+            Not in your inbox? Check <strong>Spam</strong> and <strong>Promotions</strong>. Only the code from the most recent email works.
+          </p>
         </div>
+        <button type="submit" class="btn btn-primary btn-block" id="btn-verify-code">Verify code</button>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-size:12px;">
+          <button type="button" id="btn-use-other-email" style="background:none;border:none;color:var(--color-text-secondary);cursor:pointer;padding:0;">Use a different email</button>
+          <button type="button" id="btn-resend-code" style="background:none;border:none;color:var(--color-primary);font-weight:600;cursor:pointer;padding:0;" disabled>Resend code</button>
+        </div>
+      </form>
 
+      <!-- Step 3: new password (only after the code is verified) -->
+      <form id="forgot-password-form" class="auth-form" style="display:none;" novalidate onsubmit="event.preventDefault();">
+        <input type="email" id="reset-email-hidden" autocomplete="username" style="display:none;" tabindex="-1" aria-hidden="true" />
         <div class="form-group">
-          <label class="form-label" for="reset-new-password">New password <span style="font-weight:400;color:var(--color-text-tertiary);">(at least 10 characters)</span></label>
+          <label class="form-label" for="reset-new-password">New password</label>
           <div class="password-input-wrap">
-            <input type="password" id="reset-new-password" class="input" required minlength="10" autocomplete="new-password" placeholder="Create a password" />
+            <input type="password" id="reset-new-password" class="input" required minlength="10" autocomplete="new-password" placeholder="At least 10 characters" />
             <button type="button" class="password-toggle-btn" data-target="reset-new-password" aria-label="Show password">${eyeIcon}</button>
           </div>
+          <div id="pwd-length-hint" style="margin-top:6px;font-size:12px;color:var(--color-text-tertiary);">At least 10 characters</div>
         </div>
 
         <div class="form-group">
           <label class="form-label" for="reset-confirm-password">Confirm new password</label>
-          <input type="password" id="reset-confirm-password" class="input" required minlength="10" autocomplete="new-password" placeholder="Type it again" />
+          <div class="password-input-wrap">
+            <input type="password" id="reset-confirm-password" class="input" required minlength="10" autocomplete="new-password" placeholder="Type the same password again" />
+            <button type="button" class="password-toggle-btn" data-target="reset-confirm-password" aria-label="Show password">${eyeIcon}</button>
+          </div>
+          <div id="pwd-match-hint" style="margin-top:6px;font-size:12px;min-height:16px;"></div>
         </div>
 
-        <button type="submit" class="btn btn-primary btn-block" id="btn-confirm-reset">${isSetMode ? 'Set password &amp; sign in' : 'Reset password &amp; sign in'}</button>
-        <button type="button" id="btn-use-other-email" style="display:block;margin:10px auto 0;background:none;border:none;color:var(--color-text-secondary);font-size:12px;cursor:pointer;">Use a different email</button>
+        <button type="submit" class="btn btn-primary btn-block" id="btn-set-password">${isSetMode ? 'Set password &amp; sign in' : 'Reset password &amp; sign in'}</button>
       </form>
 
       <div class="auth-footer">
@@ -401,21 +419,50 @@ export function renderForgotPasswordPage(_container, params = {}) {
   `;
 
   setTimeout(() => {
-    const alertEl = container.querySelector('#auth-alert');
-    const reqForm = container.querySelector('#forgot-request-form');
-    const confForm = container.querySelector('#forgot-confirm-form');
-    const emailInput = container.querySelector('#reset-email');
-    const reqBtn = container.querySelector('#btn-request-reset');
-    const confBtn = container.querySelector('#btn-confirm-reset');
-    const resendBtn = container.querySelector('#btn-resend-code');
-    const subtitle = container.querySelector('#forgot-subtitle');
-    const confirmLabel = confBtn.textContent;
+    const $ = (sel) => container.querySelector(sel);
+    const alertEl = $('#auth-alert');
+    const subtitle = $('#forgot-subtitle');
+    const forms = { 1: $('#forgot-request-form'), 2: $('#forgot-verify-form'), 3: $('#forgot-password-form') };
+    const emailInput = $('#reset-email');
+    const codeInput = $('#reset-code');
+    const pwdInput = $('#reset-new-password');
+    const confirmInput = $('#reset-confirm-password');
+    const resendBtn = $('#btn-resend-code');
     let emailVal = '';
+    let resetToken = '';
     let cooldownTimer = null;
+
+    const hideAlert = () => { alertEl.style.display = 'none'; };
+    const busy = (btn, on, label) => {
+      if (!btn.dataset.label) btn.dataset.label = btn.innerHTML;
+      btn.disabled = on;
+      btn.innerHTML = on ? `${spinner}<span>${label}</span>` : btn.dataset.label;
+    };
+    const showStep = (n) => {
+      Object.entries(forms).forEach(([k, f]) => { f.style.display = Number(k) === n ? 'block' : 'none'; });
+      container.querySelectorAll('.auth-steps li').forEach(li => {
+        li.style.background = Number(li.dataset.step) <= n ? 'var(--color-primary)' : 'var(--color-border)';
+      });
+    };
+    const post = async (body) => {
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(body),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.ok) {
+        const err = new Error(json.error || 'Something went wrong. Please try again.');
+        err.code = json.code;
+        throw err;
+      }
+      return json;
+    };
 
     container.querySelectorAll('.password-toggle-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        const input = container.querySelector('#' + btn.dataset.target);
+        const input = $('#' + btn.dataset.target);
         const show = input.type === 'password';
         input.type = show ? 'text' : 'password';
         btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
@@ -439,52 +486,40 @@ export function renderForgotPasswordPage(_container, params = {}) {
       }, 1000);
     };
 
-    const requestCode = async () => {
-      const res = await fetch('/api/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
-        body: JSON.stringify({ action: 'password_reset_request', email: emailVal }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || !json.ok) throw new Error(json.error || 'Could not send the code. Please try again.');
-      return json;
-    };
-
-    reqForm.addEventListener('submit', async () => {
-      alertEl.style.display = 'none';
+    // Step 1 → send the code
+    forms[1].addEventListener('submit', async () => {
+      hideAlert();
       emailVal = emailInput.value.trim().toLowerCase();
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal)) {
         showAuthAlert(alertEl, 'Enter a valid email address, for example name@example.com.');
         emailInput.focus();
         return;
       }
-
-      reqBtn.disabled = true;
-      reqBtn.textContent = 'Sending...';
+      const btn = $('#btn-request-reset');
+      busy(btn, true, 'Sending code...');
       try {
-        const json = await requestCode();
+        const json = await post({ action: 'password_reset_request', email: emailVal });
         showAuthAlert(alertEl, json.message || 'If an account exists for this email, we have sent a code.', 'success');
-        subtitle.textContent = 'Enter the code we sent to ' + emailVal + ' and choose a new password.';
-        container.querySelector('#reset-email-hidden').value = emailVal;
-        reqForm.style.display = 'none';
-        confForm.style.display = 'block';
-        container.querySelector('#reset-code').focus();
+        subtitle.textContent = 'Enter the 6-digit code we emailed to ' + emailVal + '.';
+        codeInput.value = '';
+        showStep(2);
+        codeInput.focus();
         startCooldown(60);
       } catch (err) {
         showAuthAlert(alertEl, err.message);
       } finally {
-        reqBtn.disabled = false;
-        reqBtn.textContent = 'Send code';
+        busy(btn, false);
       }
     });
 
     resendBtn.addEventListener('click', async () => {
-      alertEl.style.display = 'none';
+      hideAlert();
       resendBtn.disabled = true;
       try {
-        const json = await requestCode();
-        showAuthAlert(alertEl, json.message || 'A new code has been sent.', 'success');
+        const json = await post({ action: 'password_reset_request', email: emailVal });
+        showAuthAlert(alertEl, (json.message || 'A new code has been sent.') + ' Earlier codes no longer work.', 'success');
+        codeInput.value = '';
+        codeInput.focus();
         startCooldown(60);
       } catch (err) {
         showAuthAlert(alertEl, err.message);
@@ -492,53 +527,97 @@ export function renderForgotPasswordPage(_container, params = {}) {
       }
     });
 
-    container.querySelector('#btn-use-other-email').addEventListener('click', () => {
+    $('#btn-use-other-email').addEventListener('click', () => {
       clearInterval(cooldownTimer);
-      alertEl.style.display = 'none';
-      confForm.style.display = 'none';
-      reqForm.style.display = 'block';
+      hideAlert();
+      showStep(1);
       emailInput.focus();
     });
 
-    confForm.addEventListener('submit', async () => {
-      alertEl.style.display = 'none';
-      const code = container.querySelector('#reset-code').value.replace(/\D/g, '');
-      const newPassword = container.querySelector('#reset-new-password').value;
-      const confirmPassword = container.querySelector('#reset-confirm-password').value;
-
-      if (code.length !== 6) return showAuthAlert(alertEl, 'Enter the 6-digit code from the email.');
-      if (newPassword.length < 10) return showAuthAlert(alertEl, 'Your new password must be at least 10 characters.');
-      if (newPassword !== confirmPassword) return showAuthAlert(alertEl, 'The two passwords do not match.');
-
-      confBtn.disabled = true;
-      confBtn.textContent = 'Saving...';
+    // Step 2 → verify the code (auto-submits at 6 digits)
+    let verifying = false;
+    const verifyCode = async () => {
+      if (verifying) return;
+      hideAlert();
+      const code = codeInput.value.replace(/\D/g, '');
+      if (code.length !== 6) {
+        showAuthAlert(alertEl, 'Enter the 6-digit code from the email.');
+        codeInput.focus();
+        return;
+      }
+      verifying = true;
+      const btn = $('#btn-verify-code');
+      busy(btn, true, 'Verifying...');
       try {
-        const res = await fetch('/api/auth', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'same-origin',
-          body: JSON.stringify({ action: 'password_reset_confirm', email: emailVal, code, newPassword }),
-        });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok || !json.ok) throw new Error(json.error || 'Could not set your password. Please try again.');
-
+        const json = await post({ action: 'password_reset_verify', email: emailVal, code });
+        resetToken = json.resetToken;
         clearInterval(cooldownTimer);
-        showAuthAlert(alertEl, json.message || 'Your password has been set. Signing you in...', 'success');
-        // The server signed this device in; reload auth state and continue into the app.
-        store._loaded = false;
-        await store.load();
-        const state = store.authState;
-        window.location.hash = state === 'needs_library' ? '#/setup-library'
-          : state === 'needs_onboarding' ? '#/onboarding'
-          : state === 'ready' ? '#/dashboard' : '#/login';
+        showAuthAlert(alertEl, 'Code verified. Now choose your new password.', 'success');
+        subtitle.textContent = 'Choose a new password for ' + emailVal + '.';
+        $('#reset-email-hidden').value = emailVal;
+        showStep(3);
+        pwdInput.focus();
       } catch (err) {
         showAuthAlert(alertEl, err.message);
-        confBtn.disabled = false;
-        confBtn.textContent = confirmLabel;
+        codeInput.select();
+      } finally {
+        verifying = false;
+        busy(btn, false);
+      }
+    };
+    forms[2].addEventListener('submit', verifyCode);
+    codeInput.addEventListener('input', () => {
+      codeInput.value = codeInput.value.replace(/\D/g, '').slice(0, 6);
+      if (codeInput.value.length === 6) verifyCode();
+    });
+
+    // Step 3 → live checks, then set the password and sign in
+    const updateHints = () => {
+      const len = pwdInput.value.length;
+      const lenHint = $('#pwd-length-hint');
+      lenHint.textContent = len >= 10 ? '✓ Length looks good' : `At least 10 characters (${len}/10)`;
+      lenHint.style.color = len >= 10 ? 'var(--sf-success-600, #079455)' : 'var(--color-text-tertiary)';
+      const matchHint = $('#pwd-match-hint');
+      if (!confirmInput.value) { matchHint.textContent = ''; return; }
+      const same = confirmInput.value === pwdInput.value;
+      matchHint.textContent = same ? '✓ Passwords match' : 'Passwords do not match';
+      matchHint.style.color = same ? 'var(--sf-success-600, #079455)' : 'var(--sf-error-600, #d92d20)';
+    };
+    pwdInput.addEventListener('input', updateHints);
+    confirmInput.addEventListener('input', updateHints);
+
+    forms[3].addEventListener('submit', async () => {
+      hideAlert();
+      const newPassword = pwdInput.value;
+      if (newPassword.length < 10) return showAuthAlert(alertEl, 'Your new password must be at least 10 characters.');
+      if (newPassword !== confirmInput.value) return showAuthAlert(alertEl, 'The two passwords do not match.');
+
+      const btn = $('#btn-set-password');
+      busy(btn, true, 'Saving password...');
+      try {
+        const json = await post({ action: 'password_reset_confirm', email: emailVal, resetToken, newPassword });
+        showAuthAlert(alertEl, json.message || 'Your password has been set. Signing you in...', 'success');
+        const target = json.state === 'needs_library' ? '#/setup-library'
+          : json.state === 'needs_onboarding' ? '#/onboarding'
+          : '#/dashboard';
+        // Full reload so the whole app starts fresh with the new signed-in session.
+        setTimeout(() => {
+          window.location.hash = target;
+          window.location.reload();
+        }, 600);
+      } catch (err) {
+        busy(btn, false);
+        if (err.code === 'RESET_EXPIRED') {
+          showAuthAlert(alertEl, err.message);
+          resetToken = '';
+          showStep(1);
+          return;
+        }
+        showAuthAlert(alertEl, err.message);
       }
     });
 
-    if (prefillEmail) reqBtn.focus(); else emailInput.focus();
+    if (prefillEmail) $('#btn-request-reset').focus(); else emailInput.focus();
   }, 0);
 
   return container;
