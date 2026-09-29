@@ -5,7 +5,7 @@
 const crypto = require('crypto');
 const { query, withTransaction } = require('../lib/db');
 const { ensureMultiTenantSchema } = require('../lib/db-init');
-const { hashPassword, verifyPassword, validatePasswordStrength, requireSession } = require('../lib/auth');
+const { hashPassword, verifyPassword, verifyAgainstDummy, validatePasswordStrength, requireSession } = require('../lib/auth');
 const {
   createSession,
   validateSession,
@@ -21,6 +21,16 @@ const {
 const { verifyFirebaseIdToken } = require('../lib/firebase');
 const { checkRateLimit } = require('../lib/ratelimit');
 const { withHandler } = require('../lib/http');
+const { sendPasswordResetCode, sendPasswordChangedNotice } = require('../lib/mailer');
+
+const RESET_CODE_TTL_MINUTES = 10;
+const RESET_CODE_MAX_ATTEMPTS = 5;
+
+// Password-reset email can only work if a mail provider is configured (see lib/mailer.js).
+// Checked before looking up the account so the response never depends on whether it exists.
+function isMailConfigured() {
+  return Boolean(process.env.RESEND_API_KEY || process.env.SMTP_URL) || process.env.NODE_ENV !== 'production';
+}
 const { HttpError } = require('../lib/errors');
 
 function uid(prefix) {
@@ -284,6 +294,29 @@ module.exports = withHandler(async function handler(req, res) {
   }
 
   // ── 2. LOGIN (Email + Password) ───────────────────────────────────────────
+  // ── Identifier-first sign-in: which methods does this email use? ─────────
+  // Lets the login page ask for a password only when the account has one, so users of
+  // Google-created accounts are never prompted to type their Google password into this site.
+  // Unknown emails get the same answer as password accounts; only Google-only accounts differ.
+  if (action === 'check_email') {
+    const { email } = req.body || {};
+    const cleanEmail = String(email || '').toLowerCase().trim();
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      throw new HttpError(400, 'INVALID_EMAIL', 'Please enter a valid email address.');
+    }
+    await checkRateLimit(query, `checkemail:ip:${ip}`, 30, 60);
+
+    const userRes = await query(
+      'SELECT password_hash IS NOT NULL AS has_password, firebase_uid IS NOT NULL AS has_google FROM users WHERE LOWER(email) = $1',
+      [cleanEmail]
+    );
+    const row = userRes.rows[0];
+    const methods = [];
+    if (row?.has_google) methods.push('google');
+    if (!row || row.has_password) methods.push('password');
+    return res.json({ ok: true, methods });
+  }
+
   if (action === 'login') {
     const { email, password } = req.body || {};
     if (!email || !password) {
@@ -297,17 +330,19 @@ module.exports = withHandler(async function handler(req, res) {
     const userRes = await query('SELECT * FROM users WHERE LOWER(email) = $1', [cleanEmail]);
 
     if (userRes.rows.length === 0) {
+      await verifyAgainstDummy(password); // same timing as a wrong password
       await logAuthEvent({ event: 'login_failed', method: 'password', ip, userAgent, success: false });
       throw new HttpError(401, 'INVALID_CREDENTIALS', 'Invalid email or password.');
     }
 
     const u = userRes.rows[0];
     if (!u.password_hash) {
+      await verifyAgainstDummy(password);
       await logAuthEvent({ userId: u.id, event: 'login_failed_no_password', method: 'password', ip, userAgent, success: false });
       throw new HttpError(401, 'INVALID_CREDENTIALS', 'Please use "Continue with Google" to sign in to this account.');
     }
 
-    const check = verifyPassword(password, u.password_hash);
+    const check = await verifyPassword(password, u.password_hash);
     if (!check.valid) {
       await logAuthEvent({ userId: u.id, event: 'login_failed_password', method: 'password', ip, userAgent, success: false });
       throw new HttpError(401, 'INVALID_CREDENTIALS', 'Invalid email or password.');
@@ -316,6 +351,16 @@ module.exports = withHandler(async function handler(req, res) {
     if (u.status !== 'active') {
       await logAuthEvent({ userId: u.id, event: 'login_blocked', method: 'password', ip, userAgent, success: false });
       throw new HttpError(403, 'ACCOUNT_DISABLED', 'Your account has been disabled. Please contact support.');
+    }
+
+    // Transparently upgrade older/weaker hashes to the current scrypt parameters
+    if (check.needsRehash) {
+      try {
+        await query('UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND password_hash = $3',
+          [await hashPassword(password), u.id, u.password_hash]);
+      } catch (rehashErr) {
+        console.error(`[${req.correlationId}] Password rehash failed:`, rehashErr.message);
+      }
     }
 
     await query('UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = $1', [u.id]);
@@ -388,7 +433,7 @@ module.exports = withHandler(async function handler(req, res) {
     }
 
     const userId = uid('USR');
-    const passwordHash = hashPassword(password);
+    const passwordHash = await hashPassword(password);
     const avatarColor = randomAvatarColor();
 
     await query(
@@ -578,6 +623,7 @@ module.exports = withHandler(async function handler(req, res) {
         phone: sessionData.phone,
         role: sessionData.role,
         avatarColor: sessionData.avatarColor,
+        hasPassword: sessionData.hasPassword,
       },
       activeLibrary: sessionData.organization,
       libraries: memberships.rows,
@@ -881,32 +927,47 @@ module.exports = withHandler(async function handler(req, res) {
     return res.json({ ok: true, state: 'ready', message: 'Onboarding completed successfully! Library is ready.' });
   }
 
-  // ── 14. PASSWORD RESET REQUEST & CONFIRM (AUTH-10) ────────────────────────
+  // ── 14. PASSWORD RESET / SET PASSWORD BY EMAIL CODE (AUTH-10) ──────────────
+  // Also how an account created with Google adds a password: proving access to the inbox
+  // is the same proof as for a reset.
   if (action === 'password_reset_request' || action === 'password_reset') {
     const { email } = req.body || {};
-    if (!email) throw new HttpError(400, 'MISSING_EMAIL', 'Email address is required.');
+    const cleanEmail = String(email || '').toLowerCase().trim();
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      throw new HttpError(400, 'INVALID_EMAIL', 'Please enter a valid email address.');
+    }
+    if (!isMailConfigured()) {
+      throw new HttpError(503, 'EMAIL_UNAVAILABLE', 'Password reset by email is not available right now. Please contact support.');
+    }
 
-    const cleanEmail = email.toLowerCase().trim();
     await checkRateLimit(query, `pwreset:ip:${ip}`, 10, 3600);
     await checkRateLimit(query, `pwreset:acc:${cleanEmail}`, 3, 3600);
 
-    const userRes = await query('SELECT id FROM users WHERE LOWER(email) = $1', [cleanEmail]);
+    const userRes = await query('SELECT id, email FROM users WHERE LOWER(email) = $1', [cleanEmail]);
     if (userRes.rows.length > 0) {
       const uId = userRes.rows[0].id;
-      const rawCode = crypto.randomInt(100000, 999999).toString();
+      const rawCode = crypto.randomInt(100000, 1000000).toString();
       const codeHash = crypto.createHash('sha256').update(rawCode).digest('hex');
-      const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
+      const expiresAt = new Date(Date.now() + RESET_CODE_TTL_MINUTES * 60 * 1000);
 
       await query(
-        `INSERT INTO auth_events (id, user_id, event, method, ip, metadata, created_at)
-         VALUES ($1, $2, 'password_reset_requested', 'code', $3, $4, CURRENT_TIMESTAMP)`,
-        [uid('EVT'), uId, ip, JSON.stringify({ codeHash, expiresAt: expiresAt.toISOString(), attempts: 0 })]
+        `INSERT INTO auth_events (id, user_id, event, method, ip, user_agent, success, metadata, created_at)
+         VALUES ($1, $2, 'password_reset_requested', 'code', $3, $4, true, $5, CURRENT_TIMESTAMP)`,
+        [uid('EVT'), uId, ip, (userAgent || '').substring(0, 512),
+         JSON.stringify({ codeHash, expiresAt: expiresAt.toISOString(), attempts: 0, used: false })]
       );
+
+      try {
+        await sendPasswordResetCode({ to: userRes.rows[0].email, code: rawCode, minutes: RESET_CODE_TTL_MINUTES });
+      } catch (mailErr) {
+        // Same response either way (no account enumeration); the failure is logged for ops.
+        console.error(`[${req.correlationId}] Password reset email failed:`, mailErr.message);
+      }
     }
 
     return res.json({
       ok: true,
-      message: 'If an account exists with this email address, a password reset code has been sent.',
+      message: `If an account exists for ${cleanEmail}, we've sent a 6-digit code to it. It expires in ${RESET_CODE_TTL_MINUTES} minutes.`,
     });
   }
 
@@ -916,51 +977,77 @@ module.exports = withHandler(async function handler(req, res) {
       throw new HttpError(400, 'MISSING_FIELDS', 'Email, reset code, and new password are required.');
     }
 
+    const cleanEmail = String(email).toLowerCase().trim();
+    await checkRateLimit(query, `pwconfirm:ip:${ip}`, 20, 3600);
+    await checkRateLimit(query, `pwconfirm:acc:${cleanEmail}`, 10, 3600);
     validatePasswordStrength(newPassword);
-    const cleanEmail = email.toLowerCase().trim();
 
-    const userRes = await query('SELECT id FROM users WHERE LOWER(email) = $1', [cleanEmail]);
-    if (userRes.rows.length === 0) {
-      throw new HttpError(400, 'INVALID_CODE', 'Invalid or expired password reset code.');
-    }
+    const invalid = () => new HttpError(400, 'INVALID_CODE', 'That code is incorrect or has expired. Request a new code and try again.');
 
-    const userId = userRes.rows[0].id;
-    const codeHash = crypto.createHash('sha256').update(code.trim()).digest('hex');
+    const userRes = await query('SELECT id, email, status FROM users WHERE LOWER(email) = $1', [cleanEmail]);
+    if (userRes.rows.length === 0) throw invalid();
+    const user = userRes.rows[0];
 
+    // Only the most recent request is valid; older codes die when a new one is sent.
     const evtRes = await query(
-      `SELECT id, metadata FROM auth_events 
-       WHERE user_id = $1 AND event = 'password_reset_requested' 
+      `SELECT id, metadata FROM auth_events
+       WHERE user_id = $1 AND event = 'password_reset_requested'
        ORDER BY created_at DESC LIMIT 1`,
-      [userId]
+      [user.id]
     );
+    if (evtRes.rows.length === 0) throw invalid();
 
-    if (evtRes.rows.length === 0) {
-      throw new HttpError(400, 'INVALID_CODE', 'No active reset request found.');
+    const evt = evtRes.rows[0];
+    const meta = evt.metadata || {};
+    if (meta.used || (meta.attempts || 0) >= RESET_CODE_MAX_ATTEMPTS || !meta.expiresAt || new Date() > new Date(meta.expiresAt)) {
+      throw invalid();
     }
 
-    const meta = evtRes.rows[0].metadata || {};
-    if (new Date() > new Date(meta.expiresAt)) {
-      throw new HttpError(400, 'CODE_EXPIRED', 'Password reset code has expired. Please request a new one.');
+    const givenHash = crypto.createHash('sha256').update(String(code).trim()).digest('hex');
+    const matches = typeof meta.codeHash === 'string' && meta.codeHash.length === givenHash.length &&
+      crypto.timingSafeEqual(Buffer.from(meta.codeHash), Buffer.from(givenHash));
+
+    if (!matches) {
+      const attempts = (meta.attempts || 0) + 1;
+      await query(`UPDATE auth_events SET metadata = metadata || $1::jsonb WHERE id = $2`, [JSON.stringify({ attempts }), evt.id]);
+      const left = RESET_CODE_MAX_ATTEMPTS - attempts;
+      throw new HttpError(400, 'INVALID_CODE', left > 0
+        ? `That code is incorrect. ${left} attempt${left === 1 ? '' : 's'} left.`
+        : 'Too many incorrect attempts. Request a new code.');
     }
 
-    if (meta.codeHash !== codeHash) {
-      throw new HttpError(400, 'INVALID_CODE', 'Incorrect reset code.');
+    if (user.status !== 'active') {
+      throw new HttpError(403, 'ACCOUNT_DISABLED', 'Your account has been disabled. Please contact support.');
     }
 
-    const newHash = hashPassword(newPassword);
+    // Single use: mark consumed before changing anything else.
+    await query(`UPDATE auth_events SET metadata = metadata || '{"used": true}'::jsonb WHERE id = $1`, [evt.id]);
+
     await query(
-      `UPDATE users 
-       SET password_hash = $1, email_verified_at = COALESCE(email_verified_at, CURRENT_TIMESTAMP), token_version = COALESCE(token_version, 1) + 1, updated_at = CURRENT_TIMESTAMP 
+      `UPDATE users
+       SET password_hash = $1, email_verified_at = COALESCE(email_verified_at, CURRENT_TIMESTAMP),
+           token_version = COALESCE(token_version, 1) + 1, updated_at = CURRENT_TIMESTAMP
        WHERE id = $2`,
-      [newHash, userId]
+      [await hashPassword(newPassword), user.id]
     );
+    await query(
+      `INSERT INTO user_identities (id, user_id, provider, provider_subject, created_at)
+       VALUES ($1, $2, 'password', $3, CURRENT_TIMESTAMP)
+       ON CONFLICT (provider, provider_subject) DO NOTHING`,
+      [uid('IDN'), user.id, cleanEmail]
+    ).catch(() => {});
 
-    // Revoke all sessions upon password reset (AUTH-10)
-    await revokeAllSessions(userId);
+    // Revoke every existing session, then sign the user in on this device.
+    await revokeAllSessions(user.id);
+    const { token: sessionToken } = await createSession({ userId: user.id, ip, userAgent });
+    setSessionCookie(res, sessionToken);
+    const sessionData = await validateSession(sessionToken);
 
-    await logAuthEvent({ userId, event: 'password_reset_completed', method: 'code', ip, userAgent, success: true });
+    await logAuthEvent({ userId: user.id, organizationId: sessionData.orgId, event: 'password_reset_completed', method: 'code', ip, userAgent, success: true });
+    sendPasswordChangedNotice({ to: user.email, ip, when: new Date() })
+      .catch(err => console.error(`[${req.correlationId}] Password changed notice failed:`, err.message));
 
-    return res.json({ ok: true, message: 'Password has been reset successfully! Please sign in with your new password.' });
+    return res.json({ ok: true, state: sessionData.state, message: 'Your password has been set. You are now signed in.' });
   }
 
   // ── 15. UPDATE PROFILE & PASSWORD (AUTH-12) ───────────────────────────────
@@ -976,16 +1063,19 @@ module.exports = withHandler(async function handler(req, res) {
 
       if (currentHash) {
         if (!currentPassword) throw new HttpError(400, 'MISSING_CURRENT_PASSWORD', 'Current password is required');
-        const check = verifyPassword(currentPassword, currentHash);
+        const check = await verifyPassword(currentPassword, currentHash);
         if (!check.valid) throw new HttpError(400, 'WRONG_PASSWORD', 'Current password is incorrect');
       } else {
-        // Setting password on Google/Phone account: require recent authentication within 5 min (AUTH-12)
-        if (idToken) {
-          await verifyFirebaseIdToken(idToken, { maxAgeSeconds: 300 });
+        // Adding a first password to a Google account requires proof beyond the session cookie
+        // (AUTH-12): a fresh Google sign-in (within 5 min) — otherwise use the emailed-code flow.
+        if (!idToken) {
+          throw new HttpError(400, 'REAUTH_REQUIRED',
+            'To add a password to a Google account, use "Set password by email" on the sign-in page, or sign in with Google again.');
         }
+        await verifyFirebaseIdToken(idToken, { maxAgeSeconds: 300 });
       }
 
-      const newHash = hashPassword(newPassword);
+      const newHash = await hashPassword(newPassword);
       await revokeAllSessions(session.userId, session.sessionId);
 
       await query(

@@ -229,16 +229,26 @@ export function renderSettings(container) {
             </div>
 
             <div style="padding-top:var(--space-3);border-top:1px solid var(--color-border-secondary);">
+              ${user.hasPassword === false ? `
+              <div style="font-size:var(--text-sm);font-weight:600;color:var(--color-text-primary);margin-bottom:6px;">Password</div>
+              <p style="font-size:12px;color:var(--color-text-secondary);margin:0 0 12px;">
+                You sign in with Google. You can also add a password so you can sign in with your email.
+                We'll email a 6-digit code to <strong>${esc(user.email || 'your email')}</strong> to confirm it's you.
+              </p>
+              <a class="btn btn-primary w-full" href="#/forgot-password?mode=set&email=${encodeURIComponent(user.email || '')}">Set a password</a>
+              ` : `
               <div style="font-size:var(--text-sm);font-weight:600;color:var(--color-text-primary);margin-bottom:8px;">Change Password</div>
               <div class="form-group" style="margin-bottom:8px;">
-                <label class="form-label">Current Password</label>
-                <input type="password" class="input" id="set-cur-pwd" placeholder="••••••••" />
+                <label class="form-label" for="set-cur-pwd">Current Password</label>
+                <input type="password" class="input" id="set-cur-pwd" placeholder="••••••••" autocomplete="current-password" />
               </div>
               <div class="form-group" style="margin-bottom:12px;">
-                <label class="form-label">New Password (min 10 chars)</label>
-                <input type="password" class="input" id="set-new-pwd" placeholder="••••••••••" minlength="10" />
+                <label class="form-label" for="set-new-pwd">New Password (min 10 chars)</label>
+                <input type="password" class="input" id="set-new-pwd" placeholder="••••••••••" minlength="10" autocomplete="new-password" />
               </div>
               <button class="btn btn-primary w-full" onclick="updateUserPassword()">Update Password</button>
+              <a href="#/forgot-password?email=${encodeURIComponent(user.email || '')}" style="display:block;margin-top:8px;font-size:12px;color:var(--color-primary);text-align:center;">Forgot your current password?</a>
+              `}
             </div>
           </div>
         </div>

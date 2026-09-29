@@ -165,9 +165,9 @@ describe('Auth Upgrade — 14 Acceptance Criteria', () => {
   });
 
   // ── Test 6: Pre-account hijacking protection ──────────────────────────────
-  test('6. Unverified password registration is claimed and password wiped when real Google user signs in', () => {
+  test('6. Unverified password registration is claimed and password wiped when real Google user signs in', async () => {
     const victimEmail = 'victim@gmail.com';
-    const attackerPasswordHash = hashPassword('AttackerPass123!');
+    const attackerPasswordHash = await hashPassword('AttackerPass123!');
 
     // Attacker pre-registers unverified account
     const unverifiedUser = {

@@ -31,28 +31,39 @@ export function renderLoginPage() {
         <span>or use email</span>
       </div>
 
-      <!-- Email + Password Form -->
-      <form id="email-login-form" class="auth-form" onsubmit="event.preventDefault();">
-        <div class="form-group">
-          <label class="form-label" for="login-email">Email Address</label>
-          <input type="email" id="login-email" class="input" required placeholder="name@yourlibrary.com" autocomplete="email" />
+      <!-- Email-first sign in: the password box only appears for accounts that have a password -->
+      <form id="email-login-form" class="auth-form" novalidate onsubmit="event.preventDefault();">
+        <div class="form-group" id="login-email-group">
+          <label class="form-label" for="login-email">Email address</label>
+          <input type="email" id="login-email" class="input" required placeholder="name@yourlibrary.com" autocomplete="username email" autocapitalize="off" spellcheck="false" />
         </div>
 
-        <div class="form-group">
+        <div id="login-email-chip" class="auth-email-chip" style="display:none;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;margin-bottom:12px;border:1px solid var(--color-border);border-radius:999px;font-size:13px;color:var(--color-text-primary);background:var(--color-bg-secondary);">
+          <span id="login-email-display" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+          <button type="button" id="btn-change-email" style="background:none;border:none;color:var(--color-primary);font-size:12px;font-weight:600;cursor:pointer;padding:0;">Change</button>
+        </div>
+
+        <div class="form-group" id="login-password-group" style="display:none;">
           <div style="display:flex;justify-content:space-between;align-items:center;">
             <label class="form-label" for="login-password">Password</label>
-            <a href="#/forgot-password" class="auth-forgot-link">Forgot password?</a>
+            <a href="#/forgot-password" class="auth-forgot-link" id="login-forgot-link">Forgot password?</a>
           </div>
           <div class="password-input-wrap">
-            <input type="password" id="login-password" class="input" required placeholder="••••••••" autocomplete="current-password" />
-            <button type="button" class="password-toggle-btn" aria-label="Toggle password visibility">
+            <input type="password" id="login-password" class="input" placeholder="Enter your password" autocomplete="current-password" />
+            <button type="button" class="password-toggle-btn" aria-label="Show password" aria-pressed="false">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
             </button>
           </div>
         </div>
 
+        <div id="login-google-only" style="display:none;margin-bottom:12px;padding:12px 14px;border:1px solid var(--color-border);border-radius:10px;background:var(--color-bg-secondary);font-size:13px;line-height:1.5;color:var(--color-text-primary);">
+          <div style="font-weight:600;margin-bottom:4px;">This account signs in with Google</div>
+          <div style="color:var(--color-text-secondary);margin-bottom:10px;">Use <strong>Continue with Google</strong> above. Please don't type your Google password here.</div>
+          <a href="#/forgot-password?mode=set" id="login-set-password-link" style="color:var(--color-primary);font-weight:600;">Or set a password by email</a>
+        </div>
+
         <button type="submit" class="btn btn-primary btn-block" id="btn-email-submit">
-          Sign In
+          Continue
         </button>
       </form>
 
@@ -327,49 +338,64 @@ export function renderOnboardingPage() {
   return container;
 }
 
-export function renderForgotPasswordPage() {
+export function renderForgotPasswordPage(_container, params = {}) {
+  const isSetMode = params.mode === 'set';
+  const prefillEmail = String(params.email || '');
   const container = document.createElement('div');
   container.className = 'auth-page-container';
+  const eyeIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
   container.innerHTML = `
     <div class="auth-card">
       <div class="auth-header">
         <div class="auth-logo">SF</div>
-        <h1 class="auth-title">Reset Password</h1>
-        <p class="auth-subtitle">Enter your email address to receive a password reset code.</p>
+        <h1 class="auth-title">${isSetMode ? 'Set a password' : 'Reset your password'}</h1>
+        <p class="auth-subtitle" id="forgot-subtitle">${isSetMode
+          ? 'We will email you a 6-digit code to confirm it is you. After that you can sign in with your email and password as well as with Google.'
+          : 'Enter the email you use for StudyFlow and we will send you a 6-digit code.'}</p>
       </div>
 
       <div id="auth-alert" class="auth-alert" style="display:none;" role="alert" aria-live="assertive"></div>
 
       <!-- Step 1: Request Code -->
-      <form id="forgot-request-form" class="auth-form" onsubmit="event.preventDefault();">
+      <form id="forgot-request-form" class="auth-form" novalidate onsubmit="event.preventDefault();">
         <div class="form-group">
-          <label class="form-label" for="reset-email">Email Address</label>
-          <input type="email" id="reset-email" class="input" required placeholder="owner@yourlibrary.com" />
+          <label class="form-label" for="reset-email">Email address</label>
+          <input type="email" id="reset-email" class="input" required placeholder="name@yourlibrary.com" autocomplete="username email" autocapitalize="off" spellcheck="false" value="${utils.escapeAttr(prefillEmail)}" />
         </div>
-        <button type="submit" class="btn btn-primary btn-block" id="btn-request-reset">
-          Send Reset Code
-        </button>
+        <button type="submit" class="btn btn-primary btn-block" id="btn-request-reset">Send code</button>
       </form>
 
       <!-- Step 2: Enter Code & New Password -->
-      <form id="forgot-confirm-form" class="auth-form" style="display:none;" onsubmit="event.preventDefault();">
+      <form id="forgot-confirm-form" class="auth-form" style="display:none;" novalidate onsubmit="event.preventDefault();">
+        <input type="email" id="reset-email-hidden" autocomplete="username" style="display:none;" tabindex="-1" aria-hidden="true" />
         <div class="form-group">
-          <label class="form-label" for="reset-code">6-Digit Reset Code</label>
-          <input type="text" id="reset-code" class="input" required placeholder="123456" maxlength="6" inputmode="numeric" style="letter-spacing:4px;font-weight:700;font-size:18px;text-align:center;" />
+          <label class="form-label" for="reset-code">6-digit code</label>
+          <input type="text" id="reset-code" class="input" required placeholder="123456" maxlength="6" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" style="letter-spacing:6px;font-weight:700;font-size:18px;text-align:center;" />
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:12px;color:var(--color-text-secondary);">
+            <span>Check your inbox and spam folder.</span>
+            <button type="button" id="btn-resend-code" style="background:none;border:none;color:var(--color-primary);font-weight:600;cursor:pointer;padding:0;" disabled>Resend code</button>
+          </div>
         </div>
 
         <div class="form-group">
-          <label class="form-label" for="reset-new-password">New Password (at least 10 chars)</label>
-          <input type="password" id="reset-new-password" class="input" required placeholder="••••••••••" minlength="10" />
+          <label class="form-label" for="reset-new-password">New password <span style="font-weight:400;color:var(--color-text-tertiary);">(at least 10 characters)</span></label>
+          <div class="password-input-wrap">
+            <input type="password" id="reset-new-password" class="input" required minlength="10" autocomplete="new-password" placeholder="Create a password" />
+            <button type="button" class="password-toggle-btn" data-target="reset-new-password" aria-label="Show password">${eyeIcon}</button>
+          </div>
         </div>
 
-        <button type="submit" class="btn btn-primary btn-block" id="btn-confirm-reset">
-          Reset Password & Sign In
-        </button>
+        <div class="form-group">
+          <label class="form-label" for="reset-confirm-password">Confirm new password</label>
+          <input type="password" id="reset-confirm-password" class="input" required minlength="10" autocomplete="new-password" placeholder="Type it again" />
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block" id="btn-confirm-reset">${isSetMode ? 'Set password &amp; sign in' : 'Reset password &amp; sign in'}</button>
+        <button type="button" id="btn-use-other-email" style="display:block;margin:10px auto 0;background:none;border:none;color:var(--color-text-secondary);font-size:12px;cursor:pointer;">Use a different email</button>
       </form>
 
       <div class="auth-footer">
-        Remember your password? <a href="#/login" class="auth-switch-link">Sign In</a>
+        <a href="#/login" class="auth-switch-link">Back to sign in</a>
       </div>
     </div>
   `;
@@ -378,58 +404,141 @@ export function renderForgotPasswordPage() {
     const alertEl = container.querySelector('#auth-alert');
     const reqForm = container.querySelector('#forgot-request-form');
     const confForm = container.querySelector('#forgot-confirm-form');
+    const emailInput = container.querySelector('#reset-email');
+    const reqBtn = container.querySelector('#btn-request-reset');
+    const confBtn = container.querySelector('#btn-confirm-reset');
+    const resendBtn = container.querySelector('#btn-resend-code');
+    const subtitle = container.querySelector('#forgot-subtitle');
+    const confirmLabel = confBtn.textContent;
     let emailVal = '';
+    let cooldownTimer = null;
+
+    container.querySelectorAll('.password-toggle-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const input = container.querySelector('#' + btn.dataset.target);
+        const show = input.type === 'password';
+        input.type = show ? 'text' : 'password';
+        btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+      });
+    });
+
+    const startCooldown = (seconds) => {
+      clearInterval(cooldownTimer);
+      let left = seconds;
+      resendBtn.disabled = true;
+      resendBtn.textContent = 'Resend code in ' + left + 's';
+      cooldownTimer = setInterval(() => {
+        left -= 1;
+        if (left <= 0 || !container.isConnected) {
+          clearInterval(cooldownTimer);
+          resendBtn.disabled = false;
+          resendBtn.textContent = 'Resend code';
+          return;
+        }
+        resendBtn.textContent = 'Resend code in ' + left + 's';
+      }, 1000);
+    };
+
+    const requestCode = async () => {
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ action: 'password_reset_request', email: emailVal }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.ok) throw new Error(json.error || 'Could not send the code. Please try again.');
+      return json;
+    };
 
     reqForm.addEventListener('submit', async () => {
-      emailVal = container.querySelector('#reset-email').value.trim();
-      if (!emailVal) return;
+      alertEl.style.display = 'none';
+      emailVal = emailInput.value.trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal)) {
+        showAuthAlert(alertEl, 'Enter a valid email address, for example name@example.com.');
+        emailInput.focus();
+        return;
+      }
 
-      const btn = container.querySelector('#btn-request-reset');
-      btn.disabled = true;
-      btn.textContent = 'Sending...';
-
+      reqBtn.disabled = true;
+      reqBtn.textContent = 'Sending...';
       try {
-        const res = await fetch('/api/auth', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'password_reset_request', email: emailVal })
-        });
-        const json = await res.json();
-        showAuthAlert(alertEl, json.message || 'Reset code sent! Check your inbox.', 'success');
+        const json = await requestCode();
+        showAuthAlert(alertEl, json.message || 'If an account exists for this email, we have sent a code.', 'success');
+        subtitle.textContent = 'Enter the code we sent to ' + emailVal + ' and choose a new password.';
+        container.querySelector('#reset-email-hidden').value = emailVal;
         reqForm.style.display = 'none';
         confForm.style.display = 'block';
+        container.querySelector('#reset-code').focus();
+        startCooldown(60);
       } catch (err) {
-        showAuthAlert(alertEl, err.message || 'Request failed');
-        btn.disabled = false;
-        btn.textContent = 'Send Reset Code';
+        showAuthAlert(alertEl, err.message);
+      } finally {
+        reqBtn.disabled = false;
+        reqBtn.textContent = 'Send code';
       }
+    });
+
+    resendBtn.addEventListener('click', async () => {
+      alertEl.style.display = 'none';
+      resendBtn.disabled = true;
+      try {
+        const json = await requestCode();
+        showAuthAlert(alertEl, json.message || 'A new code has been sent.', 'success');
+        startCooldown(60);
+      } catch (err) {
+        showAuthAlert(alertEl, err.message);
+        resendBtn.disabled = false;
+      }
+    });
+
+    container.querySelector('#btn-use-other-email').addEventListener('click', () => {
+      clearInterval(cooldownTimer);
+      alertEl.style.display = 'none';
+      confForm.style.display = 'none';
+      reqForm.style.display = 'block';
+      emailInput.focus();
     });
 
     confForm.addEventListener('submit', async () => {
-      const code = container.querySelector('#reset-code').value.trim();
+      alertEl.style.display = 'none';
+      const code = container.querySelector('#reset-code').value.replace(/\D/g, '');
       const newPassword = container.querySelector('#reset-new-password').value;
+      const confirmPassword = container.querySelector('#reset-confirm-password').value;
 
-      const btn = container.querySelector('#btn-confirm-reset');
-      btn.disabled = true;
-      btn.textContent = 'Resetting...';
+      if (code.length !== 6) return showAuthAlert(alertEl, 'Enter the 6-digit code from the email.');
+      if (newPassword.length < 10) return showAuthAlert(alertEl, 'Your new password must be at least 10 characters.');
+      if (newPassword !== confirmPassword) return showAuthAlert(alertEl, 'The two passwords do not match.');
 
+      confBtn.disabled = true;
+      confBtn.textContent = 'Saving...';
       try {
         const res = await fetch('/api/auth', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'password_reset_confirm', email: emailVal, code, newPassword })
+          credentials: 'same-origin',
+          body: JSON.stringify({ action: 'password_reset_confirm', email: emailVal, code, newPassword }),
         });
-        const json = await res.json();
-        if (!json.ok) throw new Error(json.error || 'Failed to reset password');
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || !json.ok) throw new Error(json.error || 'Could not set your password. Please try again.');
 
-        showAuthAlert(alertEl, 'Password reset successfully! Redirecting to login...', 'success');
-        setTimeout(() => { window.location.hash = '#/login'; }, 1200);
+        clearInterval(cooldownTimer);
+        showAuthAlert(alertEl, json.message || 'Your password has been set. Signing you in...', 'success');
+        // The server signed this device in; reload auth state and continue into the app.
+        store._loaded = false;
+        await store.load();
+        const state = store.authState;
+        window.location.hash = state === 'needs_library' ? '#/setup-library'
+          : state === 'needs_onboarding' ? '#/onboarding'
+          : state === 'ready' ? '#/dashboard' : '#/login';
       } catch (err) {
-        showAuthAlert(alertEl, err.message || 'Failed to reset password');
-        btn.disabled = false;
-        btn.textContent = 'Reset Password & Sign In';
+        showAuthAlert(alertEl, err.message);
+        confBtn.disabled = false;
+        confBtn.textContent = confirmLabel;
       }
     });
+
+    if (prefillEmail) reqBtn.focus(); else emailInput.focus();
   }, 0);
 
   return container;
@@ -572,7 +681,10 @@ function setupLoginEvents(container) {
   const pwdInput = container.querySelector('#login-password');
   if (pwdToggle && pwdInput) {
     pwdToggle.addEventListener('click', () => {
-      pwdInput.type = pwdInput.type === 'password' ? 'text' : 'password';
+      const show = pwdInput.type === 'password';
+      pwdInput.type = show ? 'text' : 'password';
+      pwdToggle.setAttribute('aria-pressed', String(show));
+      pwdToggle.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
     });
   }
 
@@ -637,24 +749,101 @@ function setupLoginEvents(container) {
   }
 
   // Email + Password Sign In
+  // Email-first sign in: step 'email' → ask the server which methods the email uses →
+  // step 'password' (password accounts) or step 'google' (Google-only accounts).
   if (form) {
+    const emailInput = container.querySelector('#login-email');
+    const emailGroup = container.querySelector('#login-email-group');
+    const emailChip = container.querySelector('#login-email-chip');
+    const emailDisplay = container.querySelector('#login-email-display');
+    const passwordGroup = container.querySelector('#login-password-group');
+    const googleOnlyBox = container.querySelector('#login-google-only');
+    const forgotLink = container.querySelector('#login-forgot-link');
+    const setPasswordLink = container.querySelector('#login-set-password-link');
+    let step = 'email';
+
+    const setBusy = (busy, label) => {
+      submitBtn.disabled = busy;
+      submitBtn.innerHTML = busy
+        ? `<span class="spinner" style="width:16px;height:16px;border-width:2px;border-color:rgba(255,255,255,0.3);border-top-color:#ffffff;display:inline-block;vertical-align:middle;margin-right:8px;"></span><span>${label}</span>`
+        : label;
+    };
+
+    const showStep = (next, email) => {
+      step = next;
+      const onEmail = next === 'email';
+      emailGroup.style.display = onEmail ? '' : 'none';
+      emailChip.style.display = onEmail ? 'none' : 'flex';
+      passwordGroup.style.display = next === 'password' ? '' : 'none';
+      googleOnlyBox.style.display = next === 'google' ? '' : 'none';
+      submitBtn.style.display = next === 'google' ? 'none' : '';
+      submitBtn.innerHTML = next === 'password' ? 'Sign in' : 'Continue';
+      if (email) {
+        emailDisplay.textContent = email;
+        const q = `email=${encodeURIComponent(email)}`;
+        forgotLink.setAttribute('href', `#/forgot-password?${q}`);
+        setPasswordLink.setAttribute('href', `#/forgot-password?mode=set&${q}`);
+      }
+      if (onEmail) {
+        pwdInput.value = '';
+        emailInput.focus();
+      } else if (next === 'password') {
+        pwdInput.focus();
+      }
+    };
+
+    container.querySelector('#btn-change-email').addEventListener('click', () => {
+      alertEl.style.display = 'none';
+      showStep('email');
+    });
+
     form.addEventListener('submit', async () => {
       alertEl.style.display = 'none';
-      const email = container.querySelector('#login-email').value.trim();
-      const password = container.querySelector('#login-password').value;
+      const email = emailInput.value.trim();
 
-      if (!email || !password) {
-        showAuthAlert(alertEl, 'Please enter both email and password.');
+      if (step === 'email') {
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          showAuthAlert(alertEl, 'Enter a valid email address, for example name@example.com.');
+          emailInput.focus();
+          return;
+        }
+        setBusy(true, 'Checking...');
+        let methods = ['password'];
+        try {
+          const res = await fetch('/api/auth', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ action: 'check_email', email }),
+          });
+          const json = await res.json();
+          if (!json.ok) throw new Error(json.error || 'Could not check this email. Please try again.');
+          methods = json.methods || ['password'];
+        } catch (err) {
+          setBusy(false, 'Continue');
+          showAuthAlert(alertEl, err.message);
+          return;
+        }
+        setBusy(false, 'Continue');
+        // A password manager may have filled the password already: sign straight in.
+        const autofilled = pwdInput.value;
+        showStep(methods.includes('password') ? 'password' : 'google', email);
+        if (step === 'password' && autofilled) {
+          pwdInput.value = autofilled;
+          form.requestSubmit ? form.requestSubmit() : form.dispatchEvent(new Event('submit'));
+        }
         return;
       }
 
-      const origText = submitBtn.innerHTML;
-      submitBtn.disabled = true;
-      submitBtn.innerHTML = `
-        <span class="spinner" style="width:16px;height:16px;border-width:2px;border-color:rgba(255,255,255,0.3);border-top-color:#ffffff;display:inline-block;vertical-align:middle;margin-right:8px;"></span>
-        <span>Signing in...</span>
-      `;
+      if (step !== 'password') return;
+      const password = pwdInput.value;
+      if (!password) {
+        showAuthAlert(alertEl, 'Enter your password.');
+        pwdInput.focus();
+        return;
+      }
 
+      setBusy(true, 'Signing in...');
       try {
         const res = await store.login(email, password);
         if (res.state === 'needs_library') {
@@ -665,10 +854,10 @@ function setupLoginEvents(container) {
           window.location.hash = '#/dashboard';
         }
       } catch (err) {
-        showAuthAlert(alertEl, err.message || 'Invalid email or password');
+        showAuthAlert(alertEl, err.message || 'Incorrect email or password.');
+        pwdInput.select();
       } finally {
-        submitBtn.disabled = false;
-        submitBtn.innerHTML = origText;
+        setBusy(false, 'Sign in');
       }
     });
   }

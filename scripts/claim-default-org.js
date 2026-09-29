@@ -29,7 +29,7 @@ async function main() {
     // 1. Create or update user
     const existingUser = await client.query('SELECT id, organization_id FROM users WHERE LOWER(email) = $1', [cleanEmail]);
     let userId;
-    const pwdHash = hashPassword(ownerPassword);
+    const pwdHash = await hashPassword(ownerPassword);
 
     if (existingUser.rows.length > 0) {
       if (existingUser.rows[0].organization_id && existingUser.rows[0].organization_id !== 'ORG-DEFAULT') {
