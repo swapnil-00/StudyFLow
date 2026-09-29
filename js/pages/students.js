@@ -22,6 +22,10 @@ export function renderStudents(container) {
     if (filter !== 'all') {
       const today_ = new Date();
       result = result.filter(s => {
+        const isInactive = s.status === 'inactive';
+        if (filter === 'inactive') return isInactive;
+        if (isInactive) return false;
+
         const membership = store.getActiveMembership(s.id);
         const assignment = store.getStudentAssignment(s.id);
         switch (filter) {
@@ -74,7 +78,7 @@ export function renderStudents(container) {
               />
             </div>
             <div class="filter-tabs">
-              ${['all','active','expired','expiring','payment-due','no-seat'].map(f => `
+              ${['all','active','expired','expiring','payment-due','no-seat','inactive'].map(f => `
                 <button class="filter-tab ${filter === f ? 'active' : ''}" onclick="setStudentFilter('${f}')">
                   ${f === 'all' ? 'All' : f === 'payment-due' ? 'Payment Due' : f === 'no-seat' ? 'No Seat' : capitalizeFirst(f)}
                 </button>
@@ -153,9 +157,19 @@ function renderStudentRow(s) {
   const plan = membership ? store.getMembershipPlan(membership.planId) : null;
   const payStatus = membership ? store.getPaymentStatus(membership.id) : null;
   const today_ = new Date();
-  const isActive = membership && new Date(membership.endDate) >= today_;
+  const isInactive = s.status === 'inactive';
+  const isActive = !isInactive && membership && new Date(membership.endDate) >= today_;
   const esc = (val) => (typeof window !== 'undefined' && window.escapeHtml ? window.escapeHtml(val) : String(val || ''));
   const escA = (val) => (typeof window !== 'undefined' && window.escapeAttr ? window.escapeAttr(val) : String(val || ''));
+
+  let statusBadgeHtml = '';
+  if (isInactive) {
+    statusBadgeHtml = `<span class="badge badge-neutral"><span class="badge-dot" style="background:var(--sf-gray-400,#9ca3af);"></span>Inactive</span>`;
+  } else if (isActive) {
+    statusBadgeHtml = `<span class="badge badge-success"><span class="badge-dot"></span>Active</span>`;
+  } else {
+    statusBadgeHtml = `<span class="badge badge-neutral"><span class="badge-dot"></span>${membership ? 'Expired' : 'No Membership'}</span>`;
+  }
 
   return `
     <tr onclick="app.navigate('/student', {id:'${escA(s.id)}'})">
@@ -176,7 +190,7 @@ function renderStudentRow(s) {
       <td style="color:var(--color-text-secondary);">${membership ? utils.formatDate(membership.startDate, {day:'numeric',month:'short'}) : '—'}</td>
       <td>${membership ? `<span style="color:${utils.daysUntil(membership.endDate) <= 7 ? 'var(--sf-warning-600)' : 'var(--color-text-secondary)'};">${utils.formatDate(membership.endDate, {day:'numeric',month:'short'})}</span>` : '—'}</td>
       <td>${payStatus ? paymentStatusBadge(payStatus) : '—'}</td>
-      <td>${isActive ? `<span class="badge badge-success"><span class="badge-dot"></span>Active</span>` : `<span class="badge badge-neutral"><span class="badge-dot"></span>${membership ? 'Expired' : 'No Membership'}</span>`}</td>
+      <td>${statusBadgeHtml}</td>
       <td onclick="event.stopPropagation()">
         <button class="btn btn-ghost btn-icon btn-sm" onclick="openStudentActions(event, '${escA(s.id)}')" title="Actions">
           ${icons['more-vertical']}
@@ -197,6 +211,8 @@ window.openStudentActions = function(event, studentId) {
   menu.className = 'dropdown-menu';
   menu.style.cssText = `position:fixed;top:${rect.bottom + 4}px;right:${window.innerWidth - rect.right}px;z-index:300;`;
 
+  const student = store.getStudent(studentId);
+  const isInactive = student?.status === 'inactive';
   const assignment = store.getStudentAssignment(studentId);
   const seat = assignment ? store.getSeat(assignment.seatId) : null;
   const membership = store.getActiveMembership(studentId);
@@ -205,12 +221,16 @@ window.openStudentActions = function(event, studentId) {
   menu.innerHTML = `
     <button class="dropdown-item" onclick="app.navigate('/student', {id:'${escA(studentId)}'}); document.getElementById('student-actions-menu')?.remove()">${icons.eye} View Profile</button>
     <button class="dropdown-item" onclick="openSendWhatsAppModal('${escA(studentId)}'); document.getElementById('student-actions-menu')?.remove()">${icons.bell} Send WhatsApp Message</button>
-    ${!assignment ? `<button class="dropdown-item" onclick="openAssignModal(); document.getElementById('student-actions-menu')?.remove()">${icons['map-pin']} Assign Seat</button>` : ''}
-    ${assignment ? `<button class="dropdown-item" onclick="openTransferModal('${escA(assignment.seatId)}'); document.getElementById('student-actions-menu')?.remove()">${icons['arrow-right']} Transfer Seat</button>` : ''}
-    ${membership ? `<button class="dropdown-item" onclick="openPaymentModal('${escA(studentId)}', '${escA(membership.id)}'); document.getElementById('student-actions-menu')?.remove()">${icons['dollar-sign']} Record Payment</button>` : ''}
-    ${membership ? `<button class="dropdown-item" onclick="openRenewModal('${escA(studentId)}', '${escA(assignment?.seatId)}'); document.getElementById('student-actions-menu')?.remove()">${icons.repeat} Renew Membership</button>` : ''}
+    ${!isInactive && !assignment ? `<button class="dropdown-item" onclick="openAssignModal(); document.getElementById('student-actions-menu')?.remove()">${icons['map-pin']} Assign Seat</button>` : ''}
+    ${!isInactive && assignment ? `<button class="dropdown-item" onclick="openTransferModal('${escA(assignment.seatId)}'); document.getElementById('student-actions-menu')?.remove()">${icons['arrow-right']} Transfer Seat</button>` : ''}
+    ${!isInactive && membership ? `<button class="dropdown-item" onclick="openPaymentModal('${escA(studentId)}', '${escA(membership.id)}'); document.getElementById('student-actions-menu')?.remove()">${icons['dollar-sign']} Record Payment</button>` : ''}
+    ${!isInactive && membership ? `<button class="dropdown-item" onclick="openRenewModal('${escA(studentId)}', '${escA(assignment?.seatId)}'); document.getElementById('student-actions-menu')?.remove()">${icons.repeat} Renew Membership</button>` : ''}
     <div class="dropdown-separator"></div>
-    <button class="dropdown-item danger" onclick="confirmDisableStudent('${escA(studentId)}'); document.getElementById('student-actions-menu')?.remove()">${icons.trash} Deactivate</button>
+    ${isInactive ? `
+      <button class="dropdown-item" onclick="confirmDisableStudent('${escA(studentId)}'); document.getElementById('student-actions-menu')?.remove()">${icons.user || icons.users || '●'} Activate Student</button>
+    ` : `
+      <button class="dropdown-item danger" onclick="confirmDisableStudent('${escA(studentId)}'); document.getElementById('student-actions-menu')?.remove()">${icons.trash} Deactivate</button>
+    `}
   `;
 
   document.body.appendChild(menu);
@@ -220,11 +240,22 @@ window.openStudentActions = function(event, studentId) {
 window.confirmDisableStudent = function(studentId) {
   const student = store.getStudent(studentId);
   const esc = (val) => (typeof window !== 'undefined' && window.escapeHtml ? window.escapeHtml(val) : String(val || ''));
-  confirmDialog('Deactivate Student', `Are you sure you want to deactivate ${esc(student?.name)}? This will not delete their history.`, () => {
-    store.updateStudent(studentId, { status: 'inactive' });
-    toast.show('Student deactivated', 'success');
-    app._navigate();
-  });
+  const isInactive = student?.status === 'inactive';
+  const actionTitle = isInactive ? 'Activate Student' : 'Deactivate Student';
+  const actionMsg = isInactive 
+    ? `Are you sure you want to reactivate ${esc(student?.name)}?`
+    : `Are you sure you want to deactivate ${esc(student?.name)}? This will free their assigned seat without deleting their history.`;
+  const nextStatus = isInactive ? 'active' : 'inactive';
+
+  confirmDialog(actionTitle, actionMsg, async () => {
+    try {
+      await store.updateStudent(studentId, { status: nextStatus });
+      toast.show(`Student ${isInactive ? 'activated' : 'deactivated'} successfully`, 'success');
+      app._navigate();
+    } catch (err) {
+      toast.show(err.message || 'Failed to update student', 'error');
+    }
+  }, isInactive ? 'info' : 'danger', isInactive ? 'Activate' : 'Deactivate');
 };
 
 window.openAddStudentModal = function() {
@@ -375,27 +406,65 @@ window.confirmAddStudent = async function(branchId) {
       emergencyContact: ecName ? { name: ecName, phone: ecPhone } : null
     });
 
-    // Dispatch welcome notification safely
-    try {
-      if (window.notificationService && typeof window.notificationService.dispatchEvent === 'function') {
-        const branchObj = store.getBranch ? store.getBranch(branchId) : null;
-        window.notificationService.dispatchEvent(window.NOTIFICATION_EVENTS.STUDENT_REGISTERED, {
-          studentId: student.id,
-          variables: {
-            student_name: student.name,
-            branch_name: branchObj?.name || 'StudyFlow'
-          }
-        });
-      }
-    } catch (notifErr) {
-      console.warn('Welcome notification dispatch failed:', notifErr);
+    modal.close();
+    const branchObj = store.getBranch ? store.getBranch(branchId) : null;
+    const branchName = branchObj?.name || 'StudyFlow Library';
+
+    modal.open('Student Registered 🎉', `
+      <div style="text-align:center;padding:var(--space-2) 0 var(--space-4);">
+        <div style="width:52px;height:52px;background:var(--sf-success-100);color:var(--sf-success-700);border-radius:50%;display:inline-flex;align-items:center;justify-content:center;margin-bottom:var(--space-3);">
+          ${icons.checkCircle}
+        </div>
+        <div style="font-size:var(--text-lg);font-weight:var(--fw-bold);color:var(--color-text-primary);">
+          ${window.escapeHtml ? window.escapeHtml(name) : name} Registered!
+        </div>
+        <div style="font-size:var(--text-sm);color:var(--color-text-secondary);margin-top:var(--space-1);">
+          Phone: <strong>${window.escapeHtml ? window.escapeHtml(rawPhone) : rawPhone}</strong> · Branch: <strong>${window.escapeHtml ? window.escapeHtml(branchName) : branchName}</strong>
+        </div>
+      </div>
+
+      <div style="padding:var(--space-3) var(--space-4);background:var(--color-bg-secondary);border:1px solid var(--color-border-secondary);border-radius:var(--radius-lg);display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);margin-bottom:var(--space-2);">
+        <div style="display:flex;align-items:center;gap:var(--space-3);">
+          <div style="width:32px;height:32px;border-radius:50%;background:#25D366;color:white;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">
+            💬
+          </div>
+          <div>
+            <div style="font-size:var(--text-sm);font-weight:var(--fw-semibold);color:var(--color-text-primary);">
+              Send Welcome Message
+            </div>
+            <div style="font-size:var(--text-xs);color:var(--color-text-secondary);">
+              Send a 1-click WhatsApp welcome note
+            </div>
+          </div>
+        </div>
+        <button class="btn btn-success btn-sm" id="btn-welcome-send-wa" style="background:#25D366;border-color:#25D366;color:white;">
+          Send Welcome
+        </button>
+      </div>
+    `, `
+      <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
+        <button class="btn btn-secondary btn-sm" onclick="modal.close(); openAssignModal();">Assign Seat</button>
+        <button class="btn btn-primary btn-sm" onclick="modal.close(); app.navigate('/student', { id: '${student.id}' });">View Profile</button>
+      </div>
+    `, { size: 'md' });
+
+    const btnWa = document.getElementById('btn-welcome-send-wa');
+    if (btnWa) {
+      btnWa.addEventListener('click', () => {
+        if (typeof whatsappManual !== 'undefined') {
+          whatsappManual.openComposer({
+            studentId: student.id,
+            templateKey: 'welcome',
+            variables: {
+              student_name: student.name,
+              branch_name: branchName
+            }
+          });
+        }
+      });
     }
 
-    modal.close();
     toast.show(`Student ${name} registered successfully!`, 'success');
-    if (student && student.id) {
-      app.navigate('/student', { id: student.id });
-    }
   } catch (e) {
     toast.show(e.message, 'error');
   }

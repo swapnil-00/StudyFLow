@@ -800,30 +800,12 @@ window.confirmAssignSeat = async function() {
       }
     }
 
-    // ── Dispatch Asynchronous WhatsApp Notification ──
-    if (window.notificationService && membership) {
-      notificationService.dispatch(NOTIFICATION_EVENTS.SEAT_ASSIGNED, {
-        studentId,
-        entityId: membership.id,
-        documentId: invoice?.id || null,
-        documentNumber: invoice?.documentNumber || null,
-        documentType: 'invoice',
-        variables: {
-          student_name: student?.name || 'Student',
-          seat_number: seat?.label || seat?.number || 'N/A',
-          branch_name: branch?.name || 'StudyFlow Library',
-          room_name: room?.name || 'Study Hall',
-          membership_name: plan?.name || 'Membership',
-          start_date: startDate,
-          expiry_date: endDate,
-          amount: finalAmount.toLocaleString('en-IN'),
-          payment_status: membership?.paymentStatus === 'paid' ? 'Paid' : (membership?.paymentStatus === 'partial' ? 'Partial' : 'Pending')
-        }
-      });
-    }
-
     modal.close();
     drawer.close();
+
+    const formattedStartDate = utils.formatDate(startDate, { day: '2-digit', month: 'short', year: 'numeric' });
+    const formattedEndDate = utils.formatDate(endDate, { day: '2-digit', month: 'short', year: 'numeric' });
+    const payStatusDisplay = membership?.paymentStatus === 'paid' ? 'Paid' : (membership?.paymentStatus === 'partial' ? 'Partial' : 'Pending');
 
     // ── Show Booking & WhatsApp Confirmation Dialog ──
     modal.open('Seat Assigned Successfully 🎉', `
@@ -833,7 +815,7 @@ window.confirmAssignSeat = async function() {
         </div>
         <h3 style="font-size:var(--text-lg);font-weight:var(--fw-bold);color:var(--color-text-primary);">Seat ${window.escapeHtml ? window.escapeHtml(seat?.label) : seat?.label} is Booked!</h3>
         <p style="font-size:var(--text-sm);color:var(--color-text-secondary);margin-top:4px;">
-          Assigned to <strong>${window.escapeHtml ? window.escapeHtml(student?.name) : student?.name}</strong> for ${window.escapeHtml ? window.escapeHtml(plan?.name || '') : plan?.name} (${startDate} to ${endDate})
+          Assigned to <strong>${window.escapeHtml ? window.escapeHtml(student?.name) : student?.name}</strong> for ${window.escapeHtml ? window.escapeHtml(plan?.name || '') : plan?.name} (${formattedStartDate} to ${formattedEndDate})
         </p>
       </div>
 
@@ -854,19 +836,23 @@ window.confirmAssignSeat = async function() {
         </div>
       </div>
 
-      <div style="padding:var(--space-3) var(--space-4);background:#edfcf2;border:1px solid #aaf0c4;border-radius:var(--radius-lg);display:flex;align-items:center;gap:var(--space-3);margin-bottom:var(--space-2);">
-        <div style="width:28px;height:28px;border-radius:50%;background:#16b364;color:white;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;">
-          💬
-        </div>
-        <div style="flex:1;">
-          <div style="font-size:var(--text-sm);font-weight:var(--fw-semibold);color:#087443;">
-            WhatsApp Confirmation Queued
+      <div style="padding:var(--space-3) var(--space-4);background:var(--color-bg-secondary);border:1px solid var(--color-border-secondary);border-radius:var(--radius-lg);display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);margin-bottom:var(--space-2);">
+        <div style="display:flex;align-items:center;gap:var(--space-3);">
+          <div style="width:32px;height:32px;border-radius:50%;background:#25D366;color:white;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">
+            💬
           </div>
-          <div style="font-size:var(--text-xs);color:#099250;">
-            Sent to ${window.escapeHtml ? window.escapeHtml(student?.normalized_phone || student?.phone || '') : (student?.normalized_phone || student?.phone)} with PDF invoice attached.
+          <div>
+            <div style="font-size:var(--text-sm);font-weight:var(--fw-semibold);color:var(--color-text-primary);">
+              Send Booking Details
+            </div>
+            <div style="font-size:var(--text-xs);color:var(--color-text-secondary);">
+              To ${window.escapeHtml ? window.escapeHtml(student?.name) : student?.name} (${window.escapeHtml ? window.escapeHtml(student?.phone || '') : (student?.phone || '')})
+            </div>
           </div>
         </div>
-        <span class="badge badge-success"><span class="badge-dot"></span>Queued</span>
+        <button class="btn btn-success btn-sm" id="btn-assign-send-wa" style="background:#25D366;border-color:#25D366;color:white;">
+          Send on WhatsApp
+        </button>
       </div>
     `, `
       <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
@@ -887,6 +873,29 @@ window.confirmAssignSeat = async function() {
         </div>
       </div>
     `, { size: 'md' });
+
+    const btnWa = document.getElementById('btn-assign-send-wa');
+    if (btnWa) {
+      btnWa.addEventListener('click', () => {
+        if (typeof whatsappManual !== 'undefined') {
+          whatsappManual.openComposer({
+            studentId,
+            templateKey: 'seat_assigned',
+            variables: {
+              student_name: student?.name || 'Student',
+              seat_number: seat?.label || seat?.number || 'N/A',
+              room_name: room?.name || 'Study Hall',
+              branch_name: branch?.name || 'StudyFlow Library',
+              plan_name: plan?.name || 'Membership',
+              start_date: formattedStartDate,
+              end_date: formattedEndDate,
+              amount: finalAmount.toLocaleString('en-IN'),
+              payment_status: payStatusDisplay
+            }
+          });
+        }
+      });
+    }
 
     app._navigate();
   } catch (e) {
@@ -967,22 +976,64 @@ window.confirmTransfer = async function(fromSeatId, studentId) {
     modal.close();
     drawer.close();
 
-    if (window.notificationService && student) {
-      notificationService.dispatch(NOTIFICATION_EVENTS.SEAT_TRANSFERRED, {
-        studentId,
-        entityId: toSeatId,
-        variables: {
-          student_name: student.name,
-          previous_seat: fromSeat?.label || 'Previous',
-          seat_number: toSeat?.label || 'New',
-          branch_name: branch?.name || 'StudyFlow Library',
-          room_name: room?.name || 'Study Area',
-          effective_date: utils.today()
+    const fromSeatLabel = fromSeat?.label || 'Previous';
+    const toSeatLabel = toSeat?.label || 'New';
+    const roomName = room?.name || 'Study Area';
+    const branchName = branch?.name || 'StudyFlow Library';
+
+    modal.open('Seat Transferred Successfully 🎉', `
+      <div style="text-align:center;padding:var(--space-2) 0 var(--space-4);">
+        <div style="width:54px;height:54px;border-radius:50%;background:var(--sf-success-50);color:var(--sf-success-600);display:flex;align-items:center;justify-content:center;margin:0 auto var(--space-3);font-size:24px;">
+          ✓
+        </div>
+        <h3 style="font-size:var(--text-lg);font-weight:var(--fw-bold);color:var(--color-text-primary);">Seat Transferred!</h3>
+        <p style="font-size:var(--text-sm);color:var(--color-text-secondary);margin-top:4px;">
+          <strong>${window.escapeHtml ? window.escapeHtml(student?.name) : student?.name}</strong> moved from <strong>Seat ${window.escapeHtml ? window.escapeHtml(fromSeatLabel) : fromSeatLabel}</strong> to <strong>Seat ${window.escapeHtml ? window.escapeHtml(toSeatLabel) : toSeatLabel}</strong>
+        </p>
+      </div>
+
+      <div style="padding:var(--space-3) var(--space-4);background:var(--color-bg-secondary);border:1px solid var(--color-border-secondary);border-radius:var(--radius-lg);display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);margin-bottom:var(--space-2);">
+        <div style="display:flex;align-items:center;gap:var(--space-3);">
+          <div style="width:32px;height:32px;border-radius:50%;background:#25D366;color:white;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">
+            💬
+          </div>
+          <div>
+            <div style="font-size:var(--text-sm);font-weight:var(--fw-semibold);color:var(--color-text-primary);">
+              Send Transfer Notice
+            </div>
+            <div style="font-size:var(--text-xs);color:var(--color-text-secondary);">
+              To ${window.escapeHtml ? window.escapeHtml(student?.name) : student?.name} (${window.escapeHtml ? window.escapeHtml(student?.phone || '') : (student?.phone || '')})
+            </div>
+          </div>
+        </div>
+        <button class="btn btn-success btn-sm" id="btn-transfer-send-wa" style="background:#25D366;border-color:#25D366;color:white;">
+          Send on WhatsApp
+        </button>
+      </div>
+    `, `
+      <button class="btn btn-primary" onclick="modal.close()">Done</button>
+    `, { size: 'md' });
+
+    const btnWa = document.getElementById('btn-transfer-send-wa');
+    if (btnWa) {
+      btnWa.addEventListener('click', () => {
+        if (typeof whatsappManual !== 'undefined') {
+          whatsappManual.openComposer({
+            studentId,
+            templateKey: 'seat_transferred',
+            variables: {
+              student_name: student?.name || 'Student',
+              from_seat: fromSeatLabel,
+              to_seat: toSeatLabel,
+              room_name: roomName,
+              branch_name: branchName
+            }
+          });
         }
       });
     }
 
-    toast.show(`Seat transferred to ${toSeat?.label || 'new seat'}! WhatsApp confirmation sent.`, 'success');
+    toast.show(`Seat transferred to ${toSeat?.label || 'new seat'}!`, 'success');
     app._navigate();
   } catch (e) {
     toast.show(e.message, 'error');
@@ -1177,22 +1228,14 @@ window.confirmPayment = async function(membershipId, studentId) {
       });
     }
 
-    // Dispatch WhatsApp notification
-    let notifMsg = null;
-    if (window.notificationService && window.NOTIFICATION_EVENTS) {
-      notifMsg = window.notificationService.dispatchEvent(window.NOTIFICATION_EVENTS.PAYMENT_RECEIVED, {
-        studentId,
-        membershipId,
-        paymentId: payment.id,
-        amount,
-        receiptNumber: receiptDoc?.documentNumber || payment.receiptNumber,
-        documentId: receiptDoc?.id
-      });
-    }
-
     const pendingAfter = store.getPendingAmount(membershipId);
+    const receiptNum = receiptDoc?.documentNumber || payment.receiptNumber || 'REC';
+    const formattedDate = utils.formatDate(date, { day: '2-digit', month: 'short', year: 'numeric' });
 
-    // Show success modal with document and WhatsApp dispatch status
+    modal.close();
+    drawer.close();
+
+    // Show success modal with receipt and manual WhatsApp button
     modal.open('Payment Recorded 🎉', `
       <div style="text-align:center;padding:var(--space-2) 0 var(--space-4);">
         <div style="width:52px;height:52px;background:var(--sf-success-100);color:var(--sf-success-700);border-radius:50%;display:inline-flex;align-items:center;justify-content:center;margin-bottom:var(--space-3);">
@@ -1202,31 +1245,67 @@ window.confirmPayment = async function(membershipId, studentId) {
           Payment of ${utils.formatINR(amount)} Received!
         </div>
         <div style="font-size:var(--text-sm);color:var(--color-text-secondary);margin-top:var(--space-1);">
-          Student: <strong>${student?.name || 'Student'}</strong> · Method: <strong>${method}</strong>
+          Student: <strong>${window.escapeHtml ? window.escapeHtml(student?.name || 'Student') : (student?.name || 'Student')}</strong> · Method: <strong>${window.escapeHtml ? window.escapeHtml(method) : method}</strong>
         </div>
       </div>
 
       <div style="background:var(--color-bg-secondary);border:1px solid var(--color-border-secondary);border-radius:var(--radius-xl);padding:var(--space-4);margin-bottom:var(--space-4);">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--space-2);">
           <span style="font-size:var(--text-xs);color:var(--color-text-tertiary);text-transform:uppercase;font-weight:var(--fw-semibold);">Receipt #</span>
-          <span style="font-family:var(--font-mono);font-size:var(--text-xs);font-weight:var(--fw-bold);color:var(--sf-indigo-600);">${receiptDoc?.documentNumber || payment.receiptNumber}</span>
+          <span style="font-family:var(--font-mono);font-size:var(--text-xs);font-weight:var(--fw-bold);color:var(--sf-indigo-600);">${window.escapeHtml ? window.escapeHtml(receiptNum) : receiptNum}</span>
         </div>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--space-2);">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
           <span style="font-size:var(--text-sm);color:var(--color-text-secondary);">Remaining Balance</span>
           <span style="font-size:var(--text-sm);font-weight:var(--fw-bold);color:${pendingAfter > 0 ? 'var(--sf-error-600)' : 'var(--sf-success-600)'};">${utils.formatINR(pendingAfter)}</span>
         </div>
-        <div style="display:flex;justify-content:space-between;align-items:center;padding-top:var(--space-2);border-top:1px solid var(--color-border-secondary);">
-          <span style="font-size:var(--text-xs);color:var(--color-text-tertiary);">WhatsApp Receipt</span>
-          <span class="badge ${notifMsg?.status === 'skipped' ? 'badge-neutral' : 'badge-success'}" style="font-size:11px;">
-            <span class="badge-dot"></span>
-            ${notifMsg?.status === 'skipped' ? 'Opted Out' : `Queued (${student?.normalized_phone || student?.phone})`}
-          </span>
+      </div>
+
+      <div style="padding:var(--space-3) var(--space-4);background:var(--color-bg-secondary);border:1px solid var(--color-border-secondary);border-radius:var(--radius-lg);display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);margin-bottom:var(--space-2);">
+        <div style="display:flex;align-items:center;gap:var(--space-3);">
+          <div style="width:32px;height:32px;border-radius:50%;background:#25D366;color:white;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">
+            💬
+          </div>
+          <div>
+            <div style="font-size:var(--text-sm);font-weight:var(--fw-semibold);color:var(--color-text-primary);">
+              Send Receipt on WhatsApp
+            </div>
+            <div style="font-size:var(--text-xs);color:var(--color-text-secondary);">
+              To ${window.escapeHtml ? window.escapeHtml(student?.name) : student?.name} (${window.escapeHtml ? window.escapeHtml(student?.phone || '') : (student?.phone || '')})
+            </div>
+          </div>
         </div>
+        <button class="btn btn-success btn-sm" id="btn-pay-send-wa" style="background:#25D366;border-color:#25D366;color:white;">
+          Send Receipt
+        </button>
       </div>
     `, `
-      ${receiptDoc ? `<button class="btn btn-secondary" onclick="invoiceGenerator.previewDocument('${receiptDoc.id}')">${icons.eye} View Receipt</button>` : ''}
-      <button class="btn btn-primary" onclick="modal.close(); app._navigate();">Done</button>
-    `);
+      <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
+        <div>
+          ${receiptDoc ? `<button class="btn btn-secondary btn-sm" onclick="invoiceGenerator.previewDocument('${receiptDoc.id}')">${icons.eye || ''} View / Print Receipt</button>` : ''}
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="modal.close(); app._navigate();">Done</button>
+      </div>
+    `, { size: 'md' });
+
+    const btnWa = document.getElementById('btn-pay-send-wa');
+    if (btnWa) {
+      btnWa.addEventListener('click', () => {
+        if (typeof whatsappManual !== 'undefined') {
+          whatsappManual.openComposer({
+            studentId,
+            templateKey: 'payment_received',
+            variables: {
+              student_name: student?.name || 'Student',
+              amount: amount.toLocaleString('en-IN'),
+              payment_mode: method,
+              date: formattedDate,
+              receipt_number: receiptNum,
+              balance: pendingAfter.toLocaleString('en-IN')
+            }
+          });
+        }
+      });
+    }
 
     toast.show(`Payment of ${utils.formatINR(amount)} recorded!`, 'success');
   } catch (e) {
@@ -1391,24 +1470,77 @@ window.confirmRenew = async function(studentId, seatId) {
       }
     }
 
-    // Dispatch MEMBERSHIP_RENEWED WhatsApp event
-    if (window.notificationService && window.NOTIFICATION_EVENTS && newMem) {
-      window.notificationService.dispatchEvent(window.NOTIFICATION_EVENTS.MEMBERSHIP_RENEWED, {
-        studentId,
-        membershipId: newMem.id,
-        seatId: assignment?.seatId || seatId,
-        planName: plan?.name || 'Membership',
-        newEndDate: endDate,
-        amount: finalAmount,
-        invoiceNumber: renewInvoiceDoc?.documentNumber,
-        receiptNumber: renewReceiptDoc?.documentNumber || renewResult.receiptNumber,
-        documentId: renewInvoiceDoc?.id
+    modal.close();
+    drawer.close();
+
+    const formattedEndDate = utils.formatDate(endDate, { day: '2-digit', month: 'short', year: 'numeric' });
+    const seatObj = assignment?.seatId ? store.getSeat(assignment.seatId) : (seatId ? store.getSeat(seatId) : null);
+    const seatLabel = seatObj?.label || seatObj?.number || 'N/A';
+    const student = store.getStudent(studentId);
+
+    modal.open('Membership Renewed Successfully 🎉', `
+      <div style="text-align:center;padding:var(--space-2) 0 var(--space-4);">
+        <div style="width:54px;height:54px;border-radius:50%;background:var(--sf-success-50);color:var(--sf-success-600);display:flex;align-items:center;justify-content:center;margin:0 auto var(--space-3);font-size:24px;">
+          ✓
+        </div>
+        <h3 style="font-size:var(--text-lg);font-weight:var(--fw-bold);color:var(--color-text-primary);">Membership Renewed!</h3>
+        <p style="font-size:var(--text-sm);color:var(--color-text-secondary);margin-top:4px;">
+          <strong>${window.escapeHtml ? window.escapeHtml(student?.name) : student?.name}</strong> renewed for <strong>${window.escapeHtml ? window.escapeHtml(plan?.name || '') : plan?.name}</strong> until <strong>${formattedEndDate}</strong>
+        </p>
+      </div>
+
+      <div style="padding:var(--space-3) var(--space-4);background:var(--color-bg-secondary);border:1px solid var(--color-border-secondary);border-radius:var(--radius-lg);display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);margin-bottom:var(--space-2);">
+        <div style="display:flex;align-items:center;gap:var(--space-3);">
+          <div style="width:32px;height:32px;border-radius:50%;background:#25D366;color:white;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">
+            💬
+          </div>
+          <div>
+            <div style="font-size:var(--text-sm);font-weight:var(--fw-semibold);color:var(--color-text-primary);">
+              Send Renewal Confirmation
+            </div>
+            <div style="font-size:var(--text-xs);color:var(--color-text-secondary);">
+              To ${window.escapeHtml ? window.escapeHtml(student?.name) : student?.name} (${window.escapeHtml ? window.escapeHtml(student?.phone || '') : (student?.phone || '')})
+            </div>
+          </div>
+        </div>
+        <button class="btn btn-success btn-sm" id="btn-renew-send-wa" style="background:#25D366;border-color:#25D366;color:white;">
+          Send on WhatsApp
+        </button>
+      </div>
+    `, `
+      <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
+        <div>
+          ${renewInvoiceDoc ? `
+            <button class="btn btn-secondary btn-sm" onclick="invoiceGenerator.previewDocument('${renewInvoiceDoc.id}')">
+              ${icons['file-text'] || ''} View Invoice
+            </button>
+          ` : ''}
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="modal.close()">
+          Done
+        </button>
+      </div>
+    `, { size: 'md' });
+
+    const btnWa = document.getElementById('btn-renew-send-wa');
+    if (btnWa) {
+      btnWa.addEventListener('click', () => {
+        if (typeof whatsappManual !== 'undefined') {
+          whatsappManual.openComposer({
+            studentId,
+            templateKey: 'membership_renewed',
+            variables: {
+              student_name: student?.name || 'Student',
+              seat_number: seatLabel,
+              end_date: formattedEndDate,
+              amount: finalAmount.toLocaleString('en-IN')
+            }
+          });
+        }
       });
     }
 
-    modal.close();
-    drawer.close();
-    toast.show('Membership renewed successfully! WhatsApp confirmation queued.', 'success');
+    toast.show('Membership renewed successfully!', 'success');
     app._navigate();
   } catch (e) {
     if (btn) {

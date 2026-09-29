@@ -114,9 +114,9 @@ export function renderLanding(container) {
                     <div class="sf-mini-sub">+12 this month</div>
                   </div>
                   <div class="sf-mini-stat">
-                    <div class="sf-mini-label">WhatsApp Dispatches</div>
-                    <div class="sf-mini-val" style="color:var(--sf-success-600);">99.4%</div>
-                    <div class="sf-mini-sub">Instant Delivery Ticks</div>
+                    <div class="sf-mini-label">WhatsApp Messages</div>
+                    <div class="sf-mini-val" style="color:var(--sf-success-600);">1-Click</div>
+                    <div class="sf-mini-sub">From Your Own Number</div>
                   </div>
                 </div>
 
@@ -221,8 +221,8 @@ export function renderLanding(container) {
               <!-- Feature 2 -->
               <div class="sf-feature-card">
                 <div class="sf-feat-icon" style="background:rgba(16,185,129,0.12);color:#10b981;">📱</div>
-                <h3 class="sf-feat-title">WhatsApp Cloud Invoicing</h3>
-                <p class="sf-feat-desc">Send automated payment receipts, admission confirmations, and due reminders directly to students' WhatsApp in English, Hindi, or Marathi.</p>
+                <h3 class="sf-feat-title">1-Click WhatsApp Messaging</h3>
+                <p class="sf-feat-desc">Send payment receipts, admission confirmations, and fee reminders directly to students' WhatsApp from your own logged-in phone or desktop with pre-filled messages.</p>
               </div>
 
               <!-- Feature 3 -->
@@ -351,7 +351,7 @@ export function renderLanding(container) {
                 <ul class="sf-plan-features">
                   <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Everything in Starter Plan</li>
                   <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> <strong>Multi-Shift Seat Allocations</strong></li>
-                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> <strong>Meta WhatsApp Cloud API Automation</strong></li>
+                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> <strong>1-Click WhatsApp Messaging & Reminders</strong></li>
                   <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Expense & Profit Margin Reports</li>
                   <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Staff Management (Up to 5 staff)</li>
                   <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Priority WhatsApp Support</li>
@@ -407,7 +407,7 @@ export function renderLanding(container) {
               <!-- Review 1 -->
               <div class="sf-testimonial-card">
                 <div class="sf-stars">★★★★★</div>
-                <p class="sf-quote">"We used to manage 180 seats across 2 floors using paper registers. With StudyFlow, our overdue dues dropped by 90% in just one month thanks to automated WhatsApp receipts and reminders."</p>
+                <p class="sf-quote">"We used to manage 180 seats across 2 floors using paper registers. With StudyFlow, our overdue dues dropped by 90% in just one month thanks to 1-click WhatsApp receipts and reminders."</p>
                 <div class="sf-author">
                   <div class="avatar avatar-md" style="background:#6366f1;">AM</div>
                   <div>
@@ -462,7 +462,7 @@ export function renderLanding(container) {
                   <span class="sf-faq-icon">+</span>
                 </div>
                 <div class="sf-faq-a">
-                  StudyFlow supports two modes: (1) 1-Click Free WhatsApp Web links (100% free forever, zero setup), and (2) Official Meta WhatsApp Cloud API for automated background delivery with 1,000 free monthly messages included.
+                  StudyFlow uses a direct 1-click WhatsApp flow: staff click a button to open WhatsApp Web (desktop) or the WhatsApp app (phone) with the student's number and message pre-filled. You send from your library's own number with zero API costs, zero token setup, and 100% reliability.
                 </div>
               </div>
 

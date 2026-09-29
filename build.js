@@ -14,6 +14,7 @@ const bundlePath = path.join(rootDir, 'js', 'bundle.js');
 const servicesDir = path.join(rootDir, 'js', 'services');
 
 const serviceFiles = [
+  'whatsapp-manual.js',
   'whatsapp-provider.js',
   'invoice-generator.js',
   'notification-service.js'

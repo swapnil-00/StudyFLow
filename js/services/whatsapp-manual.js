@@ -1,0 +1,343 @@
+// js/services/whatsapp-manual.js — Manual "Send on WhatsApp" Flow
+// 1-click WhatsApp Web / App integration from staff's own logged-in WhatsApp device.
+// Zero Meta Cloud API, zero tokens, zero per-message cost.
+
+(function() {
+  'use strict';
+
+  const DEFAULT_TEMPLATES = {
+    seat_assigned: `Hello {{student_name}}, your seat {{seat_number}} ({{room_name}}, {{branch_name}}) is booked for {{plan_name}} from {{start_date}} to {{end_date}}. Amount: ₹{{amount}}. Payment: {{payment_status}}.`,
+    payment_received: `Hello {{student_name}}, we have received your payment of ₹{{amount}} via {{payment_mode}} on {{date}} (Receipt: {{receipt_number}}). Balance due: ₹{{balance}}.`,
+    payment_due: `Hello {{student_name}}, this is a friendly reminder that your library fee of ₹{{amount_due}} for seat {{seat_number}} is due by {{due_date}}.`,
+    payment_overdue: `Hello {{student_name}}, your library payment of ₹{{amount_due}} for seat {{seat_number}} is overdue since {{due_date}}. Please clear your dues at your earliest convenience.`,
+    membership_expiring: `Hello {{student_name}}, your {{plan_name}} membership for seat {{seat_number}} ends on {{end_date}} ({{days_left}} days left). Please renew to retain your seat.`,
+    membership_renewed: `Hello {{student_name}}, your membership for seat {{seat_number}} has been renewed until {{end_date}}. Amount: ₹{{amount}}.`,
+    seat_transferred: `Hello {{student_name}}, your seat has been transferred from seat {{from_seat}} to {{to_seat}} ({{room_name}}, {{branch_name}}).`,
+    welcome: `Hello {{student_name}}, welcome to {{branch_name}}! Your registration is complete.`,
+    custom: `{{message}}`
+  };
+
+  const TEMPLATE_NAMES = {
+    seat_assigned: 'Seat Assignment Confirmation',
+    payment_received: 'Payment Receipt',
+    payment_due: 'Payment Due Reminder',
+    payment_overdue: 'Payment Overdue Alert',
+    membership_expiring: 'Membership Expiring Notice',
+    membership_renewed: 'Membership Renewed Confirmation',
+    seat_transferred: 'Seat Transfer Notice',
+    welcome: 'Welcome Registration Message',
+    custom: 'Custom Announcement / Message'
+  };
+
+  /**
+   * Normalizes a phone number to digits with country code.
+   * - 10-digit Indian numbers get prefixed with '91'.
+   * - Strips leading '+', spaces, dashes, dots, parentheses, and leading '0'.
+   * - Result must be between 10 and 15 digits, otherwise returns null.
+   */
+  function normalizePhone(phone, defaultCountryCode = '91') {
+    if (!phone || (typeof phone !== 'string' && typeof phone !== 'number')) return null;
+    let str = String(phone).trim();
+    let digits = str.replace(/[^\d]/g, '');
+
+    // Strip leading zero if 11 digits (e.g. 09876543210 -> 9876543210)
+    if (digits.startsWith('0') && digits.length === 11) {
+      digits = digits.slice(1);
+    }
+
+    // If 10 digits, add country code (default 91 for India)
+    if (digits.length === 10) {
+      const cc = String(defaultCountryCode).replace(/[^\d]/g, '') || '91';
+      digits = cc + digits;
+    }
+
+    if (digits.length >= 10 && digits.length <= 15) {
+      return digits;
+    }
+    return null;
+  }
+
+  /**
+   * Formats phone number for display (e.g. +91 98765 43210).
+   */
+  function formatPhoneDisplay(phone) {
+    const norm = normalizePhone(phone);
+    if (!norm) return phone || '—';
+    if (norm.startsWith('91') && norm.length === 12) {
+      return `+91 ${norm.slice(2, 7)} ${norm.slice(7)}`;
+    }
+    return `+${norm}`;
+  }
+
+  /**
+   * Detects mobile or tablet device.
+   */
+  function isMobileDevice() {
+    if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+    const ua = navigator.userAgent || '';
+    const isTouch = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+    const isSmallScreen = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
+    return isTouch || isSmallScreen;
+  }
+
+  /**
+   * Builds the direct WhatsApp Web or App link.
+   * mode: 'web' | 'app' | 'auto'
+   */
+  function buildLink(phoneDigits, text = '', mode = 'auto') {
+    const cleanPhone = normalizePhone(phoneDigits) || String(phoneDigits || '').replace(/[^\d]/g, '');
+    const encodedText = encodeURIComponent(text || '');
+
+    let targetMode = mode;
+    if (targetMode === 'auto') {
+      const pref = (typeof localStorage !== 'undefined' && localStorage.getItem('sf_wa_mode')) || 'auto';
+      targetMode = pref === 'auto' ? (isMobileDevice() ? 'app' : 'web') : pref;
+    }
+
+    if (targetMode === 'app') {
+      return `https://wa.me/${cleanPhone}?text=${encodedText}`;
+    }
+    return `https://web.whatsapp.com/send?phone=${cleanPhone}&text=${encodedText}`;
+  }
+
+  /**
+   * Opens WhatsApp in a named reusable window ('studyflow-whatsapp').
+   */
+  function open(link) {
+    if (!link || typeof window === 'undefined') return false;
+    try {
+      const win = window.open(link, 'studyflow-whatsapp');
+      if (!win || win.closed || typeof win.closed === 'undefined') {
+        if (typeof toast !== 'undefined') {
+          toast.show(`Popup blocked. <a href="${link}" target="_blank" rel="noopener" style="text-decoration:underline;color:white;font-weight:600;">Click here to open WhatsApp</a>`, 'warning', 7000);
+        }
+        return false;
+      }
+      return true;
+    } catch (e) {
+      if (typeof toast !== 'undefined') {
+        toast.show(`Could not open WhatsApp: ${e.message}`, 'error');
+      }
+      return false;
+    }
+  }
+
+  /**
+   * Renders a message template by substituting {{placeholders}} and appending signature.
+   */
+  function renderMessage(templateKey, variables = {}, orgSettings = null) {
+    const settings = orgSettings || (typeof store !== 'undefined' && store.getSettings ? store.getSettings() : {});
+    const customTemplates = settings.whatsappTemplates || {};
+    let templateText = customTemplates[templateKey] || DEFAULT_TEMPLATES[templateKey] || DEFAULT_TEMPLATES.custom;
+
+    const vars = { ...variables };
+    let rendered = templateText.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, key) => {
+      if (vars[key] !== undefined && vars[key] !== null) {
+        return String(vars[key]);
+      }
+      return '';
+    });
+
+    let signature = settings.whatsappSignature;
+    if (!signature && settings.orgName) {
+      signature = `— ${settings.orgName}${settings.phone ? ', ' + settings.phone : ''}`;
+    }
+
+    if (signature && signature.trim() && !rendered.includes(signature.trim())) {
+      rendered = `${rendered.trim()}\n\n${signature.trim()}`;
+    }
+
+    if (rendered.length > 1500) {
+      rendered = rendered.slice(0, 1500);
+    }
+
+    return rendered.trim();
+  }
+
+  /**
+   * Opens the reusable "Send on WhatsApp" composer modal.
+   */
+  function openComposer({ studentId, templateKey = 'custom', variables = {}, onSent = null }) {
+    if (typeof modal === 'undefined') return;
+    const student = (typeof store !== 'undefined' && store.getStudent) ? store.getStudent(studentId) : null;
+    const settings = (typeof store !== 'undefined' && store.getSettings) ? store.getSettings() : {};
+
+    const rawPhone = student?.phone || student?.normalized_phone || variables.phone || '';
+    const cleanDigits = normalizePhone(rawPhone);
+    const displayPhone = formatPhoneDisplay(rawPhone);
+    const hasValidPhone = Boolean(cleanDigits);
+    const isOptedOut = student && student.whatsapp_opt_in === false;
+
+    const initialText = renderMessage(templateKey, {
+      student_name: student?.name || 'Student',
+      ...variables
+    }, settings);
+
+    const savedMode = (typeof localStorage !== 'undefined' && localStorage.getItem('sf_wa_mode')) || 'auto';
+    const esc = (s) => (typeof window !== 'undefined' && window.escapeHtml ? window.escapeHtml(s) : String(s || ''));
+
+    const bodyHtml = `
+      <div style="display:flex;flex-direction:column;gap:var(--space-4);">
+        <!-- Student Recipient Info -->
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:var(--space-3) var(--space-4);background:var(--color-bg-secondary);border-radius:var(--radius-lg);border:1px solid var(--color-border-secondary);">
+          <div>
+            <div style="font-weight:var(--fw-semibold);font-size:var(--text-sm);color:var(--color-text-primary);">
+              ${esc(student?.name || 'Recipient')}
+            </div>
+            <div style="font-size:var(--text-xs);color:var(--color-text-secondary);font-family:var(--font-mono);margin-top:2px;">
+              ${esc(displayPhone)}
+              ${!hasValidPhone ? ' <span style="color:var(--sf-error-600);font-weight:600;">(Invalid or missing phone)</span>' : ''}
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:var(--space-2);">
+            ${isOptedOut ? `<span class="badge badge-warning">Opted Out</span>` : `<span class="badge badge-success"><span class="badge-dot"></span>WhatsApp Ready</span>`}
+            ${student ? `<button type="button" class="btn btn-ghost btn-sm" id="composer-edit-student" style="font-size:11px;">Edit Student</button>` : ''}
+          </div>
+        </div>
+
+        ${isOptedOut ? `
+        <div style="padding:var(--space-3);background:var(--sf-warning-50, #fffbeb);border:1px solid var(--sf-warning-200, #fde68a);border-radius:var(--radius-md);color:var(--sf-warning-800, #92400e);font-size:var(--text-xs);line-height:1.5;">
+          ⚠️ <strong>This student has opted out of WhatsApp messages.</strong> Messaging opted-out students is disabled.
+        </div>` : ''}
+
+        ${!hasValidPhone ? `
+        <div style="padding:var(--space-3);background:var(--sf-error-50, #fef2f2);border:1px solid var(--sf-error-200, #fecaca);border-radius:var(--radius-md);color:var(--sf-error-800, #991b1b);font-size:var(--text-xs);line-height:1.5;">
+          ❌ <strong>Invalid Phone Number:</strong> Please update the student's mobile number (10-digit mobile number) to send WhatsApp messages.
+        </div>` : ''}
+
+        <!-- Message Editor -->
+        <div class="form-group" style="margin-bottom:0;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <label class="form-label" for="wa-composer-text" style="margin-bottom:0;">Message Preview & Edit</label>
+            <span id="wa-char-count" style="font-size:var(--text-xs);color:var(--color-text-tertiary);font-family:var(--font-mono);">${initialText.length} / 1500</span>
+          </div>
+          <textarea class="textarea" id="wa-composer-text" rows="7" style="font-size:var(--text-sm);line-height:1.5;resize:vertical;" maxlength="1500">${esc(initialText)}</textarea>
+        </div>
+
+        <!-- Open In Preference Toggle -->
+        <div style="display:flex;justify-content:space-between;align-items:center;padding-top:var(--space-2);border-top:1px solid var(--color-border-secondary);">
+          <div style="font-size:var(--text-xs);color:var(--color-text-secondary);">
+            Open WhatsApp in:
+          </div>
+          <div class="filter-tabs" id="wa-mode-tabs" style="font-size:11px;">
+            <button type="button" class="filter-tab ${savedMode === 'auto' ? 'active' : ''}" data-mode="auto">Auto</button>
+            <button type="button" class="filter-tab ${savedMode === 'web' ? 'active' : ''}" data-mode="web">WhatsApp Web</button>
+            <button type="button" class="filter-tab ${savedMode === 'app' ? 'active' : ''}" data-mode="app">WhatsApp App</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const footerHtml = `
+      <div style="display:flex;justify-content:space-between;align-items:center;width:100%;">
+        <button type="button" class="btn btn-secondary" id="wa-btn-copy">
+          ${icons.copy || '📋'} Copy Text
+        </button>
+        <div style="display:flex;gap:var(--space-2);">
+          <button type="button" class="btn btn-secondary" id="wa-btn-cancel">Cancel</button>
+          <button type="button" class="btn btn-primary" id="wa-btn-send" ${(!hasValidPhone || isOptedOut) ? 'disabled' : ''} style="background:#25d366;border-color:#25d366;color:#ffffff;">
+            💬 Send on WhatsApp
+          </button>
+        </div>
+      </div>
+    `;
+
+    modal.open('Send on WhatsApp', bodyHtml, footerHtml, { size: 'md' });
+
+    // Setup Event Listeners
+    const textarea = document.getElementById('wa-composer-text');
+    const charCount = document.getElementById('wa-char-count');
+    if (textarea && charCount) {
+      textarea.addEventListener('input', () => {
+        charCount.textContent = `${textarea.value.length} / 1500`;
+      });
+    }
+
+    // Mode Toggle
+    document.querySelectorAll('#wa-mode-tabs .filter-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('#wa-mode-tabs .filter-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        const mode = tab.dataset.mode || 'auto';
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem('sf_wa_mode', mode);
+        }
+      });
+    });
+
+    // Edit student helper
+    document.getElementById('composer-edit-student')?.addEventListener('click', () => {
+      modal.close();
+      if (typeof window.openEditStudentModal === 'function' && studentId) {
+        window.openEditStudentModal(studentId);
+      }
+    });
+
+    // Copy Button
+    document.getElementById('wa-btn-copy')?.addEventListener('click', async () => {
+      const text = textarea?.value || '';
+      try {
+        await navigator.clipboard.writeText(text);
+        if (typeof toast !== 'undefined') toast.show('Message copied to clipboard! 📋', 'success');
+      } catch (_) {
+        textarea?.select();
+        document.execCommand('copy');
+        if (typeof toast !== 'undefined') toast.show('Message copied! 📋', 'success');
+      }
+    });
+
+    // Cancel Button
+    document.getElementById('wa-btn-cancel')?.addEventListener('click', () => {
+      modal.close();
+    });
+
+    // Send Button
+    document.getElementById('wa-btn-send')?.addEventListener('click', async () => {
+      const text = textarea?.value || '';
+      const mode = (typeof localStorage !== 'undefined' && localStorage.getItem('sf_wa_mode')) || 'auto';
+      const link = buildLink(cleanDigits, text, mode);
+
+      if (typeof store !== 'undefined' && store.logCommunication) {
+        store.logCommunication({
+          studentId: student?.id || null,
+          phoneNumber: cleanDigits,
+          templateKey,
+          bodyText: text,
+          status: 'opened'
+        }).catch(err => console.warn('Could not record communication log:', err));
+      }
+
+      const opened = open(link);
+      modal.close();
+
+      if (opened && typeof toast !== 'undefined') {
+        toast.show(`WhatsApp opened for ${student?.name || 'student'}. Press Send in WhatsApp to deliver!`, 'success');
+      }
+      if (typeof onSent === 'function') onSent({ link, text, phone: cleanDigits });
+    });
+  }
+
+  // Export module
+  const whatsappManual = {
+    DEFAULT_TEMPLATES,
+    TEMPLATE_NAMES,
+    normalizePhone,
+    formatPhoneDisplay,
+    isMobileDevice,
+    buildLink,
+    open,
+    renderMessage,
+    openComposer
+  };
+
+  if (typeof window !== 'undefined') {
+    window.whatsappManual = whatsappManual;
+    window.openSendWhatsAppModal = function(studentId, templateKey, variables) {
+      whatsappManual.openComposer({ studentId, templateKey: templateKey || 'custom', variables: variables || {} });
+    };
+  }
+
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = whatsappManual;
+  }
+})();

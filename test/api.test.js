@@ -12,7 +12,6 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const dataHandler = require('../api/data');
 const writeHandler = require('../api/write');
-const notifyHandler = require('../api/notify');
 const authHandler = require('../api/auth');
 const { signToken, verifyToken, hashPassword, verifyPassword, validatePasswordStrength } = require('../lib/auth');
 const { can, assertCan } = require('../lib/authorize');
@@ -56,13 +55,6 @@ describe('Phase 1 & Phase 5: Authentication & Session Verification', () => {
     const { req, res } = mockReqRes('POST', { table: 'students', action: 'insert', data: { name: 'Test' } });
     await writeHandler(req, res);
     assert.equal(res._status, 401, 'Anonymous write must return HTTP 401');
-    assert.equal(res._json.ok, false);
-  });
-
-  test('SEC-005: Anonymous POST /api/notify is rejected with HTTP 401', async () => {
-    const { req, res } = mockReqRes('POST', { to: '+919999999999', text: 'Spam' });
-    await notifyHandler(req, res);
-    assert.equal(res._status, 401, 'Anonymous notification must return HTTP 401');
     assert.equal(res._json.ok, false);
   });
 
@@ -214,7 +206,11 @@ describe('Phase 5: Auth Upgrade & Session Hardening', () => {
     assert.equal(res._json.code, 'CSRF_FORBIDDEN');
   });
 
-  test('Enumeration Defense: Password reset returns identical generic response for any input', async () => {
+  test('Enumeration Defense: Password reset returns identical generic response for any input', async (t) => {
+    if (!process.env.TEST_DATABASE_URL) {
+      t.skip('Skipping live DB password_reset enumeration test because TEST_DATABASE_URL is not set.');
+      return;
+    }
     const { req, res } = mockReqRes('POST',
       { action: 'password_reset', email: 'nonexistent@example.com' }
     );

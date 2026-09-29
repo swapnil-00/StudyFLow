@@ -41,7 +41,7 @@ export function renderStudentProfile(container, params) {
           <div class="profile-name">${window.escapeHtml ? window.escapeHtml(student.name) : student.name}</div>
           <div class="profile-id">${window.escapeHtml ? window.escapeHtml(student.id) : student.id}</div>
           <div class="profile-meta">
-            ${membership ? membershipStatusBadge(membership.endDate, membership.status) : `<span class="badge badge-neutral"><span class="badge-dot"></span>No Membership</span>`}
+            ${student.status === 'inactive' ? `<span class="badge badge-neutral"><span class="badge-dot" style="background:var(--sf-gray-400,#9ca3af);"></span>Inactive</span>` : (membership ? membershipStatusBadge(membership.endDate, membership.status) : `<span class="badge badge-neutral"><span class="badge-dot"></span>No Membership</span>`)}
             ${seat ? `<span class="badge badge-indigo"><span class="badge-dot"></span>Seat ${window.escapeHtml ? window.escapeHtml(seat.label) : seat.label}</span>` : ''}
             <span style="font-size:var(--text-sm);color:var(--color-text-tertiary);">${window.escapeHtml ? window.escapeHtml(student.course || '—') : (student.course || '—')}</span>
           </div>
@@ -50,18 +50,21 @@ export function renderStudentProfile(container, params) {
           <button class="btn btn-secondary" onclick="openSendWhatsAppModal('${studentId}')" style="color:var(--sf-success-700);border-color:var(--sf-success-300);">
             ${icons.bell} Send WhatsApp
           </button>
-          ${membership ? `
+          ${membership && student.status !== 'inactive' ? `
           <button class="btn btn-secondary" onclick="openPaymentModal('${studentId}', '${membership.id}')">
             ${icons['dollar-sign']} Payment
           </button>
           <button class="btn btn-secondary" onclick="openRenewModal('${studentId}', '${seat?.id}')">
             ${icons.repeat} Renew
           </button>` : ''}
-          ${!assignment ? `<button class="btn btn-primary" onclick="openAssignModal(null, '${studentId}')">
+          ${!assignment && student.status !== 'inactive' ? `<button class="btn btn-primary" onclick="openAssignModal(null, '${studentId}')">
             ${icons['map-pin']} Assign Seat
           </button>` : ''}
           <button class="btn btn-secondary" onclick="openEditStudentModal('${studentId}')">
             ${icons.edit} Edit
+          </button>
+          <button class="btn ${student.status === 'inactive' ? 'btn-secondary' : 'btn-danger'}" onclick="confirmDisableStudent('${studentId}')">
+            ${student.status === 'inactive' ? `${icons.user || icons.users || '●'} Activate` : `${icons.trash} Deactivate`}
           </button>
         </div>
       </div>
@@ -381,48 +384,52 @@ export function renderStudentProfile(container, params) {
           </div>
         </div>
 
-        <!-- WhatsApp Dispatch & Delivery Logs -->
+        <!-- WhatsApp Communication History -->
         <div class="card">
           <div class="card-header">
             <div>
               <div class="card-title">WhatsApp Communication History</div>
-              <div class="card-subtitle">Automated event triggers, reminders, and delivery timeline</div>
+              <div class="card-subtitle">Manual messaging logs, reminders, and activity timeline</div>
             </div>
-            <span class="badge badge-success">${studentMsgs.length} Dispatches</span>
+            <span class="badge badge-success">${studentMsgs.length} Messages</span>
           </div>
           <div class="table-scroll">
             <table>
               <thead>
                 <tr>
-                  <th>Event</th>
+                  <th>Template</th>
                   <th>Message Preview</th>
                   <th>Status</th>
-                  <th>Dispatched At</th>
-                  <th>Idempotency Key</th>
+                  <th>Date & Time</th>
                   <th>Action</th>
                 </tr>
               </thead>
               <tbody>
                 ${studentMsgs.map(m => {
-                  const badgeClass = m.status === 'delivered' ? 'badge-success' : m.status === 'failed' ? 'badge-error' : m.status === 'skipped' ? 'badge-neutral' : 'badge-indigo';
+                  const tpl = m.templateKey || m.eventType || 'custom';
+                  const tplName = (typeof whatsappManual !== 'undefined' && whatsappManual.TEMPLATE_NAMES && whatsappManual.TEMPLATE_NAMES[tpl]) ? whatsappManual.TEMPLATE_NAMES[tpl] : tpl;
+                  const isMarkedSent = m.status === 'marked_sent';
                   return `
                     <tr>
-                      <td><span class="badge badge-indigo" style="font-size:11px;">${m.eventType}</span></td>
-                      <td style="max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:var(--text-xs);color:var(--color-text-secondary);" title="${m.content}">
-                        ${m.content}
+                      <td><span class="badge badge-indigo" style="font-size:11px;">${window.escapeHtml ? window.escapeHtml(tplName) : tplName}</span></td>
+                      <td style="max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:var(--text-xs);color:var(--color-text-secondary);" title="${window.escapeAttr ? window.escapeAttr(m.bodyText || m.content || '') : (m.bodyText || m.content || '')}">
+                        ${window.escapeHtml ? window.escapeHtml(m.bodyText || m.content || '—') : (m.bodyText || m.content || '—')}
                       </td>
-                      <td><span class="badge ${badgeClass}" style="font-size:11px;"><span class="badge-dot"></span>${m.status.toUpperCase()}</span></td>
-                      <td style="font-size:var(--text-xs);color:var(--color-text-tertiary);">${utils.formatDate(m.createdAt, {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</td>
-                      <td><span style="font-family:var(--font-mono);font-size:10px;color:var(--color-text-tertiary);">${m.idempotencyKey || '—'}</span></td>
                       <td>
-                        <button class="btn btn-ghost btn-sm" onclick="retryStudentWhatsAppMessage('${m.id}')">
-                          ${icons.repeat} Resend
+                        <span class="badge ${isMarkedSent ? 'badge-success' : 'badge-neutral'}" style="font-size:11px;">
+                          <span class="badge-dot"></span>${isMarkedSent ? 'Marked Sent' : 'Opened in WhatsApp'}
+                        </span>
+                      </td>
+                      <td style="font-size:var(--text-xs);color:var(--color-text-tertiary);">${utils.formatDate(m.createdAt || m.sentAt || m.timestamp, {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</td>
+                      <td>
+                        <button class="btn btn-ghost btn-sm" onclick="openSendWhatsAppModal('${window.escapeAttr ? window.escapeAttr(studentId) : studentId}', '${window.escapeAttr ? window.escapeAttr(tpl) : tpl}')">
+                          Send Again
                         </button>
                       </td>
                     </tr>
                   `;
                 }).join('') || `
-                  <tr><td colspan="6"><div class="empty-state" style="padding:var(--space-6);"><div class="empty-title" style="font-size:var(--text-sm);">No WhatsApp dispatches recorded</div></div></td></tr>
+                  <tr><td colspan="5"><div class="empty-state" style="padding:var(--space-6);"><div class="empty-title" style="font-size:var(--text-sm);">No WhatsApp messages recorded yet</div></div></td></tr>
                 `}
               </tbody>
             </table>
@@ -431,8 +438,6 @@ export function renderStudentProfile(container, params) {
       </div>
     `;
   }
-
-
 
   window.openEditStudentModal = function(studentId) {
     const s = store.getStudent(studentId);
@@ -473,7 +478,9 @@ export function renderStudentProfile(container, params) {
     if (!name || !phone) { toast.show('Name and phone are required', 'error'); return; }
     
     const countryCode = '+91';
-    const normalized = (window.utils && window.utils.normalizePhone) ? window.utils.normalizePhone(phone, countryCode) : (countryCode + phone.replace(/\D/g, ''));
+    const normalized = (window.whatsappManual && window.whatsappManual.normalizePhone) 
+      ? window.whatsappManual.normalizePhone(phone) 
+      : ((window.utils && window.utils.normalizePhone) ? window.utils.normalizePhone(phone, countryCode) : (countryCode + phone.replace(/\D/g, '')));
     
     store.updateStudent(studentId, {
       name,
@@ -505,107 +512,19 @@ export function renderStudentProfile(container, params) {
     render();
   };
 
-  window.retryStudentWhatsAppMessage = function(messageId) {
-    if (window.notificationService && window.notificationService.retryFailedMessage) {
-      window.notificationService.retryFailedMessage(messageId).then(res => {
-        toast.show('Message resent via WhatsApp provider!', 'success');
-        render();
-      }).catch(err => {
-        toast.show(err.message, 'error');
+  window.openSendWhatsAppModal = function(studentId, templateKey, variables) {
+    if (typeof whatsappManual !== 'undefined') {
+      whatsappManual.openComposer({
+        studentId,
+        templateKey: templateKey || 'custom',
+        variables: variables || {},
+        onSent: () => {
+          render();
+        }
       });
-    } else {
-      toast.show('Message re-queued for delivery', 'info');
-      render();
-    }
-  };
-
-  window.openSendWhatsAppModal = function(studentId) {
-    const s = store.getStudent(studentId);
-    if (!s) return;
-
-    modal.open(`Send WhatsApp to ${s.name}`, `
-      <div style="display:flex;flex-direction:column;gap:var(--space-4);">
-        <div style="padding:var(--space-3);background:var(--color-bg-secondary);border-radius:var(--radius-lg);font-size:var(--text-sm);">
-          <div>Recipient: <strong>${s.name}</strong> (${s.normalized_phone || s.phone})</div>
-          <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-top:2px;">
-            Status: ${s.whatsapp_opt_in !== false ? '<span style="color:var(--sf-success-600);font-weight:600;">Consented</span>' : '<span style="color:var(--sf-warning-600);font-weight:600;">Opted Out</span>'}
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Template / Notification Type <span class="required">*</span></label>
-          <select class="select" id="custom-wa-template" onchange="updateCustomWaPreview('${studentId}', this.value)">
-            <option value="GENERAL_NOTICE">General Notice / Alert</option>
-            <option value="PAYMENT_REMINDER">Fee Due Reminder</option>
-            <option value="EXPIRY_REMINDER">Membership Expiry Notice</option>
-            <option value="HOLIDAY_ANNOUNCEMENT">Holiday / Schedule Notice</option>
-          </select>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Message Content Preview</label>
-          <textarea class="textarea" id="custom-wa-content" rows="4">Hello ${s.name}, this is an official update from your study library.</textarea>
-          <div class="form-hint">Tip: You can send for free via WhatsApp Web or via automated Meta Cloud API.</div>
-        </div>
-      </div>
-    `, `
-      <div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:var(--space-2);">
-        <button class="btn btn-secondary" onclick="modal.close()">Cancel</button>
-        <div style="display:flex;gap:var(--space-2);">
-          <button class="btn btn-secondary" style="color:var(--sf-success-700);border-color:var(--sf-success-300);" onclick="openDirectFreeWhatsApp('${studentId}')">
-            📱 Open in WhatsApp (Free)
-          </button>
-          <button class="btn btn-primary" onclick="confirmSendCustomWhatsApp('${studentId}')">
-            ⚡ Send via Cloud API
-          </button>
-        </div>
-      </div>
-    `);
-
-    window.openDirectFreeWhatsApp = (sId) => {
-      const stud = store.getStudent(sId);
-      const text = document.getElementById('custom-wa-content')?.value?.trim();
-      if (!stud || !text) return;
-      utils.openWhatsApp(stud.phone, text);
-      modal.close();
-      toast.show('Opened in WhatsApp!', 'success');
-    };
-
-    window.updateCustomWaPreview = (sId, templateType) => {
-      const stud = store.getStudent(sId);
-      const ta = document.getElementById('custom-wa-content');
-      if (!ta || !stud) return;
-      if (templateType === 'PAYMENT_REMINDER') {
-        ta.value = `Hello ${stud.name}, this is a gentle reminder that your membership fee is pending. Kindly clear your dues to ensure uninterrupted access. Thank you!`;
-      } else if (templateType === 'EXPIRY_REMINDER') {
-        ta.value = `Hello ${stud.name}, your study library membership will expire soon. Please renew your seat promptly. Thank you!`;
-      } else if (templateType === 'HOLIDAY_ANNOUNCEMENT') {
-        ta.value = `Dear ${stud.name}, please note that the study library will remain closed tomorrow for scheduled maintenance. Thank you.`;
-      } else {
-        ta.value = `Hello ${stud.name}, this is an official update from your study library.`;
-      }
-    };
-  };
-
-  window.confirmSendCustomWhatsApp = function(studentId) {
-    const s = store.getStudent(studentId);
-    const content = document.getElementById('custom-wa-content')?.value?.trim();
-    if (!content) { toast.show('Message content cannot be empty', 'error'); return; }
-
-    if (window.notificationService) {
-      window.notificationService.queueMessage({
-        studentId: s.id,
-        phone: s.normalized_phone || s.phone,
-        eventType: 'CUSTOM_NOTICE',
-        templateName: 'custom_notice',
-        content,
-        metadata: { custom: true }
-      });
-      modal.close();
-      toast.show(`WhatsApp notice dispatched for ${s.name}!`, 'success');
-      render();
     }
   };
 
   render();
 }
+

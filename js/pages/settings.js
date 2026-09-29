@@ -124,83 +124,74 @@ export function renderSettings(container) {
           </div>
         </div>
 
-        <!-- WhatsApp & Invoice Automation Settings -->
+        <!-- WhatsApp (Manual) Settings -->
         <div class="card">
           <div class="card-header">
             <div>
-              <div class="card-title">WhatsApp Communication & Invoicing</div>
-              <div class="card-subtitle">Provider API credentials and automated message dispatches</div>
+              <div class="card-title">💬 WhatsApp Messaging (Manual Flow)</div>
+              <div class="card-subtitle">1-click WhatsApp Web & App messaging from your own library phone</div>
             </div>
           </div>
           <div class="card-body" style="display:flex;flex-direction:column;gap:var(--space-4);">
+            <div style="padding:var(--space-3);background:var(--color-bg-secondary);border-radius:var(--radius-lg);font-size:var(--text-xs);line-height:1.6;color:var(--color-text-secondary);border-left:3px solid var(--color-primary);">
+              💡 <strong>How it works:</strong> Messages open directly in WhatsApp Web (desktop) or the WhatsApp app (mobile) with recipient and message pre-filled. Simply click "Send" inside WhatsApp. Scan the QR code once at <strong>web.whatsapp.com</strong> on this computer. Zero setup, no API fees, 100% reliable.
+            </div>
+
             <div class="form-group">
-              <label class="form-label">Active WhatsApp Provider</label>
-              <select class="select" id="set-wa-provider">
-                <option value="mock" selected>Mock / Sandbox Simulator (No external API needed)</option>
-                <option value="meta">Meta WhatsApp Cloud API (Graph API)</option>
-                <option value="twilio">Twilio Programmable Messaging</option>
+              <label class="form-label">Open WhatsApp in</label>
+              <select class="select" id="set-wa-open-in">
+                <option value="auto" ${(!settings.whatsappOpenIn || settings.whatsappOpenIn === 'auto') ? 'selected' : ''}>Auto (WhatsApp Web on desktop, WhatsApp app on phone/tablet)</option>
+                <option value="web" ${settings.whatsappOpenIn === 'web' ? 'selected' : ''}>WhatsApp Web (web.whatsapp.com)</option>
+                <option value="app" ${settings.whatsappOpenIn === 'app' ? 'selected' : ''}>WhatsApp App (wa.me protocol)</option>
               </select>
-              <div class="form-hint">Mock mode simulates delivery ticks and logs messages in Communication Center.</div>
-            </div>
-
-            <div class="grid-2">
-              <div class="form-group">
-                <label class="form-label">WhatsApp Business Phone ID</label>
-                <input type="text" class="input" id="set-wa-phone-id" placeholder="e.g. 109384729384729" value="${escAttr(settings.waPhoneId || '')}">
-              </div>
-              <div class="form-group">
-                <label class="form-label">WhatsApp Account ID / Namespace</label>
-                <input type="text" class="input" id="set-wa-acc-id" placeholder="e.g. studyflow_notifications" value="${escAttr(settings.waAccId || '')}">
-              </div>
+              <div class="form-hint">Default opening mode across devices for your library staff.</div>
             </div>
 
             <div class="form-group">
-              <label class="form-label">Permanent Access Token</label>
-              <input type="password" class="input" id="set-wa-token" placeholder="Bearer EAAG..." value="${escAttr(settings.waToken || '')}">
+              <label class="form-label">Library Signature Line</label>
+              <input type="text" class="input" id="set-wa-signature" placeholder="— ${escAttr(org.name || 'Apex Reading Lounge')}, ${escAttr(settings.phone || '9876543210')}" value="${escAttr(settings.whatsappSignature || '')}">
+              <div class="form-hint">Automatically appended to the end of all outgoing messages.</div>
             </div>
 
-            <!-- Automation Rules -->
+            <!-- Message Templates Editor -->
             <div style="padding:var(--space-3);background:var(--color-bg-secondary);border-radius:var(--radius-lg);display:flex;flex-direction:column;gap:var(--space-3);">
-              <div style="font-size:var(--text-xs);font-weight:var(--fw-bold);color:var(--color-text-secondary);text-transform:uppercase;">Automated Event Dispatches</div>
-              
-              <label style="display:flex;align-items:center;gap:var(--space-2);cursor:pointer;font-size:var(--text-sm);">
-                <input type="checkbox" id="rule-seat-assign" checked style="accent-color:var(--sf-indigo-600);">
-                <span>Seat Allocation: Auto-issue Invoice and send WhatsApp confirmation</span>
-              </label>
-
-              <label style="display:flex;align-items:center;gap:var(--space-2);cursor:pointer;font-size:var(--text-sm);">
-                <input type="checkbox" id="rule-payment-receipt" checked style="accent-color:var(--sf-indigo-600);">
-                <span>Payment Recorded: Auto-issue Receipt and dispatch WhatsApp</span>
-              </label>
-
-              <label style="display:flex;align-items:center;gap:var(--space-2);cursor:pointer;font-size:var(--text-sm);">
-                <input type="checkbox" id="rule-expiry-reminder" checked style="accent-color:var(--sf-indigo-600);">
-                <span>Expiry Notice: Send 3-day and 1-day automated reminders</span>
-              </label>
-
-              <label style="display:flex;align-items:center;gap:var(--space-2);cursor:pointer;font-size:var(--text-sm);">
-                <input type="checkbox" id="rule-due-reminder" checked style="accent-color:var(--sf-indigo-600);">
-                <span>Fee Due Alerts: Send automated overdue notices</span>
-              </label>
-            </div>
-
-            <button class="btn btn-secondary w-full" onclick="saveWhatsAppSettings()">Save WhatsApp Configuration</button>
-
-            <!-- Test Simulator -->
-            <div style="margin-top:var(--space-2);padding-top:var(--space-4);border-top:1px solid var(--color-border-secondary);">
-              <div style="font-size:var(--text-sm);font-weight:var(--fw-bold);margin-bottom:var(--space-2);">🧪 Test WhatsApp Sandbox</div>
-              <div style="display:flex;gap:var(--space-2);margin-bottom:var(--space-3);">
-                <input type="tel" class="input flex-1" id="test-wa-phone" placeholder="+919876543210" value="+919876543210">
-                <select class="select" id="test-wa-template" style="width:160px;">
-                  <option value="seat_assigned">Seat Assignment</option>
-                  <option value="payment_receipt">Payment Receipt</option>
-                  <option value="expiry_reminder">Expiry Reminder</option>
-                  <option value="fee_reminder">Fee Due Alert</option>
-                </select>
-                <button class="btn btn-primary" onclick="sendTestWhatsApp()">Test Send</button>
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span style="font-size:var(--text-xs);font-weight:var(--fw-bold);color:var(--color-text-secondary);text-transform:uppercase;">Message Templates</span>
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-reset-current-template" style="font-size:11px;color:var(--sf-error-600);">Reset to Default</button>
               </div>
-              <div id="test-wa-result" style="display:none;padding:var(--space-3);background:var(--color-bg-secondary);border-radius:var(--radius-lg);font-size:var(--text-xs);font-family:var(--font-mono);"></div>
+
+              <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label" style="font-size:var(--text-xs);">Select Template to Edit</label>
+                <select class="select" id="set-wa-template-key">
+                  <option value="seat_assigned">Seat Assignment Confirmation</option>
+                  <option value="payment_received">Payment Receipt</option>
+                  <option value="payment_due">Payment Due Reminder</option>
+                  <option value="payment_overdue">Payment Overdue Notice</option>
+                  <option value="membership_expiring">Membership Expiring Notice</option>
+                  <option value="membership_renewed">Membership Renewed Confirmation</option>
+                  <option value="seat_transferred">Seat Transfer Notice</option>
+                  <option value="welcome">Welcome Registration Message</option>
+                  <option value="custom">Custom Announcement / Free Text</option>
+                </select>
+              </div>
+
+              <div class="form-group" style="margin-bottom:0;">
+                <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                  <label class="form-label" style="font-size:var(--text-xs);margin-bottom:0;">Template Text</label>
+                  <span id="wa-template-char-count" style="font-size:11px;color:var(--color-text-tertiary);font-family:var(--font-mono);">0 / 1000</span>
+                </div>
+                <textarea class="textarea" id="set-wa-template-text" rows="4" maxlength="1000" style="font-family:var(--font-mono);font-size:12px;line-height:1.4;"></textarea>
+                <div class="form-hint" style="font-size:11px;">Supported placeholders: <code>{{student_name}}</code>, <code>{{seat_number}}</code>, <code>{{room_name}}</code>, <code>{{branch_name}}</code>, <code>{{plan_name}}</code>, <code>{{start_date}}</code>, <code>{{end_date}}</code>, <code>{{days_left}}</code>, <code>{{amount}}</code>, <code>{{amount_due}}</code>, <code>{{due_date}}</code>, <code>{{balance}}</code>, <code>{{receipt_number}}</code>, <code>{{payment_mode}}</code>, <code>{{from_seat}}</code>, <code>{{to_seat}}</code></div>
+              </div>
+
+              <!-- Live Preview -->
+              <div style="margin-top:var(--space-2);">
+                <div style="font-size:11px;font-weight:var(--fw-semibold);color:var(--color-text-tertiary);text-transform:uppercase;margin-bottom:4px;">Live Preview</div>
+                <div id="wa-template-preview" style="padding:var(--space-3);background:var(--color-bg-primary);border:1px solid var(--color-border-secondary);border-radius:var(--radius-md);font-size:12px;white-space:pre-wrap;line-height:1.5;color:var(--color-text-primary);"></div>
+              </div>
             </div>
+
+            <button class="btn btn-primary w-full" id="btn-save-wa-settings">Save WhatsApp Settings</button>
           </div>
         </div>
 
@@ -419,46 +410,122 @@ export function renderSettings(container) {
     toast.show('Organization settings saved!', 'success');
   };
 
-  window.saveWhatsAppSettings = async function() {
-    await store.updateSettings({
-      waProvider: document.getElementById('set-wa-provider')?.value,
-      waPhoneId: document.getElementById('set-wa-phone-id')?.value?.trim(),
-      waAccId: document.getElementById('set-wa-acc-id')?.value?.trim(),
-      waToken: document.getElementById('set-wa-token')?.value?.trim()
-    });
-    toast.show('WhatsApp configuration saved!', 'success');
+  // WhatsApp Manual Settings logic
+  const waOpenInSelect = document.getElementById('set-wa-open-in');
+  const waSigInput = document.getElementById('set-wa-signature');
+  const waTplSelect = document.getElementById('set-wa-template-key');
+  const waTplText = document.getElementById('set-wa-template-text');
+  const waCharCount = document.getElementById('wa-template-char-count');
+  const waPreview = document.getElementById('wa-template-preview');
+  const btnResetTpl = document.getElementById('btn-reset-current-template');
+  const btnSaveWa = document.getElementById('btn-save-wa-settings');
+
+  const defaultTemplates = (typeof whatsappManual !== 'undefined' && whatsappManual.DEFAULT_TEMPLATES) ? whatsappManual.DEFAULT_TEMPLATES : {};
+  const currentTemplates = { ...(settings.whatsappTemplates || {}) };
+
+  const sampleVars = {
+    student_name: 'Rahul Sharma',
+    seat_number: 'A-12',
+    room_name: 'Main Hall',
+    branch_name: org.name || 'Apex Reading Lounge',
+    plan_name: 'Full Day (30 Days)',
+    start_date: '01 Oct 2026',
+    end_date: '31 Oct 2026',
+    days_left: '5',
+    amount: '1,500',
+    amount_due: '1,500',
+    balance: '0',
+    payment_status: 'Paid',
+    payment_mode: 'UPI',
+    receipt_number: 'REC-2026-0042',
+    date: '30 Sep 2026',
+    due_date: '05 Oct 2026',
+    from_seat: 'B-04',
+    to_seat: 'A-12',
+    message: 'This is an important update regarding the library schedule for the upcoming holidays.'
   };
 
-  window.sendTestWhatsApp = function() {
-    const phone = document.getElementById('test-wa-phone')?.value?.trim();
-    const template = document.getElementById('test-wa-template')?.value;
-    const resBox = document.getElementById('test-wa-result');
+  function updateTemplateEditor() {
+    if (!waTplSelect || !waTplText) return;
+    const key = waTplSelect.value;
+    const text = currentTemplates[key] !== undefined ? currentTemplates[key] : (defaultTemplates[key] || '');
+    waTplText.value = text;
+    updatePreview();
+  }
 
-    if (!phone) { toast.show('Please enter a phone number', 'error'); return; }
+  function updatePreview() {
+    if (!waTplSelect || !waTplText || !waPreview || !waCharCount) return;
+    const key = waTplSelect.value;
+    const text = waTplText.value;
+    waCharCount.textContent = `${text.length} / 1000`;
 
-    const provider = window.getWhatsAppProvider ? window.getWhatsAppProvider() : null;
-    if (!provider) { toast.show('WhatsApp provider not loaded', 'error'); return; }
+    const sig = waSigInput?.value?.trim() || (org.name ? `— ${org.name}${settings.phone ? ', ' + settings.phone : ''}` : '');
+    const tempSettings = {
+      ...settings,
+      whatsappSignature: sig,
+      whatsappTemplates: { ...currentTemplates, [key]: text }
+    };
 
-    resBox.style.display = 'block';
-    resBox.innerHTML = '<span style="color:var(--sf-indigo-600);">Dispatching test message via ' + provider.name + '...</span>';
+    if (typeof whatsappManual !== 'undefined') {
+      const rendered = whatsappManual.renderMessage(key, sampleVars, tempSettings);
+      waPreview.textContent = rendered;
+    } else {
+      waPreview.textContent = text;
+    }
+  }
 
-    const testContent = `[StudyFlow Test] Hello! This is a test simulation of the "${template}" WhatsApp template dispatch to ${phone}. Everything is functioning normally!`;
-
-    provider.sendTextMessage(phone, testContent).then(result => {
-      resBox.innerHTML = `
-        <div style="color:var(--sf-success-600);font-weight:bold;margin-bottom:4px;">✓ DISPATCH SUCCESSFUL</div>
-        <div>Provider: <strong>${provider.name}</strong></div>
-        <div>Message ID: <code>${result.messageId}</code></div>
-        <div>Timestamp: ${result.timestamp}</div>
-        <div style="margin-top:6px;color:var(--color-text-secondary);font-family:var(--font-sans);">${testContent}</div>
-      `;
-      toast.show('Test WhatsApp delivered successfully!', 'success');
-    }).catch(err => {
-      resBox.innerHTML = `
-        <div style="color:var(--sf-error-600);font-weight:bold;">✗ DISPATCH FAILED</div>
-        <div>${err.message}</div>
-      `;
-      toast.show('Test WhatsApp failed: ' + err.message, 'error');
+  if (waTplSelect) {
+    waTplSelect.addEventListener('change', () => {
+      updateTemplateEditor();
     });
-  };
+  }
+
+  if (waTplText) {
+    waTplText.addEventListener('input', () => {
+      const key = waTplSelect.value;
+      currentTemplates[key] = waTplText.value;
+      updatePreview();
+    });
+  }
+
+  if (waSigInput) {
+    waSigInput.addEventListener('input', () => {
+      updatePreview();
+    });
+  }
+
+  if (btnResetTpl) {
+    btnResetTpl.addEventListener('click', () => {
+      const key = waTplSelect.value;
+      const def = defaultTemplates[key] || '';
+      currentTemplates[key] = def;
+      waTplText.value = def;
+      updatePreview();
+      toast.show(`Reset template "${key}" to default`, 'info');
+    });
+  }
+
+  if (btnSaveWa) {
+    btnSaveWa.addEventListener('click', async () => {
+      try {
+        btnSaveWa.disabled = true;
+        btnSaveWa.textContent = 'Saving...';
+        await store.updateSettings({
+          whatsappOpenIn: waOpenInSelect?.value || 'auto',
+          whatsappSignature: waSigInput?.value?.trim() || '',
+          whatsappTemplates: currentTemplates
+        });
+        toast.show('WhatsApp settings & templates saved successfully!', 'success');
+      } catch (err) {
+        toast.show(err.message || 'Failed to save WhatsApp settings', 'error');
+      } finally {
+        btnSaveWa.disabled = false;
+        btnSaveWa.textContent = 'Save WhatsApp Settings';
+      }
+    });
+  }
+
+  // Initial load of template text and preview
+  updateTemplateEditor();
 }
+

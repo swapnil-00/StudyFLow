@@ -223,8 +223,10 @@ module.exports = withHandler(async function handler(req, res) {
     phone: org.phone || rawSettings.phone || '',
     email: org.email || rawSettings.email || '',
     theme: rawSettings.theme || 'light',
+    whatsappOpenIn: rawSettings.data?.whatsappOpenIn || 'auto',
+    whatsappSignature: rawSettings.data?.whatsappSignature || '',
+    whatsappTemplates: rawSettings.data?.whatsappTemplates || {},
     ...sanitizedData,
-    waConfigured: Boolean(rawSettings.data?.waToken || process.env.WHATSAPP_TOKEN),
   };
 
   const organization = {

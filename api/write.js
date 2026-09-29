@@ -455,6 +455,26 @@ module.exports = withHandler(async function handler(req, res) {
         vals.push(id);
         vals.push(orgId);
         await client.query(`UPDATE students SET ${fields.join(',')}, updated_at=CURRENT_TIMESTAMP WHERE id=$${vals.length - 1} AND organization_id=$${vals.length}`, vals);
+
+        if (s.status === 'inactive') {
+          const actRes = await client.query(
+            `UPDATE seat_assignments SET status = 'released', updated_at = CURRENT_TIMESTAMP
+             WHERE student_id = $1 AND status = 'active' AND organization_id = $2
+             RETURNING seat_id`,
+            [id, orgId]
+          );
+          if (actRes.rows.length > 0) {
+            const seatIds = [...new Set(actRes.rows.map(r => r.seat_id).filter(Boolean))];
+            if (seatIds.length > 0) {
+              await client.query(
+                `UPDATE seats SET status = 'available', current_student_id = NULL, updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ANY($1) AND organization_id = $2`,
+                [seatIds, orgId]
+              );
+            }
+          }
+        }
+
         await audit(client, session, 'student.update', 'students', id, { updatedFields: fields });
         return { ok: true };
       });
@@ -1458,37 +1478,63 @@ module.exports = withHandler(async function handler(req, res) {
     }
   }
 
-  // ── Settings (SEC-022: Encrypted Credentials & Whitelisted Keys) ───────────
+  // ── Settings (SEC-022: Whitelisted Keys) ───────────────────────────────────
   if (table === 'settings') {
     if (action === 'update') {
       const s = data;
 
       // Allow-list keys to avoid storing arbitrary untrusted JSON (SEC-024)
-      const allowedKeys = ['currency', 'timezone', 'orgName', 'address', 'phone', 'email', 'theme', 'whatsappProvider'];
+      const allowedKeys = ['currency', 'timezone', 'orgName', 'address', 'phone', 'email', 'theme', 'whatsappOpenIn', 'whatsappSignature', 'whatsappTemplates'];
       const safeData = {};
       for (const k of allowedKeys) {
         if (s[k] !== undefined) safeData[k] = s[k];
       }
 
-      let encryptedCreds = null;
-      if (s.waToken) {
-        encryptedCreds = encrypt(s.waToken);
-      }
-
       const result = await withTransaction(async client => {
         await client.query(
-          `INSERT INTO settings (id, organization_id, currency, timezone, org_name, address, phone, email, theme, data, encrypted_credentials)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          `INSERT INTO settings (id, organization_id, currency, timezone, org_name, address, phone, email, theme, data)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
            ON CONFLICT (id) DO UPDATE SET
              currency=EXCLUDED.currency, timezone=EXCLUDED.timezone, org_name=EXCLUDED.org_name,
              address=EXCLUDED.address, phone=EXCLUDED.phone, email=EXCLUDED.email,
              theme=EXCLUDED.theme, data=EXCLUDED.data,
-             encrypted_credentials=COALESCE(EXCLUDED.encrypted_credentials, settings.encrypted_credentials),
              updated_at=CURRENT_TIMESTAMP`,
           [orgId, orgId, s.currency || 'INR', s.timezone || 'Asia/Kolkata', s.orgName || 'StudyFlow Library',
-           s.address || '', s.phone || '', s.email || '', s.theme || 'light', JSON.stringify(safeData), encryptedCreds]
+           s.address || '', s.phone || '', s.email || '', s.theme || 'light', JSON.stringify(safeData)]
         );
         await audit(client, session, 'settings.update', 'settings', orgId, { updatedKeys: Object.keys(safeData) });
+        return { ok: true };
+      });
+      return res.json(result);
+    }
+  }
+
+  // ── Communication Logs (Manual WhatsApp Dispatches & Statuses) ─────────────
+  if (table === 'communication_logs') {
+    if (action === 'insert' || action === 'log') {
+      const c = data;
+      const newId = uid('COMM');
+      const result = await withTransaction(async client => {
+        if (c.studentId) await assertForeignEntity(client, 'students', c.studentId, orgId);
+        await client.query(
+          `INSERT INTO communication_logs (id, organization_id, student_id, event_type, phone_number, template_name, body_text, status, provider, sent_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'whatsapp_manual', CURRENT_TIMESTAMP)`,
+          [newId, orgId, c.studentId || null, c.eventType || c.templateKey || 'custom', c.phoneNumber || '', c.templateName || c.templateKey || '', c.bodyText || '', c.status || 'opened']
+        );
+        await audit(client, session, 'communication.log', 'communication_logs', newId, { studentId: c.studentId, template: c.templateName });
+        return { ok: true, id: newId };
+      });
+      return res.json(result);
+    }
+    if (action === 'update' || action === 'update_status') {
+      const c = data;
+      const result = await withTransaction(async client => {
+        await assertForeignEntity(client, 'communication_logs', id, orgId);
+        await client.query(
+          `UPDATE communication_logs SET status = $1 WHERE id = $2 AND organization_id = $3`,
+          [c.status || 'marked_sent', id, orgId]
+        );
+        await audit(client, session, 'communication.update_status', 'communication_logs', id, { status: c.status });
         return { ok: true };
       });
       return res.json(result);

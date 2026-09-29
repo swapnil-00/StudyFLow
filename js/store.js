@@ -628,6 +628,18 @@ class Store {
     }
 
     this._db.students[idx] = { ...this._db.students[idx], ...updates, updatedAt: now() };
+    if (updates.status === 'inactive' && Array.isArray(this._db.seatAssignments)) {
+      this._db.seatAssignments.forEach(a => {
+        if (a.studentId === id && a.status === 'active') {
+          a.status = 'released';
+          const seat = (this._db.seats || []).find(s => s.id === a.seatId);
+          if (seat) {
+            seat.status = 'available';
+            seat.currentStudentId = null;
+          }
+        }
+      });
+    }
     await apiWrite('students', 'update', updates, id);
     this._notify();
     return this._db.students[idx];
@@ -1267,32 +1279,55 @@ class Store {
 
   getDocumentsForStudent(studentId) { return (this._db?.documents || []).filter(d => d.studentId === studentId); }
 
-  // ── WhatsApp notification messages (Persisted) ───────────────────
-  getNotificationMessages() { return this._db?.notificationMessages || []; }
-  getNotificationMessage(id) { return (this._db?.notificationMessages || []).find(m => m.id === id); }
-  getNotificationMessageByIdempotency(key) { return (this._db?.notificationMessages || []).find(m => m.idempotencyKey === key); }
-
-  saveNotificationMessage(msg) {
-    this._db.notificationMessages = this._db.notificationMessages || [];
-    const idx = this._db.notificationMessages.findIndex(m => m.id === msg.id);
-    if (idx !== -1) this._db.notificationMessages[idx] = { ...this._db.notificationMessages[idx], ...msg };
-    else this._db.notificationMessages.unshift(msg);
-    // Persist log to Neon DB asynchronously
-    apiWrite('communication_logs', 'save', msg).catch(e => console.warn('Comm log DB persistence failed:', e.message));
-    this._notify();
-    return msg;
+  // ── Communication Logs (Manual WhatsApp) ──────────────────────────
+  getCommunicationLogs(studentId = null) {
+    const logs = this._db?.communicationLogs || [];
+    return studentId ? logs.filter(l => l.studentId === studentId) : logs;
   }
 
-  getNotificationMessagesForStudent(studentId) { return (this._db?.notificationMessages || []).filter(m => m.studentId === studentId); }
+  async logCommunication(data) {
+    const entry = {
+      id: uid('COMM'),
+      studentId: data.studentId || null,
+      phoneNumber: data.phoneNumber || '',
+      templateName: data.templateKey || data.templateName || 'custom',
+      eventType: data.templateKey || data.eventType || 'custom',
+      bodyText: data.bodyText || data.message || '',
+      status: data.status || 'opened',
+      provider: 'whatsapp_manual',
+      createdAt: now(),
+      sentAt: now()
+    };
+    this._db.communicationLogs = this._db.communicationLogs || [];
+    this._db.communicationLogs.unshift(entry);
+    await apiWrite('communication_logs', 'insert', entry).catch(e => console.warn('Comm log write error:', e));
+    this._notify();
+    return entry;
+  }
 
-  getNotificationStats() {
-    const msgs = this.getNotificationMessages();
-    const todayStr = utils.today();
-    const todayMsgs = msgs.filter(m => m.createdAt && m.createdAt.startsWith(todayStr));
-    const delivered = msgs.filter(m => m.status === 'DELIVERED' || m.status === 'READ').length;
-    const pending = msgs.filter(m => m.status === 'QUEUED' || m.status === 'PROCESSING' || m.status === 'SENT').length;
-    const failed = msgs.filter(m => m.status === 'FAILED').length;
-    return { todayCount: todayMsgs.length || msgs.length, delivered, pending, failed };
+  async updateCommunicationStatus(logId, status) {
+    this._db.communicationLogs = this._db.communicationLogs || [];
+    const log = this._db.communicationLogs.find(l => l.id === logId);
+    if (log) {
+      log.status = status;
+      await apiWrite('communication_logs', 'update', { status }, logId).catch(e => console.warn('Comm log status update error:', e));
+      this._notify();
+    }
+  }
+
+  getNotificationMessages() { return this.getCommunicationLogs(); }
+  getNotificationMessagesForStudent(studentId) { return this.getCommunicationLogs(studentId); }
+
+  // ── Organization Settings ─────────────────────────────────────────
+  getSettings() {
+    return this._db?.settings || {};
+  }
+
+  async updateSettings(data) {
+    this._db.settings = { ...(this._db?.settings || {}), ...data };
+    await apiWrite('settings', 'update', data);
+    this._notify();
+    return this._db.settings;
   }
 
   // ── Activity Log ──────────────────────────────────────────────────

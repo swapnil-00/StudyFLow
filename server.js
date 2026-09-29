@@ -202,6 +202,6 @@ server.listen(PORT, HOST, () => {
   console.log(`\n🚀 StudyFlow server running at http://${HOST}:${PORT}/`);
   console.log(`📡 Neon DB: ${process.env.DATABASE_URL ? 'Connected' : 'Not configured'}`);
   console.log(`🔐 JWT_SECRET: ${process.env.JWT_SECRET ? 'Set ✓' : '⚠ NOT SET — auth will fail!'}`);
-  console.log(`📁 API routes: /api/data, /api/write, /api/auth, /api/notify`);
+  console.log(`📁 API routes: /api/data, /api/write, /api/auth, /api/reports`);
   console.log(`\nOpen http://${HOST}:${PORT}/ in your browser.\n`);
 });

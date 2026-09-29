@@ -1,172 +1,298 @@
-// Communication Center (WhatsApp Automation & System Notifications)
+// js/pages/notifications.js — WhatsApp Reminders & System Alerts
+// 1-Click manual reminders for fee dues, overdues, expiries, and announcements.
+// No Meta Cloud API, no bulk automated spam.
+
 export function renderNotifications(container) {
+  const esc = (s) => (typeof window !== 'undefined' && window.escapeHtml ? window.escapeHtml(s) : String(s == null ? '' : s));
+  const escAttr = (s) => (typeof window !== 'undefined' && window.escapeAttr ? window.escapeAttr(s) : String(s == null ? '' : s));
+
   const branchId = store.getActiveBranchId();
-  const systemNotifs = store.getNotifications(branchId).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  const unreadAlerts = systemNotifs.filter(n => !n.read).length;
+  const branch = store.getBranch(branchId);
+  const branchName = branch?.name || 'StudyFlow Library';
 
-  const waMessages = (store.getNotificationMessages ? store.getNotificationMessages() : []).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  const deliveredCount = waMessages.filter(m => m.status === 'delivered').length;
-  const queuedCount = waMessages.filter(m => m.status === 'queued' || m.status === 'sent').length;
-  const failedCount = waMessages.filter(m => m.status === 'failed').length;
+  let currentTab = 'payment_due'; // 'payment_due' | 'payment_overdue' | 'expiring' | 'announcements' | 'alerts'
+  let searchQuery = '';
 
-  let currentTab = 'whatsapp';
-  let waFilter = 'all';
-  let waSearch = '';
+  // In-memory or session tracking for "Mark as sent" in current session
+  if (!window._sf_sent_reminders) {
+    window._sf_sent_reminders = new Set();
+  }
 
-  function getFilteredMessages() {
-    return waMessages.filter(m => {
-      const matchFilter = waFilter === 'all' || m.status === waFilter;
-      const q = waSearch.toLowerCase();
-      const student = store.getStudent(m.studentId);
-      const matchSearch = !q ||
-        (m.phone && m.phone.toLowerCase().includes(q)) ||
-        (m.eventType && m.eventType.toLowerCase().includes(q)) ||
-        (m.content && m.content.toLowerCase().includes(q)) ||
-        (student && student.name.toLowerCase().includes(q)) ||
-        (m.metadata?.receiptNumber && m.metadata.receiptNumber.toLowerCase().includes(q)) ||
-        (m.metadata?.invoiceNumber && m.metadata.invoiceNumber.toLowerCase().includes(q));
-      return matchFilter && matchSearch;
+  function isReminderSent(uniqueKey) {
+    return window._sf_sent_reminders.has(uniqueKey);
+  }
+
+  function setReminderSent(uniqueKey, sent = true) {
+    if (sent) {
+      window._sf_sent_reminders.add(uniqueKey);
+    } else {
+      window._sf_sent_reminders.delete(uniqueKey);
+    }
+  }
+
+  function getDueItems() {
+    const dues = (store.getPendingDues ? store.getPendingDues(branchId) : []) || [];
+    const todayStr = utils.today();
+
+    const dueList = [];
+    const overdueList = [];
+
+    dues.forEach(d => {
+      const student = d.student || store.getStudent(d.studentId);
+      const membership = d.membership || store.getMembership(d.membershipId);
+      if (!student) return;
+
+      const assignment = store.getStudentAssignment(student.id);
+      const seat = assignment ? store.getSeat(assignment.seatId) : null;
+      const dueDate = membership?.endDate || todayStr;
+      const isOverdue = dueDate < todayStr;
+      const pendingAmt = d.pendingAmount || store.getPendingAmount(membership?.id || d.id) || 0;
+
+      if (pendingAmt <= 0) return;
+
+      const item = {
+        id: `due_${student.id}_${membership?.id || ''}`,
+        student,
+        membership,
+        seat,
+        amountDue: pendingAmt,
+        dueDate,
+        isOverdue,
+        phone: student.phone || student.normalized_phone || '—',
+        optIn: student.whatsapp_opt_in !== false
+      };
+
+      if (isOverdue) {
+        overdueList.push(item);
+      } else {
+        dueList.push(item);
+      }
     });
+
+    return { dueList, overdueList };
+  }
+
+  function getExpiringItems() {
+    const expiring = (store.getExpiringMemberships ? store.getExpiringMemberships(branchId, 7) : []) || [];
+    return expiring.map(e => {
+      const student = e.student || store.getStudent(e.studentId);
+      const membership = e.membership || store.getMembership(e.membershipId || e.id);
+      const assignment = student ? store.getStudentAssignment(student.id) : null;
+      const seat = assignment ? store.getSeat(assignment.seatId) : null;
+      const plan = membership ? store.getMembershipPlan(membership.planId) : null;
+      const daysLeft = membership ? utils.daysUntil(membership.endDate) : 0;
+
+      return {
+        id: `exp_${student?.id}_${membership?.id || ''}`,
+        student,
+        membership,
+        seat,
+        plan,
+        daysLeft,
+        endDate: membership?.endDate,
+        phone: student?.phone || student?.normalized_phone || '—',
+        optIn: student?.whatsapp_opt_in !== false
+      };
+    }).filter(e => Boolean(e.student));
+  }
+
+  function getAnnouncementRecipients(groupFilter = 'all') {
+    const students = store.getStudents(branchId).filter(s => s.status !== 'inactive');
+    if (groupFilter === 'all') return students;
+    if (groupFilter === 'dues') {
+      const { dueList, overdueList } = getDueItems();
+      const ids = new Set([...dueList, ...overdueList].map(d => d.student.id));
+      return students.filter(s => ids.has(s.id));
+    }
+    if (groupFilter === 'expiring') {
+      const exp = getExpiringItems();
+      const ids = new Set(exp.map(e => e.student.id));
+      return students.filter(s => ids.has(s.id));
+    }
+    return students;
   }
 
   function render() {
+    const { dueList, overdueList } = getDueItems();
+    const expiringList = getExpiringItems();
+    const systemNotifs = store.getNotifications(branchId).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const unreadAlerts = systemNotifs.filter(n => !n.read).length;
+
+    const filterSearch = (list) => {
+      if (!searchQuery) return list;
+      const q = searchQuery.toLowerCase();
+      return list.filter(item => {
+        const name = item.student?.name || '';
+        const phone = item.phone || '';
+        return name.toLowerCase().includes(q) || phone.includes(q);
+      });
+    };
+
+    const currentDueList = filterSearch(dueList);
+    const currentOverdueList = filterSearch(overdueList);
+    const currentExpiringList = filterSearch(expiringList);
+
     container.innerHTML = `
       <div class="page-header">
         <div class="page-header-row">
           <div>
-            <h1 class="page-title">Communication Center</h1>
-            <p class="page-subtitle">WhatsApp automation triggers, invoice dispatches, delivery logs & system alerts</p>
+            <h1 class="page-title">WhatsApp Reminders</h1>
+            <p class="page-subtitle">1-click manual WhatsApp reminders, dues alerts, and member announcements</p>
           </div>
           <div style="display:flex;gap:var(--space-3);">
-            <button class="btn btn-secondary" onclick="triggerRunReminders()">
-              ${icons.repeat} Run Automated Reminders
+            <button class="btn btn-secondary" id="btn-send-next-reminder" style="color:var(--sf-success-700);border-color:var(--sf-success-300);">
+              💬 Send Next Unsent
             </button>
-            <button class="btn btn-primary" onclick="openBroadcastWhatsAppModal()">
-              ${icons.bell} Send WhatsApp Notice
+            <button class="btn btn-primary" id="btn-open-announcement-modal">
+              ${icons.bell || ''} Create Announcement
             </button>
           </div>
         </div>
       </div>
 
-      <!-- KPI Metrics -->
+      <!-- Overview Cards -->
       <div class="grid-4" style="margin-bottom:var(--space-6);">
-        <div class="stat-card">
-          <div class="stat-card-top"><div class="stat-card-label">Total Dispatched</div></div>
-          <div class="stat-card-value" style="font-size:var(--text-2xl);color:var(--sf-indigo-600);">${waMessages.length}</div>
-          <div class="stat-card-change neutral">WhatsApp messages logged</div>
+        <div class="stat-card" style="cursor:pointer;" onclick="switchTab('payment_due')">
+          <div class="stat-card-top"><div class="stat-card-label">Payment Due</div></div>
+          <div class="stat-card-value" style="font-size:var(--text-2xl);color:var(--sf-indigo-600);">${dueList.length}</div>
+          <div class="stat-card-change neutral">Pending upcoming dues</div>
         </div>
-        <div class="stat-card">
-          <div class="stat-card-top"><div class="stat-card-label">Delivered</div></div>
-          <div class="stat-card-value" style="font-size:var(--text-2xl);color:var(--sf-success-600);">${deliveredCount}</div>
-          <div class="stat-card-change positive">${waMessages.length ? Math.round((deliveredCount/waMessages.length)*100) : 100}% delivery rate</div>
+        <div class="stat-card" style="cursor:pointer;" onclick="switchTab('payment_overdue')">
+          <div class="stat-card-top"><div class="stat-card-label">Overdue</div></div>
+          <div class="stat-card-value" style="font-size:var(--text-2xl);color:var(--sf-error-600);">${overdueList.length}</div>
+          <div class="stat-card-change negative">Immediate payment needed</div>
         </div>
-        <div class="stat-card">
-          <div class="stat-card-top"><div class="stat-card-label">Queued / In Flight</div></div>
-          <div class="stat-card-value" style="font-size:var(--text-2xl);color:var(--sf-warning-600);">${queuedCount}</div>
-          <div class="stat-card-change neutral">Pending async dispatch</div>
+        <div class="stat-card" style="cursor:pointer;" onclick="switchTab('expiring')">
+          <div class="stat-card-top"><div class="stat-card-label">Expiring in 7 Days</div></div>
+          <div class="stat-card-value" style="font-size:var(--text-2xl);color:var(--sf-warning-600);">${expiringList.length}</div>
+          <div class="stat-card-change neutral">Seats up for renewal</div>
         </div>
-        <div class="stat-card">
-          <div class="stat-card-top"><div class="stat-card-label">Unread System Alerts</div></div>
+        <div class="stat-card" style="cursor:pointer;" onclick="switchTab('alerts')">
+          <div class="stat-card-top"><div class="stat-card-label">System Alerts</div></div>
           <div class="stat-card-value" style="font-size:var(--text-2xl);color:${unreadAlerts > 0 ? 'var(--sf-error-600)' : 'var(--color-text-primary)'};">${unreadAlerts}</div>
-          <div class="stat-card-change neutral">Internal staff alerts</div>
+          <div class="stat-card-change neutral">Internal notifications</div>
         </div>
       </div>
 
-      <!-- Tabs -->
-      <div class="tabs" style="margin-bottom:0;">
-        <button class="tab-btn ${currentTab === 'whatsapp' ? 'active' : ''}" onclick="switchCommTab('whatsapp')">
-          WhatsApp Messages (${waMessages.length})
-        </button>
-        <button class="tab-btn ${currentTab === 'alerts' ? 'active' : ''}" onclick="switchCommTab('alerts')">
-          System Alerts (${unreadAlerts} unread)
-        </button>
+      <!-- Tabs Navigation -->
+      <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--color-border-secondary);margin-bottom:var(--space-4);flex-wrap:wrap;gap:var(--space-3);">
+        <div class="tabs" style="margin-bottom:0;border-bottom:none;">
+          <button class="tab-btn ${currentTab === 'payment_due' ? 'active' : ''}" onclick="switchTab('payment_due')">
+            Payment Due (${dueList.length})
+          </button>
+          <button class="tab-btn ${currentTab === 'payment_overdue' ? 'active' : ''}" onclick="switchTab('payment_overdue')">
+            Overdue (${overdueList.length})
+          </button>
+          <button class="tab-btn ${currentTab === 'expiring' ? 'active' : ''}" onclick="switchTab('expiring')">
+            Expiring in 7 Days (${expiringList.length})
+          </button>
+          <button class="tab-btn ${currentTab === 'announcements' ? 'active' : ''}" onclick="switchTab('announcements')">
+            Announcements
+          </button>
+          <button class="tab-btn ${currentTab === 'alerts' ? 'active' : ''}" onclick="switchTab('alerts')">
+            System Alerts (${unreadAlerts})
+          </button>
+        </div>
+
+        ${currentTab !== 'alerts' && currentTab !== 'announcements' ? `
+          <div class="input-group" style="width:260px;margin-bottom:var(--space-2);">
+            <div class="input-group-prefix">${icons.search || '🔍'}</div>
+            <input class="input" type="text" placeholder="Search student or phone..." value="${escAttr(searchQuery)}" id="reminders-search-input">
+          </div>
+        ` : ''}
       </div>
 
-      <div id="comm-tab-content">
-        ${currentTab === 'whatsapp' ? renderWhatsAppTab() : renderAlertsTab()}
+      <!-- Tab Content Area -->
+      <div id="reminders-tab-container">
+        ${currentTab === 'payment_due' ? renderDuesTable(currentDueList, 'payment_due') : ''}
+        ${currentTab === 'payment_overdue' ? renderDuesTable(currentOverdueList, 'payment_overdue') : ''}
+        ${currentTab === 'expiring' ? renderExpiringTable(currentExpiringList) : ''}
+        ${currentTab === 'announcements' ? renderAnnouncementsView() : ''}
+        ${currentTab === 'alerts' ? renderAlertsView(systemNotifs, unreadAlerts) : ''}
       </div>
     `;
+
+    // Attach search input listener
+    const searchInput = document.getElementById('reminders-search-input');
+    if (searchInput) {
+      searchInput.addEventListener('input', (e) => {
+        searchQuery = e.target.value.trim();
+        render();
+      });
+    }
+
+    // Attach "Send Next" button listener
+    const btnSendNext = document.getElementById('btn-send-next-reminder');
+    if (btnSendNext) {
+      btnSendNext.addEventListener('click', () => {
+        handleSendNext();
+      });
+    }
+
+    // Attach "Create Announcement" button listener
+    const btnAnnouncement = document.getElementById('btn-open-announcement-modal');
+    if (btnAnnouncement) {
+      btnAnnouncement.addEventListener('click', () => {
+        openAnnouncementModal();
+      });
+    }
   }
 
-  function renderWhatsAppTab() {
-    const list = getFilteredMessages();
+  function renderDuesTable(items, templateKey) {
+    const isOverdue = templateKey === 'payment_overdue';
     return `
       <div class="table-container">
-        <div class="table-header">
-          <div style="display:flex;gap:var(--space-2);flex-wrap:wrap;">
-            ${['all', 'delivered', 'sent', 'queued', 'failed', 'skipped'].map(f => `
-              <button class="btn btn-sm ${waFilter === f ? 'btn-primary' : 'btn-secondary'}" onclick="setWaFilter('${f}')">
-                ${capitalizeFirst(f)}
-              </button>
-            `).join('')}
-          </div>
-          <div class="input-group" style="width:260px;">
-            <div class="input-group-prefix">${icons.search}</div>
-            <input class="input" type="text" placeholder="Search student, phone, event..." value="${waSearch}"
-              oninput="handleWaSearch(this.value)">
-          </div>
-        </div>
-
         <div class="table-scroll">
           <table>
             <thead>
               <tr>
+                <th style="width:50px;">Sent</th>
                 <th>Student</th>
                 <th>Phone</th>
-                <th>Trigger Event</th>
-                <th>Message Content</th>
-                <th>Attached Doc</th>
-                <th>Status</th>
-                <th>Sent At</th>
-                <th>Actions</th>
+                <th>Seat</th>
+                <th>Amount Due</th>
+                <th>Due Date</th>
+                <th>Consent</th>
+                <th style="text-align:right;">Action</th>
               </tr>
             </thead>
             <tbody>
-              ${list.slice(0, 50).map(m => {
-                const student = store.getStudent(m.studentId);
-                const badgeClass = m.status === 'delivered' ? 'badge-success' : m.status === 'failed' ? 'badge-error' : m.status === 'skipped' ? 'badge-neutral' : 'badge-indigo';
+              ${items.map(item => {
+                const isSent = isReminderSent(item.id);
                 return `
-                  <tr style="cursor:pointer;" onclick="showWhatsAppDetails('${m.id}')">
+                  <tr style="${isSent ? 'opacity:0.6;background:var(--color-bg-secondary);' : ''}">
+                    <td>
+                      <input type="checkbox" style="accent-color:var(--sf-indigo-600);cursor:pointer;" ${isSent ? 'checked' : ''} onchange="toggleSentState('${escAttr(item.id)}', this.checked)">
+                    </td>
                     <td>
                       <div class="student-cell">
-                        <div class="avatar avatar-sm" style="background:${student?.avatar || 'var(--sf-gray-400)'};">${utils.initials(student?.name || 'WA')}</div>
+                        <div class="avatar avatar-sm" style="background:${item.student.avatar || 'var(--sf-gray-400)'};">${utils.initials(item.student.name)}</div>
                         <div>
-                          <div class="student-name">${student?.name || 'General Notification'}</div>
-                          <div class="student-id">${m.studentId || ''}</div>
+                          <div class="student-name" style="cursor:pointer;" onclick="app.navigate('/student', { id: '${item.student.id}' })">${esc(item.student.name)}</div>
+                          <div class="student-id">${esc(item.student.email || '')}</div>
                         </div>
                       </div>
                     </td>
-                    <td><span style="font-family:var(--font-mono);font-size:var(--text-xs);">${m.phone}</span></td>
-                    <td><span class="badge badge-indigo" style="font-size:11px;">${m.eventType}</span></td>
-                    <td style="max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:var(--text-xs);color:var(--color-text-secondary);" title="${m.content}">
-                      ${m.content}
+                    <td><span style="font-family:var(--font-mono);font-size:var(--text-xs);">${esc(item.phone)}</span></td>
+                    <td><span class="badge badge-neutral" style="font-size:11px;">${esc(item.seat?.label || '—')}</span></td>
+                    <td><span style="font-weight:var(--fw-bold);color:${isOverdue ? 'var(--sf-error-600)' : 'var(--sf-indigo-600)'};">${utils.formatINR(item.amountDue)}</span></td>
+                    <td style="font-size:var(--text-xs);color:${isOverdue ? 'var(--sf-error-600)' : 'var(--color-text-secondary)'};font-weight:${isOverdue ? '600' : 'normal'};">
+                      ${utils.formatDate(item.dueDate, { day: '2-digit', month: 'short', year: 'numeric' })}
                     </td>
-                    <td onclick="event.stopPropagation()">
-                      ${m.metadata?.documentId ? `
-                        <button class="btn btn-ghost btn-sm" onclick="invoiceGenerator.previewDocument('${m.metadata.documentId}')" title="Preview Attached Document">
-                          ${icons.fileText} ${m.metadata.invoiceNumber || m.metadata.receiptNumber || 'View Doc'}
-                        </button>
-                      ` : '<span style="color:var(--color-text-quaternary);font-size:var(--text-xs);">None</span>'}
+                    <td>
+                      <span class="badge ${item.optIn ? 'badge-success' : 'badge-warning'}" style="font-size:10px;">
+                        <span class="badge-dot"></span>${item.optIn ? 'Consented' : 'Opted Out'}
+                      </span>
                     </td>
-                    <td><span class="badge ${badgeClass}" style="font-size:11px;"><span class="badge-dot"></span>${m.status.toUpperCase()}</span></td>
-                    <td style="font-size:var(--text-xs);color:var(--color-text-tertiary);">${utils.formatDate(m.createdAt, {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</td>
-                    <td onclick="event.stopPropagation()">
-                      <div style="display:flex;gap:var(--space-2);">
-                        <button class="btn btn-ghost btn-sm" onclick="showWhatsAppDetails('${m.id}')" title="View Payload & Timeline">
-                          ${icons.eye}
-                        </button>
-                        <button class="btn btn-ghost btn-icon btn-sm" onclick="resendWhatsAppMessage('${m.id}')" title="Resend Message">
-                          ${icons.repeat}
-                        </button>
-                      </div>
+                    <td style="text-align:right;">
+                      <button class="btn ${isSent ? 'btn-secondary' : 'btn-primary'} btn-sm" onclick="sendDueMessage('${escAttr(item.student.id)}', '${escAttr(item.membership?.id || '')}', '${escAttr(templateKey)}', ${item.amountDue}, '${escAttr(item.dueDate)}', '${escAttr(item.id)}')">
+                        💬 ${isSent ? 'Resend' : 'Send'}
+                      </button>
                     </td>
                   </tr>
                 `;
               }).join('') || `
-                <tr><td colspan="8"><div class="empty-state" style="padding:var(--space-8);">
-                  <div class="empty-icon">${icons.bell}</div>
-                  <div class="empty-title">No WhatsApp messages match your filter</div>
-                </div></td></tr>
+                <tr><td colspan="8"><div class="empty-state" style="padding:var(--space-8);"><div class="empty-title">No ${isOverdue ? 'overdue dues' : 'pending dues'} at this time!</div></div></td></tr>
               `}
             </tbody>
           </table>
@@ -175,16 +301,134 @@ export function renderNotifications(container) {
     `;
   }
 
-  function renderAlertsTab() {
+  function renderExpiringTable(items) {
     return `
-      <div style="margin-top:var(--space-4);">
+      <div class="table-container">
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:50px;">Sent</th>
+                <th>Student</th>
+                <th>Phone</th>
+                <th>Seat</th>
+                <th>Plan</th>
+                <th>Expiry Date</th>
+                <th>Days Left</th>
+                <th>Consent</th>
+                <th style="text-align:right;">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${items.map(item => {
+                const isSent = isReminderSent(item.id);
+                return `
+                  <tr style="${isSent ? 'opacity:0.6;background:var(--color-bg-secondary);' : ''}">
+                    <td>
+                      <input type="checkbox" style="accent-color:var(--sf-indigo-600);cursor:pointer;" ${isSent ? 'checked' : ''} onchange="toggleSentState('${escAttr(item.id)}', this.checked)">
+                    </td>
+                    <td>
+                      <div class="student-cell">
+                        <div class="avatar avatar-sm" style="background:${item.student.avatar || 'var(--sf-gray-400)'};">${utils.initials(item.student.name)}</div>
+                        <div>
+                          <div class="student-name" style="cursor:pointer;" onclick="app.navigate('/student', { id: '${item.student.id}' })">${esc(item.student.name)}</div>
+                          <div class="student-id">${esc(item.student.email || '')}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td><span style="font-family:var(--font-mono);font-size:var(--text-xs);">${esc(item.phone)}</span></td>
+                    <td><span class="badge badge-neutral" style="font-size:11px;">${esc(item.seat?.label || '—')}</span></td>
+                    <td><span style="font-size:var(--text-xs);color:var(--color-text-secondary);">${esc(item.plan?.name || 'Membership')}</span></td>
+                    <td style="font-size:var(--text-xs);color:var(--sf-warning-700);font-weight:600;">
+                      ${utils.formatDate(item.endDate, { day: '2-digit', month: 'short', year: 'numeric' })}
+                    </td>
+                    <td>
+                      <span class="badge badge-warning" style="font-size:11px;font-weight:700;">
+                        ${item.daysLeft <= 0 ? 'Expires Today' : `${item.daysLeft} days left`}
+                      </span>
+                    </td>
+                    <td>
+                      <span class="badge ${item.optIn ? 'badge-success' : 'badge-warning'}" style="font-size:10px;">
+                        <span class="badge-dot"></span>${item.optIn ? 'Consented' : 'Opted Out'}
+                      </span>
+                    </td>
+                    <td style="text-align:right;">
+                      <button class="btn ${isSent ? 'btn-secondary' : 'btn-primary'} btn-sm" onclick="sendExpiringMessage('${escAttr(item.student.id)}', '${escAttr(item.id)}')">
+                        💬 ${isSent ? 'Resend' : 'Send'}
+                      </button>
+                    </td>
+                  </tr>
+                `;
+              }).join('') || `
+                <tr><td colspan="9"><div class="empty-state" style="padding:var(--space-8);"><div class="empty-title">No memberships expiring in the next 7 days!</div></div></td></tr>
+              `}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderAnnouncementsView() {
+    const students = getAnnouncementRecipients('all');
+    return `
+      <div class="card" style="max-width:800px;margin:0 auto;">
+        <div class="card-header">
+          <div>
+            <div class="card-title">📢 Member Announcements</div>
+            <div class="card-subtitle">Compose a message and work through student recipients one-by-one</div>
+          </div>
+        </div>
+        <div class="card-body" style="display:flex;flex-direction:column;gap:var(--space-4);">
+          <div style="padding:var(--space-3);background:var(--color-bg-secondary);border-radius:var(--radius-lg);font-size:var(--text-xs);line-height:1.5;color:var(--color-text-secondary);">
+            ⚠️ <strong>Notice:</strong> WhatsApp Web requires 1 click per recipient to open the chat window with your pre-filled message. Keep batches small (&lt; 50) to protect your WhatsApp account from anti-spam rate limits.
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Target Audience</label>
+            <select class="select" id="ann-audience-select" onchange="updateAnnouncementRecipientCount(this.value)">
+              <option value="all">All Active Students in Branch (${students.length})</option>
+              <option value="dues">Students with Pending Dues</option>
+              <option value="expiring">Students Expiring Soon (&lt; 7 Days)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Announcement Message</label>
+            <textarea class="textarea" id="ann-message-text" rows="4" placeholder="Dear Students, please note that the reading hall will remain open on Sunday..."></textarea>
+            <div class="form-hint">Tip: Use placeholders like <code>{{student_name}}</code> to personalize each message.</div>
+          </div>
+
+          <button class="btn btn-primary" onclick="startAnnouncementBatch()">
+            🚀 Start Sending Announcements (1-by-1)
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderAlertsView(systemNotifs, unreadAlerts) {
+    return `
+      <div style="margin-top:var(--space-2);">
         <div style="display:flex;justify-content:flex-end;margin-bottom:var(--space-3);">
-          ${unreadAlerts > 0 ? `<button class="btn btn-secondary btn-sm" onclick="markAllAlertsRead()">${icons.check} Mark All Read</button>` : ''}
+          ${unreadAlerts > 0 ? `<button class="btn btn-secondary btn-sm" onclick="markAllAlertsRead()">${icons.check || '✓'} Mark All Read</button>` : ''}
         </div>
         <div style="display:flex;flex-direction:column;gap:var(--space-2);">
-          ${systemNotifs.map(n => renderNotifItem(n)).join('') || `
+          ${systemNotifs.map(n => `
+            <div style="background:${n.read ? 'var(--color-bg-primary)' : 'var(--sf-indigo-50)'};border:1px solid ${n.read ? 'var(--color-border-secondary)' : 'var(--sf-indigo-200)'};border-radius:var(--radius-xl);padding:var(--space-4) var(--space-5);display:flex;align-items:flex-start;gap:var(--space-4);cursor:pointer;"
+              onclick="readNotifItem('${n.id}')"
+            >
+              <div style="width:36px;height:36px;border-radius:var(--radius-lg);background:rgba(97,114,243,0.1);color:var(--sf-indigo-600);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                ${icons[n.icon] || icons.bell || '🔔'}
+              </div>
+              <div style="flex:1;">
+                <div style="font-size:var(--text-sm);${n.read ? '' : 'font-weight:var(--fw-semibold);'}color:var(--color-text-primary);">${esc(n.message)}</div>
+                <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-top:var(--space-1);">${utils.formatRelative(n.createdAt)}</div>
+              </div>
+              ${!n.read ? `<div style="width:8px;height:8px;background:var(--sf-indigo-500);border-radius:50%;flex-shrink:0;margin-top:var(--space-1);"></div>` : ''}
+            </div>
+          `).join('') || `
             <div class="empty-state" style="margin-top:var(--space-8);">
-              <div class="empty-icon">${icons.checkCircle}</div>
               <div class="empty-title">All caught up!</div>
               <div class="empty-desc">No unread system alerts.</div>
             </div>
@@ -194,51 +438,175 @@ export function renderNotifications(container) {
     `;
   }
 
-  function renderNotifItem(n) {
-    const iconColorMap = {
-      expiry: 'var(--sf-warning-500)',
-      payment: 'var(--sf-error-500)',
-      reservation: 'var(--sf-indigo-500)',
-      system: 'var(--sf-gray-500)',
-      transfer: 'var(--sf-indigo-500)',
-    };
+  // --- Actions & Helpers ---
 
-    return `
-      <div style="background:${n.read ? 'var(--color-bg-primary)' : 'var(--sf-indigo-50)'};border:1px solid ${n.read ? 'var(--color-border-secondary)' : 'var(--sf-indigo-200)'};border-radius:var(--radius-xl);padding:var(--space-4) var(--space-5);display:flex;align-items:flex-start;gap:var(--space-4);cursor:pointer;"
-        onclick="readNotifItem('${n.id}')"
-        onmouseenter="this.style.boxShadow='var(--shadow-xs)'" onmouseleave="this.style.boxShadow=''"
-      >
-        <div style="width:36px;height:36px;border-radius:var(--radius-lg);background:${iconColorMap[n.type] || 'var(--sf-gray-400)'}20;color:${iconColorMap[n.type] || 'var(--sf-gray-400)'};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-          ${icons[n.icon] || icons.bell}
-        </div>
-        <div style="flex:1;">
-          <div style="font-size:var(--text-sm);${n.read ? '' : 'font-weight:var(--fw-semibold);'}color:var(--color-text-primary);">${n.message}</div>
-          <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-top:var(--space-1);">${utils.formatRelative(n.createdAt)}</div>
-        </div>
-        ${!n.read ? `<div style="width:8px;height:8px;background:var(--sf-indigo-500);border-radius:50%;flex-shrink:0;margin-top:var(--space-1);"></div>` : ''}
-      </div>
-    `;
-  }
-
-  window.switchCommTab = (tab) => {
+  window.switchTab = function(tab) {
     currentTab = tab;
     render();
   };
 
-  window.setWaFilter = (f) => {
-    waFilter = f;
+  window.toggleSentState = function(key, isChecked) {
+    setReminderSent(key, isChecked);
     render();
   };
 
-  window.handleWaSearch = (q) => {
-    waSearch = q;
-    const content = document.getElementById('comm-tab-content');
-    if (content) content.innerHTML = renderWhatsAppTab();
+  window.sendDueMessage = function(studentId, membershipId, templateKey, amountDue, dueDate, itemKey) {
+    const student = store.getStudent(studentId);
+    if (!student) return;
+    const assignment = store.getStudentAssignment(studentId);
+    const seat = assignment ? store.getSeat(assignment.seatId) : null;
+    const formattedDueDate = utils.formatDate(dueDate, { day: '2-digit', month: 'short', year: 'numeric' });
+
+    if (typeof whatsappManual !== 'undefined') {
+      whatsappManual.openComposer({
+        studentId,
+        templateKey,
+        variables: {
+          student_name: student.name,
+          amount_due: amountDue.toLocaleString('en-IN'),
+          seat_number: seat?.label || seat?.number || 'your seat',
+          due_date: formattedDueDate
+        },
+        onSent: () => {
+          if (itemKey) setReminderSent(itemKey, true);
+          render();
+        }
+      });
+    }
   };
+
+  window.sendExpiringMessage = function(studentId, itemKey) {
+    const student = store.getStudent(studentId);
+    if (!student) return;
+    const assignment = store.getStudentAssignment(studentId);
+    const seat = assignment ? store.getSeat(assignment.seatId) : null;
+    const membership = store.getActiveMembership(studentId);
+    const plan = membership ? store.getMembershipPlan(membership.planId) : null;
+    const daysLeft = membership ? utils.daysUntil(membership.endDate) : 0;
+    const formattedEndDate = utils.formatDate(membership?.endDate || utils.today(), { day: '2-digit', month: 'short', year: 'numeric' });
+
+    if (typeof whatsappManual !== 'undefined') {
+      whatsappManual.openComposer({
+        studentId,
+        templateKey: 'membership_expiring',
+        variables: {
+          student_name: student.name,
+          plan_name: plan?.name || 'Membership',
+          seat_number: seat?.label || seat?.number || 'your seat',
+          end_date: formattedEndDate,
+          days_left: String(daysLeft)
+        },
+        onSent: () => {
+          if (itemKey) setReminderSent(itemKey, true);
+          render();
+        }
+      });
+    }
+  };
+
+  function handleSendNext() {
+    if (currentTab === 'payment_due' || currentTab === 'payment_overdue') {
+      const { dueList, overdueList } = getDueItems();
+      const list = currentTab === 'payment_due' ? dueList : overdueList;
+      const nextItem = list.find(item => !isReminderSent(item.id) && item.optIn);
+      if (!nextItem) {
+        toast.show('All reminders in this list have been sent or opted out!', 'info');
+        return;
+      }
+      sendDueMessage(nextItem.student.id, nextItem.membership?.id || '', currentTab, nextItem.amountDue, nextItem.dueDate, nextItem.id);
+    } else if (currentTab === 'expiring') {
+      const expiringList = getExpiringItems();
+      const nextItem = expiringList.find(item => !isReminderSent(item.id) && item.optIn);
+      if (!nextItem) {
+        toast.show('All expiring notices have been sent or opted out!', 'info');
+        return;
+      }
+      sendExpiringMessage(nextItem.student.id, nextItem.id);
+    } else {
+      toast.show('Please switch to Payment Due, Overdue, or Expiring tab to send reminders.', 'info');
+    }
+  }
+
+  function openAnnouncementModal() {
+    const students = getAnnouncementRecipients('all');
+    modal.open('Compose Announcement', `
+      <div style="display:flex;flex-direction:column;gap:var(--space-4);">
+        <div style="padding:var(--space-3);background:var(--color-bg-secondary);border-radius:var(--radius-lg);font-size:var(--text-xs);line-height:1.5;color:var(--color-text-secondary);">
+          💡 <strong>Manual Delivery:</strong> Each announcement opens directly in WhatsApp Web for 1-click delivery from your computer.
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Recipient Group <span class="required">*</span></label>
+          <select class="select" id="modal-ann-audience" onchange="const cnt = document.getElementById('modal-ann-count'); if(cnt) cnt.textContent = this.value === 'all' ? '${students.length}' : 'Selected';">
+            <option value="all">All Active Students (${students.length})</option>
+            <option value="dues">Students with Pending Dues</option>
+            <option value="expiring">Students Expiring Soon</option>
+          </select>
+          <div class="form-hint">Total eligible recipients: <strong id="modal-ann-count">${students.length}</strong></div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Message Content <span class="required">*</span></label>
+          <textarea class="textarea" id="modal-ann-text" rows="5" placeholder="Dear Students, please note that..."></textarea>
+          <div class="form-hint">Placeholders: <code>{{student_name}}</code>, <code>{{branch_name}}</code></div>
+        </div>
+      </div>
+    `, `
+      <button class="btn btn-secondary" onclick="modal.close()">Cancel</button>
+      <button class="btn btn-primary" id="btn-start-modal-ann">Start Sending</button>
+    `);
+
+    document.getElementById('btn-start-modal-ann')?.addEventListener('click', () => {
+      const aud = document.getElementById('modal-ann-audience')?.value || 'all';
+      const text = document.getElementById('modal-ann-text')?.value?.trim();
+      if (!text) { toast.show('Please enter message content', 'error'); return; }
+
+      const targetStudents = getAnnouncementRecipients(aud).filter(s => s.whatsapp_opt_in !== false);
+      if (!targetStudents.length) { toast.show('No consented recipients found in this group', 'warning'); return; }
+
+      if (targetStudents.length > 50) {
+        toast.show(`Notice: Batch contains ${targetStudents.length} students. Sending more than 50 messages rapidly may trigger WhatsApp limits.`, 'warning', 6000);
+      }
+
+      modal.close();
+
+      // Launch announcement queue
+      let currentIndex = 0;
+      function openNextAnnouncement() {
+        if (currentIndex >= targetStudents.length) {
+          toast.show('Finished sending announcements to all recipients!', 'success');
+          return;
+        }
+        const student = targetStudents[currentIndex];
+        currentIndex++;
+
+        if (typeof whatsappManual !== 'undefined') {
+          whatsappManual.openComposer({
+            studentId: student.id,
+            templateKey: 'custom',
+            variables: {
+              student_name: student.name,
+              branch_name: branchName,
+              message: text
+            },
+            onSent: () => {
+              if (currentIndex < targetStudents.length) {
+                setTimeout(() => {
+                  toast.show(`Announcement ${currentIndex}/${targetStudents.length} sent! Ready for next recipient.`, 'info');
+                }, 400);
+              }
+            }
+          });
+        }
+      }
+
+      openNextAnnouncement();
+    });
+  }
 
   window.readNotifItem = function(id) {
     store.markNotificationRead(id);
-    app._updateNotifBadge();
+    if (app._updateNotifBadge) app._updateNotifBadge();
     render();
   };
 
@@ -246,127 +614,6 @@ export function renderNotifications(container) {
     store.markAllRead();
     toast.show('All alerts marked as read', 'success');
     render();
-  };
-
-  window.triggerRunReminders = function() {
-    if (window.notificationService && window.notificationService.runAutomatedReminders) {
-      const summary = window.notificationService.runAutomatedReminders();
-      toast.show(`Ran scheduler: ${summary.expiriesSent} expiry notices, ${summary.duesSent} fee reminders queued.`, 'success');
-      render();
-    } else {
-      toast.show('Automated reminders triggered', 'info');
-    }
-  };
-
-  window.showWhatsAppDetails = function(messageId) {
-    const msg = store.getNotificationMessage(messageId);
-    if (!msg) return;
-
-    const student = store.getStudent(msg.studentId);
-    const badgeClass = msg.status === 'delivered' ? 'badge-success' : msg.status === 'failed' ? 'badge-error' : 'badge-indigo';
-
-    modal.open(`WhatsApp Dispatch #${msg.id}`, `
-      <div style="display:flex;flex-direction:column;gap:var(--space-4);">
-        <!-- Student Info Header -->
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:var(--space-3);background:var(--color-bg-secondary);border-radius:var(--radius-lg);">
-          <div>
-            <div style="font-weight:var(--fw-bold);">${student?.name || 'Direct / Broadcast'}</div>
-            <div style="font-family:var(--font-mono);font-size:var(--text-xs);color:var(--color-text-secondary);">${msg.phone}</div>
-          </div>
-          <span class="badge ${badgeClass}"><span class="badge-dot"></span>${msg.status.toUpperCase()}</span>
-        </div>
-
-        <!-- WhatsApp Chat Bubble Rendering -->
-        <div style="background:#e5ddd5;padding:var(--space-4);border-radius:var(--radius-xl);display:flex;flex-direction:column;gap:var(--space-2);">
-          <div style="font-size:11px;color:#667781;text-align:center;margin-bottom:var(--space-1);">WHATSAPP DELIVERY PREVIEW</div>
-          <div style="align-self:flex-end;max-width:85%;background:#dcf8c6;padding:10px 14px;border-radius:10px 0 10px 10px;box-shadow:0 1px 2px rgba(0,0,0,0.1);font-size:13px;line-height:1.5;color:#111b21;white-space:pre-wrap;">
-${msg.content}
-            <div style="display:flex;align-items:center;justify-content:flex-end;gap:4px;font-size:10px;color:#667781;margin-top:4px;">
-              <span>${utils.formatDate(msg.createdAt, {hour:'2-digit',minute:'2-digit'})}</span>
-              <span style="color:#53bdeb;font-weight:bold;">✓✓</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Technical Metadata -->
-        <div style="background:var(--color-bg-secondary);border:1px solid var(--color-border-secondary);border-radius:var(--radius-lg);padding:var(--space-3);font-size:var(--text-xs);display:flex;flex-direction:column;gap:var(--space-2);">
-          <div style="display:flex;justify-content:space-between;"><span style="color:var(--color-text-tertiary);">Event Type</span><strong>${msg.eventType}</strong></div>
-          <div style="display:flex;justify-content:space-between;"><span style="color:var(--color-text-tertiary);">Template</span><strong>${msg.templateName}</strong></div>
-          <div style="display:flex;justify-content:space-between;"><span style="color:var(--color-text-tertiary);">Idempotency Key</span><code style="font-family:var(--font-mono);font-size:10px;">${msg.idempotencyKey || '—'}</code></div>
-          <div style="display:flex;justify-content:space-between;"><span style="color:var(--color-text-tertiary);">Provider</span><strong>${msg.provider || 'Mock (Sandbox)'}</strong></div>
-          ${msg.error ? `<div style="display:flex;justify-content:space-between;color:var(--sf-error-600);"><span style="color:var(--sf-error-600);">Failure Reason</span><strong>${msg.error}</strong></div>` : ''}
-        </div>
-      </div>
-    `, `
-      ${msg.metadata?.documentId ? `<button class="btn btn-secondary" onclick="invoiceGenerator.previewDocument('${msg.metadata.documentId}')">${icons.fileText} Attached Document</button>` : ''}
-      <button class="btn btn-primary" onclick="resendWhatsAppMessage('${msg.id}'); modal.close();">Resend Now</button>
-    `);
-  };
-
-  window.resendWhatsAppMessage = function(messageId) {
-    if (window.notificationService && window.notificationService.retryFailedMessage) {
-      window.notificationService.retryFailedMessage(messageId).then(res => {
-        toast.show('WhatsApp message queued & resent!', 'success');
-        render();
-      }).catch(e => toast.show(e.message, 'error'));
-    }
-  };
-
-  window.openBroadcastWhatsAppModal = function() {
-    const students = store.getStudents(branchId);
-    modal.open('Send WhatsApp Notice', `
-      <div style="display:flex;flex-direction:column;gap:var(--space-4);">
-        <div class="form-group">
-          <label class="form-label">Recipient Group <span class="required">*</span></label>
-          <select class="select" id="broadcast-group">
-            <option value="all">All Active Students (${students.length})</option>
-            <option value="dues">Students with Pending Dues</option>
-            <option value="expiring">Students Expiring Soon (&lt; 14 days)</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Message Notice <span class="required">*</span></label>
-          <textarea class="textarea" id="broadcast-text" rows="4" placeholder="Dear Students, please be informed that..."></textarea>
-          <div class="form-hint">Respects student opt-in consent; automatically queued asynchronously.</div>
-        </div>
-      </div>
-    `, `
-      <button class="btn btn-secondary" onclick="modal.close()">Cancel</button>
-      <button class="btn btn-primary" onclick="confirmBroadcastWhatsApp()">${icons.bell} Dispatch Notice</button>
-    `);
-
-    window.confirmBroadcastWhatsApp = () => {
-      const text = document.getElementById('broadcast-text')?.value?.trim();
-      const group = document.getElementById('broadcast-group')?.value;
-      if (!text) { toast.show('Please enter a message', 'error'); return; }
-
-      let targetStudents = students;
-      if (group === 'dues') {
-        const dues = store.getPendingDues(branchId);
-        targetStudents = dues.map(d => d.student);
-      } else if (group === 'expiring') {
-        const expiring = store.getExpiringMemberships(branchId, 14);
-        targetStudents = expiring.map(e => e.student);
-      }
-
-      let count = 0;
-      targetStudents.forEach(s => {
-        if (s.whatsapp_opt_in !== false && window.notificationService) {
-          window.notificationService.queueMessage({
-            studentId: s.id,
-            phone: s.normalized_phone || s.phone,
-            eventType: 'ANNOUNCEMENT',
-            templateName: 'general_notice',
-            content: text.replace('Dear Students', `Dear ${s.name}`)
-          });
-          count++;
-        }
-      });
-
-      modal.close();
-      toast.show(`Dispatched WhatsApp broadcast to ${count} students!`, 'success');
-      render();
-    };
   };
 
   render();
