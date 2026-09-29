@@ -21,7 +21,7 @@ const {
 const { verifyFirebaseIdToken } = require('../lib/firebase');
 const { checkRateLimit } = require('../lib/ratelimit');
 const { withHandler } = require('../lib/http');
-const { sendMail, sendPasswordResetCode, sendPasswordChangedNotice } = require('../lib/mailer');
+const { activeProvider, sendMail, sendPasswordResetCode, sendPasswordChangedNotice } = require('../lib/mailer');
 
 const RESET_CODE_TTL_MINUTES = 10;
 const RESET_CODE_MAX_ATTEMPTS = 5;
@@ -33,7 +33,7 @@ function isMailConfigured() {
 }
 
 function mailProviderName() {
-  return process.env.RESEND_API_KEY ? 'resend' : process.env.SMTP_URL ? 'smtp' : 'none';
+  return activeProvider();
 }
 
 // Turns a provider error into { error (credentials masked), hint (what to change) } for owners
@@ -48,7 +48,7 @@ function describeMailError(err) {
   } else if (/Username and Password not accepted|Invalid login|535|BadCredentials/i.test(raw)) {
     hint = 'Gmail rejected the login. Use a 16-letter App Password (not your normal Gmail password, no spaces), and write the @ in the Gmail address as %40 inside SMTP_URL.';
   } else if (/testing emails|own email address|verify a domain|domain is not verified/i.test(raw)) {
-    hint = 'Resend\'s test sender only delivers to the email you signed up to Resend with. Verify a domain in Resend, or use the Gmail SMTP option instead (and remove RESEND_API_KEY).';
+    hint = 'Resend can only send from a domain you own and have verified (gmail.com can never be verified). Delete RESEND_API_KEY in Vercel and use Gmail SMTP (SMTP_URL + MAIL_FROM), or verify your own domain in Resend and set MAIL_FROM to an address on it. Then redeploy.';
   } else if (/API key is invalid|401|Unauthorized/i.test(raw)) {
     hint = 'The RESEND_API_KEY value is wrong or was revoked. Create a new key in Resend and update it in Vercel.';
   } else if (/ENOTFOUND|ECONNREFUSED|ETIMEDOUT|ECONNRESET|Greeting never received|Invalid URL|Invalid protocol/i.test(raw)) {
