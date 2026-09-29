@@ -5,6 +5,9 @@ const assert = require('node:assert/strict');
 const path = require('path');
 const crypto = require('crypto');
 process.env.NODE_ENV = 'test';
+
+// Random throwaway passwords, so no password-like literals live in the repository
+const testPassword = () => `Tp-${crypto.randomBytes(12).toString('base64url')}-9`;
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const dataHandler = require('../api/data');
@@ -86,7 +89,7 @@ describe('Phase 1 & Phase 5: Authentication & Session Verification', () => {
   });
 
   test('SEC-015: Password hashing uses salted scrypt with OWASP-strength parameters stored in the hash', async () => {
-    const password = 'CorrectHorseBatteryStaple1!';
+    const password = testPassword();
     const hash = await hashPassword(password);
     assert.match(hash, /^\$scrypt\$ln=15,r=8,p=3\$[A-Za-z0-9+/=]+\$[A-Za-z0-9+/=]+$/, 'PHC-format scrypt hash with parameters');
     assert.ok(!hash.includes(password), 'Hash must not contain the password');
@@ -98,7 +101,7 @@ describe('Phase 1 & Phase 5: Authentication & Session Verification', () => {
     assert.equal(result.valid, true, 'Correct password must verify');
     assert.equal(result.needsRehash, false, 'Current-parameter hash does not need rehash');
 
-    const wrongResult = await verifyPassword('WrongPassword123!', hash);
+    const wrongResult = await verifyPassword(testPassword(), hash);
     assert.equal(wrongResult.valid, false, 'Wrong password must fail');
     assert.equal((await verifyPassword(password, '')).valid, false, 'Empty hash must fail');
     assert.equal((await verifyPassword(password, '$scrypt$ln=99,r=8,p=1$AA==$AA==')).valid, false, 'Absurd parameters must be rejected');
@@ -106,18 +109,18 @@ describe('Phase 1 & Phase 5: Authentication & Session Verification', () => {
 
   test('SEC-015: Older hash formats still verify and are flagged for transparent upgrade', async () => {
     const crypto = require('crypto');
-    const password = 'LegacyPassword123!';
+    const password = testPassword();
 
     const salt = crypto.randomBytes(16).toString('hex');
     const oldScrypt = `scrypt:${salt}:${crypto.scryptSync(password, salt, 64, { N: 16384, r: 8, p: 1 }).toString('hex')}`;
     const oldScryptResult = await verifyPassword(password, oldScrypt);
     assert.deepEqual(oldScryptResult, { valid: true, needsRehash: true });
-    assert.equal((await verifyPassword('wrong-password-123', oldScrypt)).valid, false);
+    assert.equal((await verifyPassword(testPassword(), oldScrypt)).valid, false);
 
     const pbkdfSalt = crypto.randomBytes(16).toString('hex');
     const pbkdf2 = `${pbkdfSalt}:${crypto.pbkdf2Sync(password, pbkdfSalt, 10000, 64, 'sha512').toString('hex')}`;
     assert.deepEqual(await verifyPassword(password, pbkdf2), { valid: true, needsRehash: true });
-    assert.equal((await verifyPassword('wrong-password-123', pbkdf2)).valid, false);
+    assert.equal((await verifyPassword(testPassword(), pbkdf2)).valid, false);
   });
 
   test('SEC-034: Weak and common passwords are rejected during validation', () => {
