@@ -321,12 +321,13 @@ class App {
         const inner = document.createElement('div');
         inner.className = 'page-inner';
         content.innerHTML = '';
+        // Attach before rendering: pages wire up listeners and iframes via document.getElementById
+        // during render, which returns null for elements inside a detached container.
+        content.appendChild(inner);
         const res = renderFn(inner, Object.fromEntries(params));
-        if (res instanceof HTMLElement) {
+        if (res instanceof HTMLElement && res !== inner) {
           content.innerHTML = '';
           content.appendChild(res);
-        } else {
-          content.appendChild(inner);
         }
       } catch (e) {
         console.error('Page load error:', e);

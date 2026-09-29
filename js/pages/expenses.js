@@ -186,29 +186,29 @@ export function renderExpenses(container) {
     `;
 
     // Attach Event Listeners
-    document.getElementById('exp-add-btn')?.addEventListener('click', openAddModal);
-    document.getElementById('exp-export-btn')?.addEventListener('click', exportExpensesCSV);
+    container.querySelector('#exp-add-btn')?.addEventListener('click', openAddModal);
+    container.querySelector('#exp-export-btn')?.addEventListener('click', exportExpensesCSV);
 
-    document.getElementById('exp-search-input')?.addEventListener('input', (ev) => {
+    container.querySelector('#exp-search-input')?.addEventListener('input', (ev) => {
       filterSearch = ev.target.value.trim();
       renderView();
     });
 
-    document.getElementById('exp-period-select')?.addEventListener('change', (ev) => {
+    container.querySelector('#exp-period-select')?.addEventListener('change', (ev) => {
       filterPeriod = ev.target.value;
       renderView();
     });
 
-    document.getElementById('exp-category-select')?.addEventListener('change', (ev) => {
+    container.querySelector('#exp-category-select')?.addEventListener('change', (ev) => {
       filterCategory = ev.target.value;
       renderView();
     });
 
-    document.querySelectorAll('.exp-edit-action').forEach(btn => {
+    container.querySelectorAll('.exp-edit-action').forEach(btn => {
       btn.addEventListener('click', () => openEditModal(btn.dataset.eid));
     });
 
-    document.querySelectorAll('.exp-void-action').forEach(btn => {
+    container.querySelectorAll('.exp-void-action').forEach(btn => {
       btn.addEventListener('click', () => openVoidModal(btn.dataset.eid, btn.dataset.title));
     });
   }

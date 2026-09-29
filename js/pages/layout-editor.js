@@ -131,7 +131,7 @@ export function renderLayoutEditor(container, params = {}) {
     </div>
   `;
 
-  const iframe = document.getElementById('drawio-page-frame');
+  const iframe = container.querySelector('#drawio-page-frame');
 
   const DRAWIO_ORIGIN = 'https://embed.diagrams.net';
 
