@@ -458,7 +458,7 @@ module.exports = withHandler(async function handler(req, res) {
     if (!u.password_hash) {
       await verifyAgainstDummy(password);
       await logAuthEvent({ userId: u.id, event: 'login_failed_no_password', method: 'password', ip, userAgent, success: false });
-      throw new HttpError(401, 'INVALID_CREDENTIALS', 'Please use "Continue with Google" to sign in to this account.');
+      throw new HttpError(401, 'USE_GOOGLE', 'This account signs in with Google. Use "Continue with Google", or set a password for this email.');
     }
 
     const check = await verifyPassword(password, u.password_hash);

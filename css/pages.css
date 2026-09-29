@@ -2338,16 +2338,52 @@ tbody td {
   line-height: 1.4;
 }
 
-.auth-alert.alert-error {
+.auth-alert.alert-error,
+.auth-alert.auth-alert-error {
   background: rgba(239, 68, 68, 0.08);
   border: 1px solid rgba(239, 68, 68, 0.3);
   color: #ef4444;
 }
 
-.auth-alert.alert-success {
+.auth-alert.alert-success,
+.auth-alert.auth-alert-success {
   background: rgba(22, 179, 100, 0.08);
   border: 1px solid rgba(22, 179, 100, 0.3);
   color: #16b364;
+}
+
+.auth-alert a {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+/* Field-level validation on auth forms */
+.auth-form .input.is-invalid {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15);
+}
+
+.auth-field-error {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #ef4444;
+}
+
+@keyframes auth-shake {
+  10%, 90% { transform: translateX(-1px); }
+  20%, 80% { transform: translateX(2px); }
+  30%, 50%, 70% { transform: translateX(-3px); }
+  40%, 60% { transform: translateX(3px); }
+}
+
+.auth-card.shake {
+  animation: auth-shake 0.4s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-card.shake { animation: none; }
 }
 
 .auth-identity-buttons {

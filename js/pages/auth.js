@@ -31,40 +31,27 @@ export function renderLoginPage() {
         <span>or use email</span>
       </div>
 
-      <!-- Email-first sign in: the password box only appears for accounts that have a password -->
+      <!-- Email + password sign in -->
       <form id="email-login-form" class="auth-form" novalidate onsubmit="event.preventDefault();">
-        <div class="form-group" id="login-email-group">
+        <div class="form-group">
           <label class="form-label" for="login-email">Email address</label>
           <input type="email" id="login-email" class="input" required placeholder="name@yourlibrary.com" autocomplete="username email" autocapitalize="off" spellcheck="false" />
         </div>
 
-        <div id="login-email-chip" class="auth-email-chip" style="display:none;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;margin-bottom:12px;border:1px solid var(--color-border);border-radius:999px;font-size:13px;color:var(--color-text-primary);background:var(--color-bg-secondary);">
-          <span id="login-email-display" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
-          <button type="button" id="btn-change-email" style="background:none;border:none;color:var(--color-primary);font-size:12px;font-weight:600;cursor:pointer;padding:0;">Change</button>
-        </div>
-
-        <div class="form-group" id="login-password-group" style="display:none;">
+        <div class="form-group">
           <div style="display:flex;justify-content:space-between;align-items:center;">
             <label class="form-label" for="login-password">Password</label>
             <a href="#/forgot-password" class="auth-forgot-link" id="login-forgot-link">Forgot password?</a>
           </div>
           <div class="password-input-wrap">
-            <input type="password" id="login-password" class="input" placeholder="Enter your password" autocomplete="current-password" />
+            <input type="password" id="login-password" class="input" required placeholder="Enter your password" autocomplete="current-password" />
             <button type="button" class="password-toggle-btn" aria-label="Show password" aria-pressed="false">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
             </button>
           </div>
         </div>
 
-        <div id="login-google-only" style="display:none;margin-bottom:12px;padding:12px 14px;border:1px solid var(--color-border);border-radius:10px;background:var(--color-bg-secondary);font-size:13px;line-height:1.5;color:var(--color-text-primary);">
-          <div style="font-weight:600;margin-bottom:4px;">This account signs in with Google</div>
-          <div style="color:var(--color-text-secondary);margin-bottom:10px;">Use <strong>Continue with Google</strong> above. Please don't type your Google password here.</div>
-          <a href="#/forgot-password?mode=set" id="login-set-password-link" style="color:var(--color-primary);font-weight:600;">Or set a password by email</a>
-        </div>
-
-        <button type="submit" class="btn btn-primary btn-block" id="btn-email-submit">
-          Continue
-        </button>
+        <button type="submit" class="btn btn-primary btn-block" id="btn-email-submit">Sign in</button>
       </form>
 
       <div class="auth-footer">
@@ -110,7 +97,7 @@ export function renderSignupPage() {
         <span>or sign up with email</span>
       </div>
 
-      <form id="email-signup-form" class="auth-form" onsubmit="event.preventDefault();">
+      <form id="email-signup-form" class="auth-form" novalidate onsubmit="event.preventDefault();">
         <div class="form-group">
           <label class="form-label" for="reg-name">Your Full Name *</label>
           <input type="text" id="reg-name" class="input" required placeholder="e.g. Rahul Sharma" autocomplete="name" />
@@ -137,6 +124,11 @@ export function renderSignupPage() {
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
             </button>
           </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="reg-password-confirm">Confirm Password *</label>
+          <input type="password" id="reg-password-confirm" class="input" required placeholder="Type the same password again" minlength="10" autocomplete="new-password" />
         </div>
 
         <div class="form-group terms-checkbox-group" style="margin-top:10px;">
@@ -742,11 +734,87 @@ function loadScript(src) {
   });
 }
 
-function showAuthAlert(alertEl, message, type = 'error') {
+function showAuthAlert(alertEl, message, type = 'error', { html = false } = {}) {
   if (!alertEl) return;
-  alertEl.textContent = message;
-  alertEl.className = `auth-alert ${type === 'success' ? 'auth-alert-success' : 'auth-alert-error'}`;
+  if (html) alertEl.innerHTML = message; else alertEl.textContent = message;
+  alertEl.className = `auth-alert ${type === 'success' ? 'alert-success' : 'alert-error'}`;
   alertEl.style.display = 'block';
+  if (type !== 'success') {
+    const card = alertEl.closest('.auth-card');
+    if (card) {
+      card.classList.remove('shake');
+      void card.offsetWidth; // restart the animation
+      card.classList.add('shake');
+    }
+  }
+  const rect = alertEl.getBoundingClientRect();
+  if (rect.top < 0 || rect.bottom > window.innerHeight) alertEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+// Field-level error: red border + message under the field (or under its password wrapper).
+function setFieldError(input, message) {
+  if (!input) return;
+  input.classList.add('is-invalid');
+  input.setAttribute('aria-invalid', 'true');
+  const anchor = input.closest('.password-input-wrap, .phone-input-group') || input;
+  let msg = anchor.parentElement.querySelector(`.auth-field-error[data-for="${input.id}"]`);
+  if (!msg) {
+    msg = document.createElement('div');
+    msg.className = 'auth-field-error';
+    msg.dataset.for = input.id;
+    msg.id = `${input.id}-error`;
+    anchor.insertAdjacentElement('afterend', msg);
+    input.setAttribute('aria-describedby', msg.id);
+  }
+  msg.textContent = message;
+}
+
+function clearFieldError(input) {
+  if (!input) return;
+  input.classList.remove('is-invalid');
+  input.removeAttribute('aria-invalid');
+  const anchor = input.closest('.password-input-wrap, .phone-input-group') || input;
+  anchor.parentElement.querySelector(`.auth-field-error[data-for="${input.id}"]`)?.remove();
+}
+
+function clearAllFieldErrors(root) {
+  root.querySelectorAll('.input.is-invalid').forEach(clearFieldError);
+}
+
+// Clears a field's error as soon as the user edits it.
+function clearErrorOnInput(root) {
+  root.querySelectorAll('.auth-form .input').forEach(input => {
+    input.addEventListener('input', () => clearFieldError(input));
+  });
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// POST /api/auth and turn every failure into a readable message with status + code.
+async function postAuth(body) {
+  let res;
+  try {
+    res = await fetch('/api/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(body),
+    });
+  } catch (_) {
+    const err = new Error('Can\'t reach StudyFlow. Check your internet connection and try again.');
+    err.code = 'NETWORK';
+    throw err;
+  }
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json.ok) {
+    const err = new Error(json.error || (res.status >= 500
+      ? 'Something went wrong on our side. Please try again in a moment.'
+      : 'Request failed. Please try again.'));
+    err.status = res.status;
+    err.code = json.code;
+    throw err;
+  }
+  return json;
 }
 
 function setupLoginEvents(container) {
@@ -828,115 +896,80 @@ function setupLoginEvents(container) {
   }
 
   // Email + Password Sign In
-  // Email-first sign in: step 'email' → ask the server which methods the email uses →
-  // step 'password' (password accounts) or step 'google' (Google-only accounts).
+  // Email + password sign in with field-level validation and a clear message for every outcome.
   if (form) {
     const emailInput = container.querySelector('#login-email');
-    const emailGroup = container.querySelector('#login-email-group');
-    const emailChip = container.querySelector('#login-email-chip');
-    const emailDisplay = container.querySelector('#login-email-display');
-    const passwordGroup = container.querySelector('#login-password-group');
-    const googleOnlyBox = container.querySelector('#login-google-only');
     const forgotLink = container.querySelector('#login-forgot-link');
-    const setPasswordLink = container.querySelector('#login-set-password-link');
-    let step = 'email';
+    const idleLabel = 'Sign in';
+    clearErrorOnInput(container);
 
-    const setBusy = (busy, label) => {
-      submitBtn.disabled = busy;
-      submitBtn.innerHTML = busy
-        ? `<span class="spinner" style="width:16px;height:16px;border-width:2px;border-color:rgba(255,255,255,0.3);border-top-color:#ffffff;display:inline-block;vertical-align:middle;margin-right:8px;"></span><span>${label}</span>`
-        : label;
+    // Keep "Forgot password?" pointed at whatever email is typed.
+    const syncForgotLink = () => {
+      const email = emailInput.value.trim();
+      forgotLink.setAttribute('href', EMAIL_RE.test(email) ? `#/forgot-password?email=${encodeURIComponent(email)}` : '#/forgot-password');
     };
-
-    const showStep = (next, email) => {
-      step = next;
-      const onEmail = next === 'email';
-      emailGroup.style.display = onEmail ? '' : 'none';
-      emailChip.style.display = onEmail ? 'none' : 'flex';
-      passwordGroup.style.display = next === 'password' ? '' : 'none';
-      googleOnlyBox.style.display = next === 'google' ? '' : 'none';
-      submitBtn.style.display = next === 'google' ? 'none' : '';
-      submitBtn.innerHTML = next === 'password' ? 'Sign in' : 'Continue';
-      if (email) {
-        emailDisplay.textContent = email;
-        const q = `email=${encodeURIComponent(email)}`;
-        forgotLink.setAttribute('href', `#/forgot-password?${q}`);
-        setPasswordLink.setAttribute('href', `#/forgot-password?mode=set&${q}`);
-      }
-      if (onEmail) {
-        pwdInput.value = '';
-        emailInput.focus();
-      } else if (next === 'password') {
-        pwdInput.focus();
-      }
-    };
-
-    container.querySelector('#btn-change-email').addEventListener('click', () => {
-      alertEl.style.display = 'none';
-      showStep('email');
-    });
+    emailInput.addEventListener('input', syncForgotLink);
 
     form.addEventListener('submit', async () => {
       alertEl.style.display = 'none';
+      clearAllFieldErrors(container);
       const email = emailInput.value.trim();
-
-      if (step === 'email') {
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-          showAuthAlert(alertEl, 'Enter a valid email address, for example name@example.com.');
-          emailInput.focus();
-          return;
-        }
-        setBusy(true, 'Checking...');
-        let methods = ['password'];
-        try {
-          const res = await fetch('/api/auth', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'same-origin',
-            body: JSON.stringify({ action: 'check_email', email }),
-          });
-          const json = await res.json();
-          if (!json.ok) throw new Error(json.error || 'Could not check this email. Please try again.');
-          methods = json.methods || ['password'];
-        } catch (err) {
-          setBusy(false, 'Continue');
-          showAuthAlert(alertEl, err.message);
-          return;
-        }
-        setBusy(false, 'Continue');
-        // A password manager may have filled the password already: sign straight in.
-        const autofilled = pwdInput.value;
-        showStep(methods.includes('password') ? 'password' : 'google', email);
-        if (step === 'password' && autofilled) {
-          pwdInput.value = autofilled;
-          form.requestSubmit ? form.requestSubmit() : form.dispatchEvent(new Event('submit'));
-        }
-        return;
-      }
-
-      if (step !== 'password') return;
       const password = pwdInput.value;
+
+      let firstInvalid = null;
+      if (!email) {
+        setFieldError(emailInput, 'Enter your email address.');
+        firstInvalid = firstInvalid || emailInput;
+      } else if (!EMAIL_RE.test(email)) {
+        setFieldError(emailInput, 'Enter a valid email address, for example name@example.com.');
+        firstInvalid = firstInvalid || emailInput;
+      }
       if (!password) {
-        showAuthAlert(alertEl, 'Enter your password.');
-        pwdInput.focus();
+        setFieldError(pwdInput, 'Enter your password.');
+        firstInvalid = firstInvalid || pwdInput;
+      }
+      if (firstInvalid) {
+        showAuthAlert(alertEl, 'Please fix the highlighted fields.');
+        firstInvalid.focus();
         return;
       }
 
-      setBusy(true, 'Signing in...');
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<span class="spinner" style="width:16px;height:16px;border-width:2px;border-color:rgba(255,255,255,0.3);border-top-color:#ffffff;display:inline-block;vertical-align:middle;margin-right:8px;"></span><span>Signing in...</span>';
+
       try {
-        const res = await store.login(email, password);
-        if (res.state === 'needs_library') {
-          window.location.hash = '#/setup-library';
-        } else if (res.state === 'needs_onboarding') {
-          window.location.hash = '#/onboarding';
-        } else {
-          window.location.hash = '#/dashboard';
-        }
+        const res = await postAuth({ action: 'login', email, password });
+        store._loaded = false;
+        await store.load();
+        const state = res.state || store.authState;
+        window.location.hash = state === 'needs_library' ? '#/setup-library'
+          : state === 'needs_onboarding' ? '#/onboarding'
+          : '#/dashboard';
       } catch (err) {
-        showAuthAlert(alertEl, err.message || 'Incorrect email or password.');
-        pwdInput.select();
+        const setPwdHref = `#/forgot-password?mode=set&email=${encodeURIComponent(email)}`;
+        const resetHref = `#/forgot-password?email=${encodeURIComponent(email)}`;
+        if (err.code === 'INVALID_CREDENTIALS') {
+          setFieldError(pwdInput, 'Incorrect email or password.');
+          showAuthAlert(alertEl,
+            `The email or password you entered is incorrect. Please try again, or <a href="${resetHref}">reset your password</a>.`,
+            'error', { html: true });
+          pwdInput.value = '';
+          pwdInput.focus();
+        } else if (err.code === 'USE_GOOGLE') {
+          showAuthAlert(alertEl,
+            `This account signs in with Google. Use <strong>Continue with Google</strong> above, or <a href="${setPwdHref}">set a password for this email</a>.`,
+            'error', { html: true });
+          pwdInput.value = '';
+        } else if (err.status === 429) {
+          showAuthAlert(alertEl, `Too many sign-in attempts. ${err.message.replace(/^Too many requests\.\s*/i, '')} You can also reset your password.`);
+        } else if (err.code === 'ACCOUNT_DISABLED') {
+          showAuthAlert(alertEl, 'This account has been disabled. Please contact your library owner or support.');
+        } else {
+          showAuthAlert(alertEl, err.message || 'Sign in failed. Please try again.');
+        }
       } finally {
-        setBusy(false, 'Sign in');
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = idleLabel;
       }
     });
   }
@@ -1009,21 +1042,39 @@ function setupSignupEvents(container) {
 
   // Email + Password Sign Up
   if (form) {
+    clearErrorOnInput(container);
     form.addEventListener('submit', async () => {
       alertEl.style.display = 'none';
-      const name = container.querySelector('#reg-name').value.trim();
-      const email = container.querySelector('#reg-email').value.trim();
-      const phone = container.querySelector('#reg-phone').value.trim();
-      const password = container.querySelector('#reg-password').value;
+      clearAllFieldErrors(container);
+      const nameInput = container.querySelector('#reg-name');
+      const emailInput = container.querySelector('#reg-email');
+      const phoneInput = container.querySelector('#reg-phone');
+      const passwordInput = container.querySelector('#reg-password');
+      const confirmInput = container.querySelector('#reg-password-confirm');
+      const name = nameInput.value.trim();
+      const email = emailInput.value.trim();
+      const phone = phoneInput.value.replace(/\D/g, '');
+      const password = passwordInput.value;
       const termsAccepted = container.querySelector('#reg-terms-check').checked;
 
-      if (!termsAccepted) {
-        showAuthAlert(alertEl, 'Please agree to the Terms of Service to create an account.');
+      const errors = [];
+      const fail = (input, msg) => { setFieldError(input, msg); errors.push(input); };
+      if (name.length < 2) fail(nameInput, 'Enter your full name.');
+      if (!email) fail(emailInput, 'Enter your email address.');
+      else if (!EMAIL_RE.test(email)) fail(emailInput, 'Enter a valid email address, for example name@example.com.');
+      if (phone && phone.length !== 10) fail(phoneInput, 'Enter a 10-digit mobile number, or leave it empty.');
+      if (password.length < 10) fail(passwordInput, 'Password must be at least 10 characters long.');
+      if (!confirmInput.value) fail(confirmInput, 'Type your password again to confirm it.');
+      else if (confirmInput.value !== password) fail(confirmInput, 'Passwords do not match.');
+
+      if (errors.length) {
+        showAuthAlert(alertEl, 'Please fix the highlighted fields.');
+        errors[0].focus();
         return;
       }
-
-      if (password.length < 10) {
-        showAuthAlert(alertEl, 'Password must be at least 10 characters long.');
+      if (!termsAccepted) {
+        showAuthAlert(alertEl, 'Please agree to the Terms of Service and Privacy Policy to create an account.');
+        container.querySelector('#reg-terms-check').focus();
         return;
       }
 
@@ -1038,7 +1089,20 @@ function setupSignupEvents(container) {
         await store.register(name, email, password, phone, termsAccepted);
         window.location.hash = '#/setup-library';
       } catch (err) {
-        showAuthAlert(alertEl, err.message || 'Registration failed');
+        const message = err.message || 'Registration failed. Please try again.';
+        if (/already exists/i.test(message)) {
+          setFieldError(container.querySelector('#reg-email'), 'This email is already registered.');
+          showAuthAlert(alertEl,
+            `An account with this email already exists. <a href="#/login">Sign in</a> or <a href="#/forgot-password?email=${encodeURIComponent(email)}">reset your password</a>.`,
+            'error', { html: true });
+        } else if (/password/i.test(message)) {
+          setFieldError(container.querySelector('#reg-password'), message);
+          showAuthAlert(alertEl, message);
+        } else if (err instanceof TypeError) {
+          showAuthAlert(alertEl, 'Can\'t reach StudyFlow. Check your internet connection and try again.');
+        } else {
+          showAuthAlert(alertEl, message);
+        }
       } finally {
         submitBtn.disabled = false;
         submitBtn.innerHTML = origText;
