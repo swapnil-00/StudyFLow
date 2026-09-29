@@ -420,6 +420,29 @@ export function renderForgotPasswordPage(_container, params = {}) {
     const pwdInput = $('#reset-new-password');
     const confirmInput = $('#reset-confirm-password');
     const resendBtn = $('#btn-resend-code');
+    let setMode = isSetMode;
+
+    // Accounts created with Google have no password yet: word the page as "Set a password".
+    const applySetMode = () => {
+      setMode = true;
+      container.querySelector('.auth-title').textContent = 'Set a password';
+      const setBtn = $('#btn-set-password');
+      setBtn.innerHTML = 'Set password &amp; sign in';
+      setBtn.dataset.label = setBtn.innerHTML;
+    };
+    const detectGoogleOnly = async (email) => {
+      if (setMode) return;
+      try {
+        const res = await fetch('/api/auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ action: 'check_email', email }),
+        });
+        const json = await res.json();
+        if (json.ok && Array.isArray(json.methods) && !json.methods.includes('password')) applySetMode();
+      } catch (_) { /* wording only; ignore */ }
+    };
     let emailVal = '';
     let resetToken = '';
     let cooldownTimer = null;
@@ -490,7 +513,10 @@ export function renderForgotPasswordPage(_container, params = {}) {
       const btn = $('#btn-request-reset');
       busy(btn, true, 'Sending code...');
       try {
-        const json = await post({ action: 'password_reset_request', email: emailVal });
+        const [json] = await Promise.all([
+          post({ action: 'password_reset_request', email: emailVal }),
+          detectGoogleOnly(emailVal),
+        ]);
         showAuthAlert(alertEl, json.message || 'If an account exists for this email, we have sent a code.', 'success');
         subtitle.textContent = 'Enter the 6-digit code we emailed to ' + emailVal + '.';
         codeInput.value = '';
@@ -609,7 +635,14 @@ export function renderForgotPasswordPage(_container, params = {}) {
       }
     });
 
-    if (prefillEmail) $('#btn-request-reset').focus(); else emailInput.focus();
+    // "Set a password" from the login page sends the code immediately (one click, not two).
+    if (params.autosend && EMAIL_RE.test(prefillEmail)) {
+      forms[1].requestSubmit ? forms[1].requestSubmit() : forms[1].dispatchEvent(new Event('submit'));
+    } else if (prefillEmail) {
+      $('#btn-request-reset').focus();
+    } else {
+      emailInput.focus();
+    }
   }, 0);
 
   return container;
@@ -738,6 +771,7 @@ function showAuthAlert(alertEl, message, type = 'error', { html = false } = {}) 
   if (!alertEl) return;
   if (html) alertEl.innerHTML = message; else alertEl.textContent = message;
   alertEl.className = `auth-alert ${type === 'success' ? 'alert-success' : 'alert-error'}`;
+  alertEl.removeAttribute('style'); // drop inline styles left by custom panels
   alertEl.style.display = 'block';
   if (type !== 'success') {
     const card = alertEl.closest('.auth-card');
@@ -956,10 +990,21 @@ function setupLoginEvents(container) {
           pwdInput.value = '';
           pwdInput.focus();
         } else if (err.code === 'USE_GOOGLE') {
-          showAuthAlert(alertEl,
-            `This account signs in with Google. Use <strong>Continue with Google</strong> above, or <a href="${setPwdHref}">set a password for this email</a>.`,
-            'error', { html: true });
+          // Account was created with Google and has no password yet: offer both ways forward.
           pwdInput.value = '';
+          alertEl.className = 'auth-alert';
+          alertEl.style.cssText = 'display:block;border:1px solid var(--color-border);background:var(--color-bg-secondary);color:var(--color-text-primary);';
+          alertEl.innerHTML = `
+            <div style="font-weight:600;margin-bottom:4px;">This account uses Google sign-in</div>
+            <div style="color:var(--color-text-secondary);margin-bottom:12px;">
+              <strong>${utils.escapeHtml(email)}</strong> was created with Google, so it doesn't have a password yet.
+              Continue with Google, or set a password to sign in with email too.
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button type="button" class="btn btn-primary btn-sm" id="btn-use-google-instead">Continue with Google</button>
+              <a class="btn btn-secondary btn-sm" href="${setPwdHref}&autosend=1">Set a password</a>
+            </div>`;
+          container.querySelector('#btn-use-google-instead')?.addEventListener('click', () => googleBtn?.click());
         } else if (err.status === 429) {
           showAuthAlert(alertEl, `Too many sign-in attempts. ${err.message.replace(/^Too many requests\.\s*/i, '')} You can also reset your password.`);
         } else if (err.code === 'ACCOUNT_DISABLED') {

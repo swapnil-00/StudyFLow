@@ -743,6 +743,7 @@ module.exports = withHandler(async function handler(req, res) {
         role: sessionData.role,
         avatarColor: sessionData.avatarColor,
         hasPassword: sessionData.hasPassword,
+        hasGoogle: sessionData.hasGoogle,
       },
       activeLibrary: sessionData.organization,
       libraries: memberships.rows,

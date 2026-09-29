@@ -11,12 +11,31 @@ export function renderDashboard(container) {
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const user = store.currentUser || {};
+  const firstName = (user.name || '').trim().split(/\s+/)[0] || 'there';
+
+  // One-time suggestion for accounts created with Google: add a password for email sign-in.
+  const nudgeKey = `sf_pwd_nudge_dismissed_${user.id || ''}`;
+  let nudgeDismissed = false;
+  try { nudgeDismissed = localStorage.getItem(nudgeKey) === '1'; } catch (_) {}
+  const showPasswordNudge = user.hasPassword === false && user.email && !nudgeDismissed;
 
   container.innerHTML = `
+    ${showPasswordNudge ? `
+    <div id="pwd-nudge" role="status" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 16px;margin-bottom:var(--space-4);border:1px solid var(--color-border);border-radius:var(--radius-lg);background:var(--color-bg-secondary);font-size:13px;">
+      <div>
+        <strong>Add a password to your account.</strong>
+        <span style="color:var(--color-text-secondary);">You signed up with Google. Add a password so you can also sign in with ${utils.escapeHtml(user.email)}.</span>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <a class="btn btn-primary btn-sm" href="#/forgot-password?mode=set&autosend=1&email=${encodeURIComponent(user.email)}">Set password</a>
+        <button type="button" class="btn btn-ghost btn-sm" id="pwd-nudge-dismiss">Not now</button>
+      </div>
+    </div>` : ''}
     <div class="page-header">
       <div class="page-header-row">
         <div>
-          <h1 class="page-title">${greeting}, Admin 👋</h1>
+          <h1 class="page-title">${greeting}, ${utils.escapeHtml(firstName)} 👋</h1>
           <p class="page-subtitle">Here's what's happening at <strong>${branch?.name || 'your library'}</strong> today.</p>
         </div>
         <div style="display:flex;gap:var(--space-3);">
@@ -166,6 +185,11 @@ export function renderDashboard(container) {
       </div>
     </div>
   `;
+
+  container.querySelector('#pwd-nudge-dismiss')?.addEventListener('click', () => {
+    try { localStorage.setItem(nudgeKey, '1'); } catch (_) {}
+    container.querySelector('#pwd-nudge')?.remove();
+  });
 
   // Animate cards
   container.querySelectorAll('.stat-card, .card').forEach((el, i) => {

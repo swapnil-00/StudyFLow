@@ -224,9 +224,24 @@ export function renderSettings(container) {
           <div class="card-header"><div class="card-title">Security & Active Devices</div></div>
           <div class="card-body" style="display:flex;flex-direction:column;gap:var(--space-4);">
             <div>
-              <div style="font-size:var(--text-sm);font-weight:600;color:var(--color-text-primary);margin-bottom:4px;">Linked Identity</div>
-              <div style="font-size:var(--text-xs);color:var(--color-text-secondary);">
-                ${user.firebaseUid ? '✓ Google / Phone authentication linked' : 'Standard email & password account'}
+              <div style="font-size:var(--text-sm);font-weight:600;color:var(--color-text-primary);margin-bottom:8px;">Sign-in methods</div>
+              <div style="display:flex;flex-direction:column;gap:8px;font-size:12px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid var(--color-border);border-radius:8px;background:var(--color-bg-secondary);">
+                  <div>
+                    <div style="font-weight:600;color:var(--color-text-primary);">Google</div>
+                    <div style="color:var(--color-text-tertiary);">${esc(user.email || '')}</div>
+                  </div>
+                  <span class="badge ${user.hasGoogle ? 'badge-success' : 'badge-neutral'}">${user.hasGoogle ? '✓ Connected' : 'Not connected'}</span>
+                </div>
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid var(--color-border);border-radius:8px;background:var(--color-bg-secondary);">
+                  <div>
+                    <div style="font-weight:600;color:var(--color-text-primary);">Email &amp; password</div>
+                    <div style="color:var(--color-text-tertiary);">${user.hasPassword ? 'You can sign in with your email and password' : 'Not set — add a password to sign in without Google'}</div>
+                  </div>
+                  ${user.hasPassword
+                    ? '<span class="badge badge-success">✓ Set</span>'
+                    : `<a class="btn btn-primary btn-sm" href="#/forgot-password?mode=set&autosend=1&email=${encodeURIComponent(user.email || '')}">Set password</a>`}
+                </div>
               </div>
             </div>
 
@@ -250,7 +265,7 @@ export function renderSettings(container) {
                 You sign in with Google. You can also add a password so you can sign in with your email.
                 We'll email a 6-digit code to <strong>${esc(user.email || 'your email')}</strong> to confirm it's you.
               </p>
-              <a class="btn btn-primary w-full" href="#/forgot-password?mode=set&email=${encodeURIComponent(user.email || '')}">Set a password</a>
+              <a class="btn btn-primary w-full" href="#/forgot-password?mode=set&autosend=1&email=${encodeURIComponent(user.email || '')}">Set a password</a>
               ` : `
               <div style="font-size:var(--text-sm);font-weight:600;color:var(--color-text-primary);margin-bottom:8px;">Change Password</div>
               <div class="form-group" style="margin-bottom:8px;">
