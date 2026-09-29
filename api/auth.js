@@ -21,7 +21,7 @@ const {
 const { verifyFirebaseIdToken } = require('../lib/firebase');
 const { checkRateLimit } = require('../lib/ratelimit');
 const { withHandler } = require('../lib/http');
-const { sendPasswordResetCode, sendPasswordChangedNotice } = require('../lib/mailer');
+const { sendMail, sendPasswordResetCode, sendPasswordChangedNotice } = require('../lib/mailer');
 
 const RESET_CODE_TTL_MINUTES = 10;
 const RESET_CODE_MAX_ATTEMPTS = 5;
@@ -294,6 +294,61 @@ module.exports = withHandler(async function handler(req, res) {
   }
 
   // ── 2. LOGIN (Email + Password) ───────────────────────────────────────────
+  // ── Email delivery self-test (owner only) ───────────────────────────────
+  // Reset-code sends fail silently to the user by design (no account enumeration), so owners
+  // need a way to see the real provider error while configuring RESEND_API_KEY / SMTP_URL.
+  if (action === 'send_test_email') {
+    const session = await requireSession(req);
+    if (session.role !== 'owner') {
+      throw new HttpError(403, 'FORBIDDEN', 'Only the library owner can test email delivery.');
+    }
+    if (!session.email) {
+      throw new HttpError(400, 'NO_EMAIL', 'Your account has no email address to send a test to.');
+    }
+    await checkRateLimit(query, `testmail:user:${session.userId}`, 5, 3600);
+
+    const provider = process.env.RESEND_API_KEY ? 'resend' : process.env.SMTP_URL ? 'smtp' : 'none';
+    const from = process.env.MAIL_FROM || '(default) StudyFlow <onboarding@resend.dev>';
+    try {
+      const result = await sendMail({
+        to: session.email,
+        subject: 'StudyFlow: test email',
+        text: 'Email delivery is working. Password reset codes will be delivered from this address.',
+        html: '<p>Email delivery is working. Password reset codes will be delivered from this address.</p>',
+      });
+      return res.json({
+        ok: true,
+        provider: result.provider,
+        delivered: result.delivered,
+        from,
+        to: session.email,
+        message: result.delivered
+          ? `Test email sent to ${session.email} via ${result.provider}. Check your inbox (and spam).`
+          : 'No email provider is configured, so nothing was sent (development mode only logs the email).',
+      });
+    } catch (mailErr) {
+      const raw = String(mailErr?.message || mailErr).replace(/\/\/[^@\s/]+@/g, '//***@');
+      let hint = 'Check the email settings in Vercel, then redeploy.';
+      if (/No email provider configured/i.test(raw)) {
+        hint = 'Set SMTP_URL (Gmail app password) or RESEND_API_KEY in Vercel → Settings → Environment Variables, then redeploy.';
+      } else if (/nodemailer is not installed/i.test(raw)) {
+        hint = 'The deployed version is missing nodemailer. Redeploy the latest commit.';
+      } else if (/Username and Password not accepted|Invalid login|535|BadCredentials/i.test(raw)) {
+        hint = 'Gmail rejected the login. Use a 16-letter App Password (not your normal Gmail password, no spaces), and write the @ in the Gmail address as %40 inside SMTP_URL.';
+      } else if (/testing emails|own email address|verify a domain|domain is not verified/i.test(raw)) {
+        hint = 'Resend\'s test sender only delivers to the email you signed up to Resend with. Verify a domain in Resend, or use the Gmail SMTP option instead (and remove RESEND_API_KEY).';
+      } else if (/API key is invalid|401|Unauthorized/i.test(raw)) {
+        hint = 'The RESEND_API_KEY value is wrong or was revoked. Create a new key in Resend and update it in Vercel.';
+      } else if (/ENOTFOUND|ECONNREFUSED|ETIMEDOUT|ECONNRESET|Greeting never received|Invalid URL|Invalid protocol/i.test(raw)) {
+        hint = 'Could not connect to the mail server. SMTP_URL should look like smtps://name%40gmail.com:APPPASSWORD@smtp.gmail.com:465';
+      } else if (/from.*(invalid|not allowed)|sender/i.test(raw)) {
+        hint = 'MAIL_FROM is not allowed by the provider. For Gmail it must be the same Gmail address; for Resend it must use your verified domain.';
+      }
+      console.error(`[${req.correlationId}] Test email failed via ${provider}:`, raw);
+      return res.status(502).json({ ok: false, provider, from, error: raw.slice(0, 400), hint });
+    }
+  }
+
   // ── Identifier-first sign-in: which methods does this email use? ─────────
   // Lets the login page ask for a password only when the account has one, so users of
   // Google-created accounts are never prompted to type their Google password into this site.

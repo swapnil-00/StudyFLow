@@ -204,6 +204,21 @@ export function renderSettings(container) {
           </div>
         </div>
 
+        ${user.role === 'owner' ? `
+        <!-- Email delivery self-test (password reset codes) -->
+        <div class="card">
+          <div class="card-header"><div class="card-title">Email Delivery</div></div>
+          <div class="card-body" style="display:flex;flex-direction:column;gap:var(--space-3);">
+            <p style="font-size:12px;color:var(--color-text-secondary);margin:0;">
+              Password reset codes are sent by email. Send yourself a test to check the setup
+              (Gmail <code>SMTP_URL</code> or <code>RESEND_API_KEY</code> + <code>MAIL_FROM</code> in Vercel).
+            </p>
+            <button class="btn btn-secondary" id="btn-send-test-email" onclick="sendTestEmail()">Send test email to ${esc(user.email || 'me')}</button>
+            <div id="test-email-result" style="display:none;padding:var(--space-3);border-radius:var(--radius-lg);font-size:12px;line-height:1.5;"></div>
+          </div>
+        </div>
+        ` : ''}
+
         <!-- Security & Active Sessions (Plan §4.3 & §5) -->
         <div class="card">
           <div class="card-header"><div class="card-title">Security & Active Devices</div></div>
@@ -277,6 +292,40 @@ export function renderSettings(container) {
       }
     } catch (_) {}
   }, 0);
+
+  window.sendTestEmail = async function() {
+    const btn = document.getElementById('btn-send-test-email');
+    const box = document.getElementById('test-email-result');
+    if (!btn || !box) return;
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+    box.style.display = 'none';
+    try {
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ action: 'send_test_email' })
+      });
+      const json = await res.json().catch(() => ({}));
+      const ok = res.ok && json.ok && json.delivered !== false;
+      box.style.background = ok ? 'var(--sf-success-50, #ecfdf3)' : 'var(--sf-error-50, #fef3f2)';
+      box.style.color = ok ? 'var(--sf-success-700, #067647)' : 'var(--sf-error-700, #b42318)';
+      box.innerHTML = ok
+        ? `<strong>Sent.</strong> ${esc(json.message || '')}<br><span style="opacity:.8;">From: ${esc(json.from || '')}</span>`
+        : `<strong>Not sent.</strong> ${esc(json.hint || json.message || json.error || 'Unknown error')}`
+          + (json.error ? `<div style="margin-top:6px;font-family:var(--font-mono);opacity:.8;word-break:break-word;">${esc(json.error)}</div>` : '')
+          + (json.provider ? `<div style="margin-top:4px;opacity:.8;">Provider: ${esc(json.provider)} · From: ${esc(json.from || '')}</div>` : '');
+      box.style.display = 'block';
+    } catch (e) {
+      box.style.display = 'block';
+      box.textContent = e.message || 'Request failed';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = label;
+    }
+  };
 
   window.revokeSessionAction = async function(sessionId) {
     try {
