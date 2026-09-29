@@ -1,5 +1,7 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+const esbuild = require('esbuild');
 
 const rootDir = __dirname;
 const pagesDir = path.join(rootDir, 'js', 'pages');
@@ -136,21 +138,69 @@ const publicAssetsDir = path.join(publicDir, 'assets');
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
-// Copy bundle.js
-fs.writeFileSync(path.join(publicJsDir, 'bundle.js'), bundleContent, 'utf8');
-
-// Copy index.html
-const indexHtmlPath = path.join(rootDir, 'index.html');
-if (fs.existsSync(indexHtmlPath)) {
-  fs.copyFileSync(indexHtmlPath, path.join(publicDir, 'index.html'));
+// Clear previously emitted hashed JS/CSS so stale bundles are not deployed
+for (const dir of [publicJsDir, publicCssDir]) {
+  for (const f of fs.readdirSync(dir)) fs.unlinkSync(path.join(dir, f));
 }
 
-// Copy CSS directory
+const contentHash = (text) => crypto.createHash('sha256').update(text).digest('hex').slice(0, 10);
+
+// Minified, content-hashed JS bundle. The bundle is a classic script whose top-level
+// functions are referenced from inline handlers, so esbuild runs as a plain transform
+// (no format), which keeps top-level names intact and only renames local identifiers.
+const minifiedJs = esbuild.transformSync(bundleContent, { loader: 'js', minify: true, target: 'es2019', legalComments: 'none' }).code;
+assertTopLevelNamesPreserved(
+  [utilsJsPath, iconsJsPath, storeJsPath]
+    .filter(p => fs.existsSync(p))
+    .map(p => fs.readFileSync(p, 'utf8'))
+    .concat(appContent)
+    .join('\n'),
+  minifiedJs
+);
+const jsFileName = `bundle.${contentHash(minifiedJs)}.js`;
+fs.writeFileSync(path.join(publicJsDir, jsFileName), minifiedJs, 'utf8');
+
+// One minified, content-hashed stylesheet in the original cascade order
 const cssDir = path.join(rootDir, 'css');
-if (fs.existsSync(cssDir)) {
-  const cssFiles = fs.readdirSync(cssDir);
-  for (const f of cssFiles) {
-    fs.copyFileSync(path.join(cssDir, f), path.join(publicCssDir, f));
+const cssOrder = ['tokens.css', 'base.css', 'layout.css', 'components.css', 'pages.css'];
+const cssSource = cssOrder
+  .filter(f => fs.existsSync(path.join(cssDir, f)))
+  .map(f => fs.readFileSync(path.join(cssDir, f), 'utf8'))
+  .join('\n');
+const minifiedCss = esbuild.transformSync(cssSource, { loader: 'css', minify: true }).code;
+const cssFileName = `app.${contentHash(minifiedCss)}.css`;
+fs.writeFileSync(path.join(publicCssDir, cssFileName), minifiedCss, 'utf8');
+
+// index.html pointing at the hashed assets
+const indexHtmlPath = path.join(rootDir, 'index.html');
+if (fs.existsSync(indexHtmlPath)) {
+  let html = fs.readFileSync(indexHtmlPath, 'utf8');
+  const cssLinkPattern = /[ \t]*<link rel="stylesheet" href="\/css\/[a-z-]+\.css(\?v=[^"]*)?" \/>\r?\n/g;
+  let cssReplaced = false;
+  html = html.replace(cssLinkPattern, (match) => {
+    if (cssReplaced) return '';
+    cssReplaced = true;
+    return `  <link rel="stylesheet" href="/css/${cssFileName}" />\n`;
+  });
+  html = html.replace(/\/js\/bundle\.js(\?v=[^"]*)?/, `/js/${jsFileName}`);
+  if (!cssReplaced || !html.includes(`/js/${jsFileName}`)) {
+    throw new Error('build.js: could not rewrite asset references in index.html');
+  }
+  fs.writeFileSync(path.join(publicDir, 'index.html'), html, 'utf8');
+}
+
+console.log(`Minified assets: js/${jsFileName} (${(minifiedJs.length / 1024).toFixed(1)} KB), css/${cssFileName} (${(minifiedCss.length / 1024).toFixed(1)} KB)`);
+
+// Guard: the unwrapped (global) sections — utils, icons, store, app core — declare names that
+// inline onclick handlers and other scripts use. Fail the build if the minifier renamed any of them.
+function assertTopLevelNamesPreserved(globalSource, output) {
+  const declared = [...globalSource.matchAll(/^(?:async\s+)?(?:function\s*\*?|class|const|let|var)\s+([A-Za-z_$][\w$]*)/gm)].map(m => m[1]);
+  const escapeRe = (s) => s.replace(/\$/g, '\\$');
+  const missing = [...new Set(declared)].filter(n =>
+    !new RegExp(`(?:function\\*?|class|const|let|var|,)\\s*${escapeRe(n)}\\b`).test(output)
+  );
+  if (missing.length) {
+    throw new Error(`build.js: minifier renamed global names used by inline handlers: ${missing.slice(0, 10).join(', ')}`);
   }
 }
 

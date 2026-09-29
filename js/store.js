@@ -42,8 +42,14 @@ class Store {
     }
     this._loading = true;
     try {
-      // 1. Fetch Auth & Membership State from /api/auth?action=me
-      const meRes = await fetch(`${API_BASE}/api/auth?action=me`, { credentials: 'same-origin' });
+      // 1. Fetch auth state and library data in parallel (saves a full round trip on every load).
+      //    /api/data is only used when auth state is 'ready'; otherwise its 401/409 is ignored.
+      const mePromise = fetch(`${API_BASE}/api/auth?action=me`, { credentials: 'same-origin' });
+      const dataPromise = fetch(`${API_BASE}/api/data`, { credentials: 'same-origin' })
+        .then(async r => ({ ok: r.ok, json: await r.json().catch(() => null) }))
+        .catch(() => ({ ok: false, json: null }));
+
+      const meRes = await mePromise;
       const meJson = await meRes.json();
 
       if (meRes.ok && meJson.ok && meJson.state !== 'anonymous') {
@@ -52,11 +58,10 @@ class Store {
         this._authState = meJson.state || 'anonymous';
         this._libraries = meJson.libraries || [];
 
-        // 2. Only fetch library data if in 'ready' state
+        // 2. Only use library data if in 'ready' state
         if (this._authState === 'ready') {
-          const dataRes = await fetch(`${API_BASE}/api/data`, { credentials: 'same-origin' });
-          const dataJson = await dataRes.json();
-          if (dataRes.ok && dataJson.ok) {
+          const { ok: dataOk, json: dataJson } = await dataPromise;
+          if (dataOk && dataJson?.ok) {
             this._db = dataJson.db;
             if (dataJson.organization) this._organization = dataJson.organization;
           } else {
@@ -293,6 +298,42 @@ class Store {
     this._subscribers.forEach(fn => fn());
   }
 
+  // ── Lookup indexes ────────────────────────────────────────────────
+  // Id/foreign-key maps so rendering (e.g. seat status for every seat) does not rescan whole
+  // collections. Each entry remembers its array position and is re-validated on every hit, so
+  // a replaced array, a push/filter, or an in-place `arr[i] = {...}` replacement triggers a rebuild.
+  _buildIndex(name, arr, keyFn) {
+    if (!this._indexes) this._indexes = {};
+    const map = new Map();
+    for (let pos = 0; pos < arr.length; pos++) {
+      const item = arr[pos];
+      const key = item ? keyFn(item) : undefined;
+      if (key === undefined || key === null) continue;
+      const entry = { item, pos };
+      const list = map.get(key);
+      if (list) list.push(entry); else map.set(key, [entry]);
+    }
+    const index = { src: arr, len: arr.length, map };
+    this._indexes[name] = index;
+    return index;
+  }
+
+  _lookup(name, arr, keyFn, key) {
+    if (key === undefined || key === null) return [];
+    let index = this._indexes?.[name];
+    if (!index || index.src !== arr || index.len !== arr.length) index = this._buildIndex(name, arr, keyFn);
+    let entries = index.map.get(key) || [];
+    if (entries.some(e => arr[e.pos] !== e.item || keyFn(e.item) !== key)) {
+      index = this._buildIndex(name, arr, keyFn);
+      entries = index.map.get(key) || [];
+    }
+    return entries.map(e => e.item);
+  }
+
+  _lookupOne(name, arr, keyFn, key) {
+    return this._lookup(name, arr, keyFn, key)[0];
+  }
+
   subscribe(fn) {
     this._subscribers.push(fn);
     return () => { this._subscribers = this._subscribers.filter(s => s !== fn); };
@@ -370,11 +411,11 @@ class Store {
     const rooms = this._db?.rooms || [];
     return floorId ? rooms.filter(r => r.floorId === floorId) : rooms;
   }
-  getRoom(id) { return (this._db?.rooms || []).find(r => r.id === id); }
+  getRoom(id) { return this._lookupOne('roomById', this._db?.rooms || [], r => r.id, id); }
 
   getRoomsForBranch(branchId) {
-    const floorIds = this.getFloors(branchId).map(f => f.id);
-    return (this._db?.rooms || []).filter(r => floorIds.includes(r.floorId));
+    const floorIds = new Set(this.getFloors(branchId).map(f => f.id));
+    return (this._db?.rooms || []).filter(r => floorIds.has(r.floorId));
   }
 
   async addRoom(data) {
@@ -417,11 +458,11 @@ class Store {
   }
 
   getSeatsForBranch(branchId) {
-    const roomIds = this.getRoomsForBranch(branchId).map(r => r.id);
-    return (this._db?.seats || []).filter(s => roomIds.includes(s.roomId));
+    const roomIds = new Set(this.getRoomsForBranch(branchId).map(r => r.id));
+    return (this._db?.seats || []).filter(s => roomIds.has(s.roomId));
   }
 
-  getSeat(id) { return (this._db?.seats || []).find(s => s.id === id); }
+  getSeat(id) { return this._lookupOne('seatById', this._db?.seats || [], s => s.id, id); }
 
   getSeatStatus(seatId) {
     const seat = this.getSeat(seatId);
@@ -525,7 +566,7 @@ class Store {
     return branchId ? students.filter(s => s.branchId === branchId) : students;
   }
 
-  getStudent(id) { return (this._db?.students || []).find(s => s.id === id); }
+  getStudent(id) { return this._lookupOne('studentById', this._db?.students || [], s => s.id, id); }
 
   searchStudents(query, branchId) {
     const q = query.toLowerCase();
@@ -598,7 +639,7 @@ class Store {
     return branchId ? plans.filter(p => p.branchId === branchId || !p.branchId) : plans;
   }
 
-  getMembershipPlan(id) { return (this._db?.membershipPlans || []).find(p => p.id === id); }
+  getMembershipPlan(id) { return this._lookupOne('planById', this._db?.membershipPlans || [], p => p.id, id); }
 
   async addMembershipPlan(data) {
     const plan = { id: uid('PLAN'), active: true, createdAt: now(), ...data };
@@ -628,17 +669,17 @@ class Store {
   // ── Memberships ───────────────────────────────────────────────────
   getMemberships(studentId) {
     const memberships = this._db?.memberships || [];
-    return studentId ? memberships.filter(m => m.studentId === studentId) : memberships;
+    return studentId ? this._lookup('membershipsByStudent', memberships, m => m.studentId, studentId) : memberships;
   }
 
   getActiveMembership(studentId) {
-    const today = new Date();
+    const todayStr = today();
     return this.getMemberships(studentId).find(m =>
-      m.status === 'active' && new Date(m.endDate) >= today
+      m.status === 'active' && m.endDate && String(m.endDate).split('T')[0] >= todayStr
     );
   }
 
-  getMembership(id) { return (this._db?.memberships || []).find(m => m.id === id); }
+  getMembership(id) { return this._lookupOne('membershipById', this._db?.memberships || [], m => m.id, id); }
 
   async addMembership(data) {
     const membership = { id: uid('MEM'), status: 'active', createdAt: now(), ...data };
@@ -685,8 +726,8 @@ class Store {
 
   getStudentAssignment(studentId) {
     const todayStr = today();
-    return (this._db?.seatAssignments || []).find(a => {
-      if (a.studentId !== studentId && a.student_id !== studentId) return false;
+    const candidates = this._lookup('assignmentsByStudent', this._db?.seatAssignments || [], a => a.studentId || a.student_id, studentId);
+    return candidates.find(a => {
       if (a.status !== 'active') return false;
       if (!a.endDate && !a.end_date) return true;
       const end = (a.endDate || a.end_date);
@@ -697,8 +738,8 @@ class Store {
 
   getActiveAssignment(seatId) {
     const todayStr = today();
-    return (this._db?.seatAssignments || []).find(a => {
-      if (a.seatId !== seatId && a.seat_id !== seatId) return false;
+    const candidates = this._lookup('assignmentsBySeat', this._db?.seatAssignments || [], a => a.seatId || a.seat_id, seatId);
+    return candidates.find(a => {
       if (a.status !== 'active') return false;
       if (!a.endDate && !a.end_date) return true;
       const end = (a.endDate || a.end_date);
@@ -925,8 +966,10 @@ class Store {
 
   // ── Payments ──────────────────────────────────────────────────────
   getPayments(membershipId, branchId) {
-    let payments = (this._db?.payments || []).filter(p => p.status !== 'voided' && p.status !== 'refunded');
-    if (membershipId) payments = payments.filter(p => p.membershipId === membershipId);
+    let payments = membershipId
+      ? this._lookup('paymentsByMembership', this._db?.payments || [], p => p.membershipId, membershipId)
+      : (this._db?.payments || []);
+    payments = payments.filter(p => p.status !== 'voided' && p.status !== 'refunded');
     if (branchId) payments = payments.filter(p => p.branchId === branchId);
     return payments;
   }
@@ -1263,8 +1306,8 @@ class Store {
     this._db.activityLog = this._db.activityLog || [];
     this._db.activityLog.push(entry);
     if (this._db.activityLog.length > 500) this._db.activityLog = this._db.activityLog.slice(-500);
-    // Fire-and-forget write
-    apiWrite('activity_logs', 'insert', entry).catch(e => console.warn('Activity log write failed:', e));
+    // Local UI feed only. The authoritative audit trail is written server-side inside each
+    // mutation's transaction (lib/audit.js); the old client write was discarded by the server.
     this._notify();
   }
 
@@ -1450,8 +1493,10 @@ function uid(prefix) {
 }
 
 function now() { return new Date().toISOString(); }
+// Constructing Intl.DateTimeFormat is expensive and today() runs for every seat on each render
+const IST_DATE_FORMAT = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' });
 function today() {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+  return IST_DATE_FORMAT.format(new Date());
 }
 
 function formatINR(amount) {

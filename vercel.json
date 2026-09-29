@@ -3,6 +3,7 @@
   "name": "studyflow-app",
   "buildCommand": "node build.js",
   "outputDirectory": "public",
+  "regions": ["cle1"],
   "functions": {
     "api/**/*.js": {
       "maxDuration": 30
@@ -33,6 +34,18 @@
       "source": "/api/(.*)",
       "headers": [
         { "key": "Cache-Control", "value": "no-store" }
+      ]
+    },
+    {
+      "source": "/js/(bundle\\.[a-f0-9]{10}\\.js)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    },
+    {
+      "source": "/css/(app\\.[a-f0-9]{10}\\.css)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
       ]
     }
   ],
