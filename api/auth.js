@@ -31,6 +31,43 @@ const RESET_CODE_MAX_ATTEMPTS = 5;
 function isMailConfigured() {
   return Boolean(process.env.RESEND_API_KEY || process.env.SMTP_URL) || process.env.NODE_ENV !== 'production';
 }
+
+function mailProviderName() {
+  return process.env.RESEND_API_KEY ? 'resend' : process.env.SMTP_URL ? 'smtp' : 'none';
+}
+
+// Turns a provider error into { error (credentials masked), hint (what to change) } for owners
+// and signed-in users. Never shown for anonymous reset requests (no account enumeration).
+function describeMailError(err) {
+  const raw = String(err?.message || err).replace(/\/\/[^@\s/]+@/g, '//***@');
+  let hint = 'Check the email settings in Vercel, then redeploy.';
+  if (/No email provider configured/i.test(raw)) {
+    hint = 'Set SMTP_URL (Gmail app password) or RESEND_API_KEY in Vercel → Settings → Environment Variables, then redeploy.';
+  } else if (/nodemailer is not installed/i.test(raw)) {
+    hint = 'The deployed version is missing nodemailer. Redeploy the latest commit.';
+  } else if (/Username and Password not accepted|Invalid login|535|BadCredentials/i.test(raw)) {
+    hint = 'Gmail rejected the login. Use a 16-letter App Password (not your normal Gmail password, no spaces), and write the @ in the Gmail address as %40 inside SMTP_URL.';
+  } else if (/testing emails|own email address|verify a domain|domain is not verified/i.test(raw)) {
+    hint = 'Resend\'s test sender only delivers to the email you signed up to Resend with. Verify a domain in Resend, or use the Gmail SMTP option instead (and remove RESEND_API_KEY).';
+  } else if (/API key is invalid|401|Unauthorized/i.test(raw)) {
+    hint = 'The RESEND_API_KEY value is wrong or was revoked. Create a new key in Resend and update it in Vercel.';
+  } else if (/ENOTFOUND|ECONNREFUSED|ETIMEDOUT|ECONNRESET|Greeting never received|Invalid URL|Invalid protocol/i.test(raw)) {
+    hint = 'Could not connect to the mail server. SMTP_URL should look like smtps://name%40gmail.com:APPPASSWORD@smtp.gmail.com:465';
+  } else if (/from.*(invalid|not allowed)|sender/i.test(raw)) {
+    hint = 'MAIL_FROM is not allowed by the provider. For Gmail it must be the same Gmail address; for Resend it must use your verified domain.';
+  }
+  return { error: raw.slice(0, 400), hint };
+}
+
+// Gmail files mail that an account sends to itself under "Sent"/"All Mail", not the Inbox.
+function selfSendNote(to) {
+  const smtp = process.env.SMTP_URL || '';
+  const m = smtp.match(/^smtps?:\/\/([^:@/]+)/i);
+  const sender = m ? decodeURIComponent(m[1]).toLowerCase() : '';
+  return sender && sender === String(to || '').toLowerCase()
+    ? ' This address is also the sending Gmail account, so Gmail files the email under "Sent" / "All Mail" instead of the Inbox. Use a separate Gmail account for SMTP_URL to avoid this.'
+    : '';
+}
 const { HttpError } = require('../lib/errors');
 
 function uid(prefix) {
@@ -307,7 +344,7 @@ module.exports = withHandler(async function handler(req, res) {
     }
     await checkRateLimit(query, `testmail:user:${session.userId}`, 5, 3600);
 
-    const provider = process.env.RESEND_API_KEY ? 'resend' : process.env.SMTP_URL ? 'smtp' : 'none';
+    const provider = mailProviderName();
     const from = process.env.MAIL_FROM || '(default) StudyFlow <onboarding@resend.dev>';
     try {
       const result = await sendMail({
@@ -323,29 +360,13 @@ module.exports = withHandler(async function handler(req, res) {
         from,
         to: session.email,
         message: result.delivered
-          ? `Test email sent to ${session.email} via ${result.provider}. Check your inbox (and spam).`
+          ? `Test email sent to ${session.email} via ${result.provider}. Check your inbox (and spam).${selfSendNote(session.email)}`
           : 'No email provider is configured, so nothing was sent (development mode only logs the email).',
       });
     } catch (mailErr) {
-      const raw = String(mailErr?.message || mailErr).replace(/\/\/[^@\s/]+@/g, '//***@');
-      let hint = 'Check the email settings in Vercel, then redeploy.';
-      if (/No email provider configured/i.test(raw)) {
-        hint = 'Set SMTP_URL (Gmail app password) or RESEND_API_KEY in Vercel → Settings → Environment Variables, then redeploy.';
-      } else if (/nodemailer is not installed/i.test(raw)) {
-        hint = 'The deployed version is missing nodemailer. Redeploy the latest commit.';
-      } else if (/Username and Password not accepted|Invalid login|535|BadCredentials/i.test(raw)) {
-        hint = 'Gmail rejected the login. Use a 16-letter App Password (not your normal Gmail password, no spaces), and write the @ in the Gmail address as %40 inside SMTP_URL.';
-      } else if (/testing emails|own email address|verify a domain|domain is not verified/i.test(raw)) {
-        hint = 'Resend\'s test sender only delivers to the email you signed up to Resend with. Verify a domain in Resend, or use the Gmail SMTP option instead (and remove RESEND_API_KEY).';
-      } else if (/API key is invalid|401|Unauthorized/i.test(raw)) {
-        hint = 'The RESEND_API_KEY value is wrong or was revoked. Create a new key in Resend and update it in Vercel.';
-      } else if (/ENOTFOUND|ECONNREFUSED|ETIMEDOUT|ECONNRESET|Greeting never received|Invalid URL|Invalid protocol/i.test(raw)) {
-        hint = 'Could not connect to the mail server. SMTP_URL should look like smtps://name%40gmail.com:APPPASSWORD@smtp.gmail.com:465';
-      } else if (/from.*(invalid|not allowed)|sender/i.test(raw)) {
-        hint = 'MAIL_FROM is not allowed by the provider. For Gmail it must be the same Gmail address; for Resend it must use your verified domain.';
-      }
-      console.error(`[${req.correlationId}] Test email failed via ${provider}:`, raw);
-      return res.status(502).json({ ok: false, provider, from, error: raw.slice(0, 400), hint });
+      const { error, hint } = describeMailError(mailErr);
+      console.error(`[${req.correlationId}] Test email failed via ${provider}:`, error);
+      return res.status(502).json({ ok: false, provider, from, error, hint });
     }
   }
 
@@ -996,9 +1017,20 @@ module.exports = withHandler(async function handler(req, res) {
     }
 
     await checkRateLimit(query, `pwreset:ip:${ip}`, 10, 3600);
-    await checkRateLimit(query, `pwreset:acc:${cleanEmail}`, 3, 3600);
+    await checkRateLimit(query, `pwreset:acc:${cleanEmail}`, 5, 3600);
+
+    // A signed-in user asking for a code for their OWN email (e.g. "Set a password" from Settings)
+    // may see the real delivery outcome; anyone else gets the generic, non-enumerating answer.
+    let selfRequest = false;
+    try {
+      const s = await requireSession(req);
+      selfRequest = Boolean(s?.email) && s.email.toLowerCase() === cleanEmail;
+    } catch (_) { /* anonymous request */ }
 
     const userRes = await query('SELECT id, email FROM users WHERE LOWER(email) = $1', [cleanEmail]);
+    if (userRes.rows.length === 0) {
+      console.warn(`[${req.correlationId}] Password reset requested for an email with no account`);
+    }
     if (userRes.rows.length > 0) {
       const uId = userRes.rows[0].id;
       const rawCode = crypto.randomInt(100000, 1000000).toString();
@@ -1012,11 +1044,23 @@ module.exports = withHandler(async function handler(req, res) {
          JSON.stringify({ codeHash, expiresAt: expiresAt.toISOString(), attempts: 0, used: false })]
       );
 
+      const to = userRes.rows[0].email;
       try {
-        await sendPasswordResetCode({ to: userRes.rows[0].email, code: rawCode, minutes: RESET_CODE_TTL_MINUTES });
+        const result = await sendPasswordResetCode({ to, code: rawCode, minutes: RESET_CODE_TTL_MINUTES });
+        console.log(`[${req.correlationId}] Password reset code sent via ${result.provider} (delivered=${result.delivered})`);
+        if (selfRequest) {
+          return res.json({
+            ok: true,
+            message: `We've sent a 6-digit code to ${to}. It expires in ${RESET_CODE_TTL_MINUTES} minutes. Check your inbox and spam folder.${selfSendNote(to)}`,
+          });
+        }
       } catch (mailErr) {
-        // Same response either way (no account enumeration); the failure is logged for ops.
-        console.error(`[${req.correlationId}] Password reset email failed:`, mailErr.message);
+        const { error, hint } = describeMailError(mailErr);
+        console.error(`[${req.correlationId}] Password reset email failed via ${mailProviderName()}:`, error);
+        if (selfRequest) {
+          throw new HttpError(502, 'EMAIL_SEND_FAILED', `We couldn't send the code to ${to}. ${hint}`);
+        }
+        // Anonymous: same response either way (no account enumeration); the failure is logged.
       }
     }
 
