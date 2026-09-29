@@ -115,3 +115,16 @@ describe('whatsappManual.renderMessage', () => {
     assert.ok(rendered.length <= 1500);
   });
 });
+
+describe('WhatsApp opening modes', () => {
+  test('desktop mode uses the WhatsApp Desktop app protocol (no browser tab)', () => {
+    const link = whatsappManual.buildLink('98765 43210', 'Hi ₹1,500 & more?', 'desktop');
+    assert.equal(link, 'whatsapp://send?phone=919876543210&text=Hi%20%E2%82%B91%2C500%20%26%20more%3F');
+  });
+
+  test('auto mode on a computer defaults to the desktop app; web and app modes stay available', () => {
+    assert.ok(whatsappManual.buildLink('9876543210', 'Hi', 'auto').startsWith('whatsapp://send?phone=919876543210'));
+    assert.equal(whatsappManual.buildLink('9876543210', 'Hi', 'web'), 'https://web.whatsapp.com/send?phone=919876543210&text=Hi');
+    assert.equal(whatsappManual.buildLink('9876543210', 'Hi', 'app'), 'https://wa.me/919876543210?text=Hi');
+  });
+});

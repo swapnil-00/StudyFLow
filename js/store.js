@@ -1621,8 +1621,12 @@ function openWhatsApp(phone, text = '') {
   }
   let cleaned = String(phone).replace(/[^0-9]/g, '');
   if (cleaned.length === 10) cleaned = '91' + cleaned;
-  const url = `https://wa.me/${cleaned}?text=${encodeURIComponent(text)}`;
-  window.open(url, '_blank');
+  // Same opening rules as the composer (desktop app / web / phone app), not a new tab every time
+  if (window.whatsappManual) {
+    window.whatsappManual.open(window.whatsappManual.buildLink(cleaned, text));
+    return;
+  }
+  window.open(`https://wa.me/${cleaned}?text=${encodeURIComponent(text)}`, 'studyflow-whatsapp');
 }
 
 window.Store = Store;

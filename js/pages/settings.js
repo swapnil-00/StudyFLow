@@ -140,11 +140,12 @@ export function renderSettings(container) {
             <div class="form-group">
               <label class="form-label">Open WhatsApp in</label>
               <select class="select" id="set-wa-open-in">
-                <option value="auto" ${(!settings.whatsappOpenIn || settings.whatsappOpenIn === 'auto') ? 'selected' : ''}>Auto (WhatsApp Web on desktop, WhatsApp app on phone/tablet)</option>
-                <option value="web" ${settings.whatsappOpenIn === 'web' ? 'selected' : ''}>WhatsApp Web (web.whatsapp.com)</option>
-                <option value="app" ${settings.whatsappOpenIn === 'app' ? 'selected' : ''}>WhatsApp App (wa.me protocol)</option>
+                <option value="auto" ${(!settings.whatsappOpenIn || settings.whatsappOpenIn === 'auto') ? 'selected' : ''}>Auto (Desktop app on computers, WhatsApp app on phones) — recommended</option>
+                <option value="desktop" ${settings.whatsappOpenIn === 'desktop' ? 'selected' : ''}>WhatsApp Desktop app (no new browser tabs)</option>
+                <option value="web" ${settings.whatsappOpenIn === 'web' ? 'selected' : ''}>WhatsApp Web (opens a new tab for each message)</option>
+                <option value="app" ${settings.whatsappOpenIn === 'app' ? 'selected' : ''}>WhatsApp App link (wa.me)</option>
               </select>
-              <div class="form-hint">Default opening mode across devices for your library staff.</div>
+              <div class="form-hint">WhatsApp Web can't reuse an open tab (WhatsApp blocks it for security), so each message opens a new tab. The free <a href="https://www.whatsapp.com/download" target="_blank" rel="noopener">WhatsApp Desktop app</a> switches chats in one window instead. Staff can override this per computer in the Send window.</div>
             </div>
 
             <div class="form-group">

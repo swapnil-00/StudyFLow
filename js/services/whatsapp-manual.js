@@ -84,32 +84,89 @@
    * Builds the direct WhatsApp Web or App link.
    * mode: 'web' | 'app' | 'auto'
    */
+  /**
+   * Resolves the effective opening mode:
+   *   'desktop' → WhatsApp Desktop app via whatsapp:// (no browser tab at all; the open app
+   *               switches to the chat). Default on computers.
+   *   'web'     → web.whatsapp.com in a browser tab. WhatsApp Web sends
+   *               Cross-Origin-Opener-Policy, which cuts the link to the opener page, so the
+   *               browser cannot reuse an existing WhatsApp Web tab: each send opens a new tab.
+   *   'app'     → wa.me link (opens the WhatsApp app on phones/tablets).
+   * Precedence: this browser's choice (localStorage) → library setting → auto.
+   */
+  function resolveMode(mode = 'auto') {
+    let chosen = mode;
+    if (!chosen || chosen === 'auto') {
+      let pref = '';
+      try { pref = localStorage.getItem('sf_wa_mode') || ''; } catch (_) {}
+      if (!pref || pref === 'auto') {
+        try { pref = (typeof store !== 'undefined' && store.getSettings && store.getSettings().whatsappOpenIn) || 'auto'; } catch (_) { pref = 'auto'; }
+      }
+      chosen = pref;
+    }
+    if (chosen === 'auto') chosen = isMobileDevice() ? 'app' : 'desktop';
+    if (chosen === 'desktop' && isMobileDevice()) chosen = 'app';
+    return chosen;
+  }
+
   function buildLink(phoneDigits, text = '', mode = 'auto') {
     const cleanPhone = normalizePhone(phoneDigits) || String(phoneDigits || '').replace(/[^\d]/g, '');
     const encodedText = encodeURIComponent(text || '');
+    const targetMode = resolveMode(mode);
 
-    let targetMode = mode;
-    if (targetMode === 'auto') {
-      const pref = (typeof localStorage !== 'undefined' && localStorage.getItem('sf_wa_mode')) || 'auto';
-      targetMode = pref === 'auto' ? (isMobileDevice() ? 'app' : 'web') : pref;
+    if (targetMode === 'desktop') {
+      return `whatsapp://send?phone=${cleanPhone}&text=${encodedText}`;
     }
-
     if (targetMode === 'app') {
       return `https://wa.me/${cleanPhone}?text=${encodedText}`;
     }
     return `https://web.whatsapp.com/send?phone=${cleanPhone}&text=${encodedText}`;
   }
 
+  // Opens a whatsapp:// link in the installed desktop app without navigating this page.
+  // Browsers give no success signal for custom protocols, so if this window never loses
+  // focus the app is probably not installed: offer WhatsApp Web / download instead.
+  function openDesktopApp(link) {
+    let appOpened = false;
+    const onBlur = () => { appOpened = true; };
+    window.addEventListener('blur', onBlur, { once: true });
+    document.addEventListener('visibilitychange', onBlur, { once: true });
+
+    const a = document.createElement('a');
+    a.href = link;
+    a.rel = 'noopener';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    setTimeout(() => {
+      window.removeEventListener('blur', onBlur);
+      document.removeEventListener('visibilitychange', onBlur);
+      if (appOpened || typeof toast === 'undefined') return;
+      const webLink = link.replace(/^whatsapp:\/\/send\?/, 'https://web.whatsapp.com/send?');
+      toast.show(
+        `WhatsApp Desktop didn't open. <a href="${webLink}" target="_blank" rel="noopener" style="text-decoration:underline;color:inherit;font-weight:600;">Open in WhatsApp Web</a> · ` +
+        `<a href="https://www.whatsapp.com/download" target="_blank" rel="noopener" style="text-decoration:underline;color:inherit;font-weight:600;">Get WhatsApp Desktop</a>`,
+        'warning', 9000
+      );
+    }, 2000);
+    return true;
+  }
+
   /**
-   * Opens WhatsApp in a named reusable window ('studyflow-whatsapp').
+   * Opens WhatsApp for a link from buildLink().
+   * Desktop app links open in the installed app (no new tab). Web/wa.me links open a tab named
+   * 'studyflow-whatsapp' (reused where the browser allows; WhatsApp Web prevents reuse).
    */
   function open(link) {
     if (!link || typeof window === 'undefined') return false;
     try {
+      if (link.startsWith('whatsapp://')) return openDesktopApp(link);
       const win = window.open(link, 'studyflow-whatsapp');
-      if (!win || win.closed || typeof win.closed === 'undefined') {
+      if (!win) {
         if (typeof toast !== 'undefined') {
-          toast.show(`Popup blocked. <a href="${link}" target="_blank" rel="noopener" style="text-decoration:underline;color:white;font-weight:600;">Click here to open WhatsApp</a>`, 'warning', 7000);
+          toast.show(`Popup blocked. <a href="${link}" target="_blank" rel="noopener" style="text-decoration:underline;color:inherit;font-weight:600;">Click here to open WhatsApp</a>`, 'warning', 7000);
         }
         return false;
       }
@@ -220,9 +277,9 @@
             Open WhatsApp in:
           </div>
           <div class="filter-tabs" id="wa-mode-tabs" style="font-size:11px;">
-            <button type="button" class="filter-tab ${savedMode === 'auto' ? 'active' : ''}" data-mode="auto">Auto</button>
-            <button type="button" class="filter-tab ${savedMode === 'web' ? 'active' : ''}" data-mode="web">WhatsApp Web</button>
-            <button type="button" class="filter-tab ${savedMode === 'app' ? 'active' : ''}" data-mode="app">WhatsApp App</button>
+            <button type="button" class="filter-tab ${savedMode === 'auto' ? 'active' : ''}" data-mode="auto" title="Desktop app on computers, WhatsApp app on phones">Auto</button>
+            <button type="button" class="filter-tab ${savedMode === 'desktop' ? 'active' : ''}" data-mode="desktop" title="Opens the chat in the installed WhatsApp Desktop app. No new browser tabs.">Desktop app</button>
+            <button type="button" class="filter-tab ${savedMode === 'web' ? 'active' : ''}" data-mode="web" title="web.whatsapp.com. WhatsApp Web opens a new tab for each message.">WhatsApp Web</button>
           </div>
         </div>
       </div>
@@ -324,6 +381,7 @@
     normalizePhone,
     formatPhoneDisplay,
     isMobileDevice,
+    resolveMode,
     buildLink,
     open,
     renderMessage,
