@@ -36,15 +36,25 @@ export function renderDashboard(container) {
       <div class="page-header-row">
         <div>
           <h1 class="page-title">${greeting}, ${utils.escapeHtml(firstName)} 👋</h1>
-          <p class="page-subtitle">Here's what's happening at <strong>${branch?.name || 'your library'}</strong> today.</p>
+          <p class="page-subtitle" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:4px;">
+            <span>Here's what's happening at</span>
+            <button type="button" onclick="openEditLibraryNameModal()" style="display:inline-flex;align-items:center;gap:5px;padding:2px 8px;background:var(--color-bg-secondary);border:1px solid var(--color-border-primary);border-radius:var(--radius-sm);cursor:pointer;color:var(--color-text-primary);font-size:12.5px;font-weight:600;transition:all var(--transition-fast);" title="Click to change your custom library & branch name">
+              <span>${utils.escapeHtml(branch?.name || store.organization?.name || 'Your Library')}</span>
+              <span style="color:var(--color-text-tertiary);font-size:11px;display:inline-flex;align-items:center;">✎ Edit</span>
+            </button>
+            <span>today.</span>
+          </p>
         </div>
-        <div style="display:flex;gap:var(--space-3);">
+        <div style="display:flex;gap:var(--space-2);">
+          <button class="btn btn-secondary btn-sm" onclick="openEditLibraryNameModal()">
+            ${icons.edit || '✎'} Edit Library Name
+          </button>
           <button class="btn btn-secondary" onclick="app.navigate('/notifications')">
-            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--sf-success-500);margin-right:6px;"></span>
-            WhatsApp Active
+            <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--sf-success-500);margin-right:6px;"></span>
+            WhatsApp
           </button>
           <button class="btn btn-secondary" onclick="app.navigate('/seat-map')">
-            ${icons.map} View Seat Map
+            ${icons.map} Seat Map
           </button>
           <button class="btn btn-primary" onclick="app.navigate('/students')" id="add-student-btn">
             ${icons.plus} Add Student
@@ -383,3 +393,82 @@ function renderActivityItem(a) {
     </div>
   `;
 }
+
+// ── Quick Edit Custom Library & Branch Name ────────────────────────
+if (typeof window !== 'undefined') {
+  window.openEditLibraryNameModal = function() {
+    const branchId = store.getActiveBranchId();
+    const branch = store.getBranch(branchId);
+    const org = store.organization || {};
+    const currentOrgName = org.name || 'My Library';
+    const currentBranchName = branch?.name || 'Main Branch';
+
+    const escA = (s) => (utils.escapeAttr ? utils.escapeAttr(s) : String(s || ''));
+
+    const bodyHtml = `
+      <div style="display:flex;flex-direction:column;gap:var(--space-4);">
+        <p style="font-size:13px;color:var(--color-text-secondary);margin:0;line-height:1.5;">
+          Enter your custom <strong>Library Name</strong> and <strong>Branch Name</strong>. This will be updated everywhere across your dashboard, invoices, receipts, and WhatsApp templates.
+        </p>
+        <div class="form-group">
+          <label class="form-label" for="modal-edit-org-name">Library / Organization Name *</label>
+          <input type="text" class="input" id="modal-edit-org-name" value="${escA(currentOrgName)}" placeholder="e.g. Sangarsh Study Hub / Apex Library" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="modal-edit-branch-name">Branch Name *</label>
+          <input type="text" class="input" id="modal-edit-branch-name" value="${escA(currentBranchName)}" placeholder="e.g. Main Branch / Kothrud Campus" required />
+        </div>
+      </div>
+    `;
+
+    const footerHtml = `
+      <button class="btn btn-secondary" onclick="modal.close()">Cancel</button>
+      <button class="btn btn-primary" id="btn-save-custom-library-name" onclick="saveCustomLibraryName('${branchId || ''}')">Save Custom Name</button>
+    `;
+
+    modal.open('Customize Library & Branch Name', bodyHtml, footerHtml);
+  };
+
+  window.saveCustomLibraryName = async function(branchId) {
+    const orgInput = document.getElementById('modal-edit-org-name');
+    const branchInput = document.getElementById('modal-edit-branch-name');
+    const btn = document.getElementById('btn-save-custom-library-name');
+
+    const newOrgName = orgInput?.value?.trim();
+    const newBranchName = branchInput?.value?.trim();
+
+    if (!newOrgName || !newBranchName) {
+      toast.show('Please fill in both Library Name and Branch Name', 'warning');
+      return;
+    }
+
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = `<span class="spinner" style="width:14px;height:14px;border-width:2px;border-color:rgba(255,255,255,0.3);border-top-color:#ffffff;display:inline-block;vertical-align:middle;margin-right:6px;"></span> Saving...`;
+    }
+
+    try {
+      // 1. Update organization name in settings & store
+      await store.updateSettings({ orgName: newOrgName });
+      if (store.organization) {
+        store.organization.name = newOrgName;
+      }
+
+      // 2. Update branch name in store & DB if branch exists
+      if (branchId) {
+        await store.updateBranch(branchId, { name: newBranchName });
+      }
+
+      modal.close();
+      toast.show(`Library name updated to "${newOrgName}"!`, 'success');
+      app._navigate();
+    } catch (err) {
+      toast.show(err.message || 'Failed to update library name', 'error');
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Save Custom Name';
+      }
+    }
+  };
+}
+
