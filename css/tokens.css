@@ -1,36 +1,37 @@
-/* StudyFlow Design Tokens — Styled to match OpenTrain Design System (app.opentrain.ai) */
+/* ─── StudyFlow Design Tokens (Linear-Inspired Design System) ─── */
 :root {
-  /* ── Brand Colors (OpenTrain Primary Palette) ───────────────────── */
-  --sf-indigo-25: #f5f8ff;
-  --sf-indigo-50: #eef4ff;
-  --sf-indigo-100: #e0eaff;
-  --sf-indigo-200: #c7d7fe;
-  --sf-indigo-300: #a4bcfd;
-  --sf-indigo-400: #8098f9;
-  --sf-indigo-500: #6172f3;
-  --sf-indigo-600: #444ce7;
-  --sf-indigo-700: #3538cd;
-  --sf-indigo-800: #2d31a6;
-  --sf-indigo-900: #2d3282;
-  --sf-indigo-950: #1f235b;
+  /* ── Brand Colors (Linear Violet / Indigo Palette) ───────────────────── */
+  --sf-indigo-25: #f9faff;
+  --sf-indigo-50: #f0f3ff;
+  --sf-indigo-100: #e0e6fe;
+  --sf-indigo-200: #c7d2fe;
+  --sf-indigo-300: #a5b4fc;
+  --sf-indigo-400: #818cf8;
+  --sf-indigo-500: #5e6ad2;  /* Linear Signature Indigo */
+  --sf-indigo-600: #4f52b2;
+  --sf-indigo-700: #4338ca;
+  --sf-indigo-800: #3730a3;
+  --sf-indigo-900: #312e81;
+  --sf-indigo-950: #1e1b4b;
 
-  --color-primary: var(--sf-indigo-500);
-  --color-primary-hover: var(--sf-indigo-600);
-  --color-primary-light: var(--sf-indigo-50);
+  --color-primary: #5e6ad2;
+  --color-primary-hover: #6f7be2;
+  --color-primary-light: rgba(94, 106, 210, 0.1);
+  --color-primary-glow: rgba(94, 106, 210, 0.25);
 
-  /* ── OpenTrain Grays & Neutrals ─────────────────────────────────── */
-  --color-gray-25: #fdfdfd;
-  --color-gray-50: #fafafa;
-  --color-gray-100: #f5f5f5;
-  --color-gray-200: #e9eaeb;
-  --color-gray-300: #d5d7da;
-  --color-gray-400: #a4a7ae;
-  --color-gray-500: #717680;
-  --color-gray-600: #535862;
-  --color-gray-700: #414651;
-  --color-gray-800: #252b37;
-  --color-gray-900: #181d27;
-  --color-gray-950: #0a0d12;
+  /* ── Grays & Neutrals ─────────────────────────────────────────────── */
+  --color-gray-25: #fcfcfd;
+  --color-gray-50: #f8f9fa;
+  --color-gray-100: #f1f3f5;
+  --color-gray-200: #e9ecef;
+  --color-gray-300: #dee2e6;
+  --color-gray-400: #adb5bd;
+  --color-gray-500: #868e96;
+  --color-gray-600: #495057;
+  --color-gray-700: #343a40;
+  --color-gray-800: #212529;
+  --color-gray-900: #121417;
+  --color-gray-950: #08090a;
 
   --sf-gray-25: var(--color-gray-25);
   --sf-gray-50: var(--color-gray-50);
@@ -45,150 +46,158 @@
   --sf-gray-900: var(--color-gray-900);
   --sf-gray-950: var(--color-gray-950);
 
-  /* ── Status Colors ────────────────────────────────────────────── */
-  --sf-success-50: #edfcf2;
-  --sf-success-100: #d3f8df;
-  --sf-success-200: #aaf0c4;
-  --sf-success-300: #73e2a3;
-  --sf-success-400: #3ccb7f;
-  --sf-success-500: #16b364;
-  --sf-success-600: #099250;
-  --sf-success-700: #087443;
-  --sf-success-800: #095c37;
-  --sf-success-900: #084c2e;
-  --sf-success-950: #052e1c;
+  /* ── Status Colors (Linear Semantic Tones) ────────────────────────── */
+  --sf-success-50: #ecfdf5;
+  --sf-success-100: #d1fae5;
+  --sf-success-200: #a7f3d0;
+  --sf-success-300: #6ee7b7;
+  --sf-success-400: #34d399;
+  --sf-success-500: #10b981;
+  --sf-success-600: #059669;
+  --sf-success-700: #047857;
+  --sf-success-800: #065f46;
+  --sf-success-900: #064e3b;
+  --sf-success-950: #022c22;
 
-  --sf-warning-50: #fefbe8;
-  --sf-warning-100: #fef7c3;
-  --sf-warning-200: #feee95;
-  --sf-warning-300: #fde272;
-  --sf-warning-400: #fac515;
-  --sf-warning-500: #eaaa08;
-  --sf-warning-600: #ca8504;
-  --sf-warning-700: #a15c07;
-  --sf-warning-800: #854a0e;
-  --sf-warning-900: #713b12;
+  --sf-warning-50: #fffbeb;
+  --sf-warning-100: #fef3c7;
+  --sf-warning-200: #fde68a;
+  --sf-warning-300: #fcd34d;
+  --sf-warning-400: #fbbf24;
+  --sf-warning-500: #f59e0b;
+  --sf-warning-600: #d97706;
+  --sf-warning-700: #b45309;
+  --sf-warning-800: #92400e;
+  --sf-warning-900: #78350f;
 
-  --sf-error-50: #fef3f2;
-  --sf-error-100: #fee4e2;
-  --sf-error-200: #fecdca;
-  --sf-error-300: #fda29b;
-  --sf-error-400: #f97066;
-  --sf-error-500: #f04438;
-  --sf-error-600: #d92d20;
-  --sf-error-700: #b42318;
-  --sf-error-800: #912018;
-  --sf-error-900: #7a271a;
+  --sf-error-50: #fef2f2;
+  --sf-error-100: #fee2e2;
+  --sf-error-200: #fecaca;
+  --sf-error-300: #fca5a5;
+  --sf-error-400: #f87171;
+  --sf-error-500: #ef4444;
+  --sf-error-600: #dc2626;
+  --sf-error-700: #b91c1c;
+  --sf-error-800: #991b1b;
+  --sf-error-900: #7f1d1d;
 
-  --sf-orange-50: #fef6ee;
-  --sf-orange-100: #fdead7;
-  --sf-orange-200: #f9dbaf;
-  --sf-orange-300: #f7b27a;
-  --sf-orange-400: #f38744;
-  --sf-orange-500: #ef6820;
-  --sf-orange-600: #e04f16;
-  --sf-orange-700: #b93815;
+  --sf-orange-50: #fff7ed;
+  --sf-orange-100: #ffedd5;
+  --sf-orange-200: #fed7aa;
+  --sf-orange-300: #fdba74;
+  --sf-orange-400: #fb923c;
+  --sf-orange-500: #f97316;
+  --sf-orange-600: #ea580c;
+  --sf-orange-700: #c2410c;
 
-  /* ── Seat Status Colors ───────────────────────────────────────── */
-  --seat-available-bg: #edfcf2;
-  --seat-available-border: #aaf0c4;
-  --seat-available-text: #087443;
-  --seat-available-dot: #16b364;
+  /* ── Seat Status Colors (Light Theme) ─────────────────────────────── */
+  --seat-available-bg: #f0fdf4;
+  --seat-available-border: #bbf7d0;
+  --seat-available-text: #15803d;
+  --seat-available-dot: #22c55e;
 
-  --seat-occupied-bg: #eef4ff;
-  --seat-occupied-border: #a4bcfd;
-  --seat-occupied-text: #3538cd;
-  --seat-occupied-dot: #444ce7;
+  --seat-occupied-bg: #eef2ff;
+  --seat-occupied-border: #c7d2fe;
+  --seat-occupied-text: #4338ca;
+  --seat-occupied-dot: #6366f1;
 
-  --seat-reserved-bg: #fef6ee;
-  --seat-reserved-border: #f9dbaf;
-  --seat-reserved-text: #b93815;
-  --seat-reserved-dot: #ef6820;
+  --seat-reserved-bg: #fff7ed;
+  --seat-reserved-border: #fed7aa;
+  --seat-reserved-text: #c2410c;
+  --seat-reserved-dot: #f97316;
 
-  --seat-payment-pending-bg: #fffaeb;
-  --seat-payment-pending-border: #fedf89;
-  --seat-payment-pending-text: #b54708;
-  --seat-payment-pending-dot: #f79009;
+  --seat-payment-pending-bg: #fffbeb;
+  --seat-payment-pending-border: #fde68a;
+  --seat-payment-pending-text: #b45309;
+  --seat-payment-pending-dot: #f59e0b;
 
-  --seat-payment-due-bg: #fef3f2;
-  --seat-payment-due-border: #fecdca;
-  --seat-payment-due-text: #b42318;
-  --seat-payment-due-dot: #f04438;
+  --seat-payment-due-bg: #fef2f2;
+  --seat-payment-due-border: #fecaca;
+  --seat-payment-due-text: #b91c1c;
+  --seat-payment-due-dot: #ef4444;
 
-  --seat-expiring-bg: #fefbe8;
-  --seat-expiring-border: #feee95;
-  --seat-expiring-text: #a15c07;
-  --seat-expiring-dot: #eaaa08;
+  --seat-expiring-bg: #fefce8;
+  --seat-expiring-border: #fef08a;
+  --seat-expiring-text: #a16207;
+  --seat-expiring-dot: #eab308;
 
-  --seat-maintenance-bg: #f5f5f5;
-  --seat-maintenance-border: #d5d7da;
-  --seat-maintenance-text: #535862;
-  --seat-maintenance-dot: #a4a7ae;
+  --seat-maintenance-bg: #f8fafc;
+  --seat-maintenance-border: #e2e8f0;
+  --seat-maintenance-text: #475569;
+  --seat-maintenance-dot: #94a3b8;
 
-  --seat-blocked-bg: #181d27;
-  --seat-blocked-border: #414651;
-  --seat-blocked-text: #a4a7ae;
-  --seat-blocked-dot: #717680;
+  --seat-blocked-bg: #0f172a;
+  --seat-blocked-border: #334155;
+  --seat-blocked-text: #94a3b8;
+  --seat-blocked-dot: #64748b;
 
-  /* ── Semantic Tokens (OpenTrain Light Mode) ──────────────────── */
-  --color-bg-app: #fafafa;
+  /* ── Semantic Tokens (Light Mode) ─────────────────────────────────── */
+  --color-bg-app: #f7f8f9;
   --color-bg-primary: #ffffff;
-  --color-bg-secondary: #f5f5f5;
-  --color-bg-tertiary: #e9eaeb;
-  --color-bg-hover: #f5f5f5;
-  --color-bg-active: #e9eaeb;
-  --color-bg-sidebar: #0a0d12;
-  --color-bg-sidebar-hover: rgba(255,255,255,0.06);
-  --color-bg-sidebar-active: rgba(255,255,255,0.12);
-  --color-bg-brand: var(--sf-indigo-600);
-  --color-bg-brand-hover: var(--sf-indigo-700);
-  --color-bg-overlay: rgba(10, 13, 18, 0.65);
+  --color-bg-secondary: #f4f5f6;
+  --color-bg-tertiary: #e9ecef;
+  --color-bg-hover: #f0f2f4;
+  --color-bg-active: #e4e7eb;
+  --color-bg-sidebar: #0e0f12;
+  --color-bg-sidebar-hover: rgba(255, 255, 255, 0.05);
+  --color-bg-sidebar-active: rgba(255, 255, 255, 0.09);
+  --color-bg-brand: var(--sf-indigo-500);
+  --color-bg-brand-hover: var(--sf-indigo-600);
+  --color-bg-overlay: rgba(8, 9, 10, 0.65);
 
-  --color-text-primary: #181d27;
-  --color-text-secondary: #535862;
-  --color-text-tertiary: #717680;
-  --color-text-quaternary: #a4a7ae;
-  --color-text-disabled: #a4a7ae;
-  --color-text-placeholder: #a4a7ae;
+  --color-text-primary: #121316;
+  --color-text-secondary: #5f6368;
+  --color-text-tertiary: #80868b;
+  --color-text-quaternary: #a0a6ac;
+  --color-text-disabled: #b0b6bc;
+  --color-text-placeholder: #9aa0a6;
   --color-text-on-brand: #ffffff;
-  --color-text-sidebar: rgba(255,255,255,0.70);
+  --color-text-sidebar: rgba(255, 255, 255, 0.65);
   --color-text-sidebar-active: #ffffff;
-  --color-text-brand: var(--sf-indigo-600);
-  --color-text-success: var(--sf-success-600);
-  --color-text-warning: var(--sf-warning-600);
-  --color-text-error: var(--sf-error-600);
+  --color-text-brand: var(--sf-indigo-500);
+  --color-text-success: #10b981;
+  --color-text-warning: #f59e0b;
+  --color-text-error: #ef4444;
 
-  --color-border-primary: #d5d7da;
-  --color-border-secondary: #e9eaeb;
-  --color-border-strong: #a4a7ae;
-  --color-border-brand: var(--sf-indigo-600);
-  --color-border-error: var(--sf-error-500);
-  --color-border-sidebar: rgba(255,255,255,0.08);
+  --color-border-primary: rgba(0, 0, 0, 0.08);
+  --color-border-secondary: rgba(0, 0, 0, 0.05);
+  --color-border-strong: rgba(0, 0, 0, 0.16);
+  --color-border-brand: var(--sf-indigo-500);
+  --color-border-error: #ef4444;
+  --color-border-sidebar: rgba(255, 255, 255, 0.07);
 
-  --color-icon-primary: #414651;
-  --color-icon-secondary: #717680;
-  --color-icon-tertiary: #a4a7ae;
-  --color-icon-on-brand: rgba(255,255,255,0.85);
-  --color-icon-brand: var(--sf-indigo-600);
+  --color-icon-primary: #202124;
+  --color-icon-secondary: #5f6368;
+  --color-icon-tertiary: #9aa0a6;
+  --color-icon-on-brand: #ffffff;
+  --color-icon-brand: var(--sf-indigo-500);
 
-  /* ── Typography (OpenTrain Scale) ────────────────────────────── */
-  --font-sans: "Inter", -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-  --font-mono: ui-monospace, "Roboto Mono", SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  /* ── Typography & Tracking ────────────────────────────────────────── */
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
 
+  --text-2xs: 0.6875rem; /* 11px */
   --text-xs: 0.75rem;    /* 12px */
-  --text-sm: 0.875rem;   /* 14px */
-  --text-md: 1rem;       /* 16px */
-  --text-lg: 1.125rem;   /* 18px */
+  --text-sm: 0.8125rem;  /* 13px */
+  --text-base: 0.875rem; /* 14px */
+  --text-md: 0.9375rem;  /* 15px */
+  --text-lg: 1.0625rem;  /* 17px */
   --text-xl: 1.25rem;    /* 20px */
   --text-2xl: 1.5rem;    /* 24px */
   --text-3xl: 1.875rem;  /* 30px */
   --text-4xl: 2.25rem;   /* 36px */
+  --text-5xl: 3rem;      /* 48px */
 
-  --lh-xs: 1.125rem;
-  --lh-sm: 1.25rem;
-  --lh-md: 1.5rem;
-  --lh-lg: 1.75rem;
-  --lh-xl: 1.875rem;
+  --tracking-tight: -0.015em;
+  --tracking-tighter: -0.03em;
+  --tracking-wide: 0.04em;
+  --tracking-wider: 0.08em;
+
+  --lh-xs: 1rem;
+  --lh-sm: 1.15rem;
+  --lh-md: 1.35rem;
+  --lh-lg: 1.5rem;
+  --lh-xl: 1.75rem;
   --lh-2xl: 2rem;
 
   --fw-regular: 400;
@@ -196,118 +205,131 @@
   --fw-semibold: 600;
   --fw-bold: 700;
 
-  /* ── Spacing ──────────────────────────────────────────────────── */
-  --space-1: 0.25rem;
-  --space-2: 0.5rem;
-  --space-3: 0.75rem;
-  --space-4: 1rem;
-  --space-5: 1.25rem;
-  --space-6: 1.5rem;
-  --space-8: 2rem;
-  --space-10: 2.5rem;
-  --space-12: 3rem;
-  --space-16: 4rem;
-  --space-20: 5rem;
+  /* ── Spacing System ───────────────────────────────────────────────── */
+  --space-0-5: 0.125rem; /* 2px */
+  --space-1: 0.25rem;   /* 4px */
+  --space-1-5: 0.375rem;/* 6px */
+  --space-2: 0.5rem;    /* 8px */
+  --space-2-5: 0.625rem;/* 10px */
+  --space-3: 0.75rem;   /* 12px */
+  --space-3-5: 0.875rem;/* 14px */
+  --space-4: 1rem;      /* 16px */
+  --space-5: 1.25rem;   /* 20px */
+  --space-6: 1.5rem;    /* 24px */
+  --space-8: 2rem;      /* 32px */
+  --space-10: 2.5rem;   /* 40px */
+  --space-12: 3rem;     /* 48px */
+  --space-16: 4rem;     /* 64px */
+  --space-20: 5rem;     /* 80px */
 
-  /* ── Radius ───────────────────────────────────────────────────── */
-  --radius-xs: 0.125rem;
-  --radius-sm: 0.25rem;
-  --radius-md: 0.375rem;
-  --radius-lg: 0.5rem;
-  --radius-xl: 0.75rem;
-  --radius-2xl: 1rem;
-  --radius-3xl: 1.5rem;
+  /* ── Linear Micro-Radii ───────────────────────────────────────────── */
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
+  --radius-2xl: 14px;
+  --radius-3xl: 20px;
   --radius-full: 9999px;
 
-  /* ── OpenTrain Precise Box Shadows ────────────────────────────── */
-  --shadow-xs: 0px 1px 2px rgba(10, 13, 18, 0.05);
-  --shadow-sm: 0px 1px 3px rgba(10, 13, 18, 0.10), 0px 1px 2px -1px rgba(10, 13, 18, 0.10);
-  --shadow-md: 0px 4px 6px -1px rgba(10, 13, 18, 0.10), 0px 2px 4px -2px rgba(10, 13, 18, 0.06);
-  --shadow-lg: 0px 12px 16px -4px rgba(10, 13, 18, 0.08), 0px 4px 6px -2px rgba(10, 13, 18, 0.03);
-  --shadow-xl: 0px 20px 24px -4px rgba(10, 13, 18, 0.08), 0px 8px 8px -4px rgba(10, 13, 18, 0.03);
-  --shadow-2xl: 0px 24px 48px -12px rgba(10, 13, 18, 0.18);
-  --shadow-skeuomorphic: 0px 0px 0px 1px rgba(10, 13, 18, 0.18) inset, 0px -2px 0px 0px rgba(10, 13, 18, 0.05) inset;
+  /* ── Linear Subtle Shadows & Highlights ────────────────────────────── */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px -1px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 12px 24px -4px rgba(0, 0, 0, 0.1), 0 4px 8px -2px rgba(0, 0, 0, 0.04);
+  --shadow-xl: 0 20px 32px -6px rgba(0, 0, 0, 0.12), 0 8px 16px -4px rgba(0, 0, 0, 0.06);
+  --shadow-2xl: 0 28px 56px -12px rgba(0, 0, 0, 0.2);
+  --shadow-skeuomorphic: inset 0 1px 0 0 rgba(255, 255, 255, 0.8), 0 1px 2px rgba(0, 0, 0, 0.05);
 
-  /* ── Layout ───────────────────────────────────────────────────── */
-  --sidebar-width: 240px;
-  --sidebar-collapsed-width: 64px;
-  --topbar-height: 60px;
+  /* ── Layout Dimensions ────────────────────────────────────────────── */
+  --sidebar-width: 232px;
+  --sidebar-collapsed-width: 56px;
+  --topbar-height: 52px;
   --drawer-width: 440px;
 
-  /* ── Transitions ──────────────────────────────────────────────── */
-  --transition-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  /* ── Linear Easing Transitions ────────────────────────────────────── */
+  --transition-fast: 120ms cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-base: 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-slow: 280ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* ── OpenTrain Pure Dark Mode ─────────────────────────────────────── */
+/* ─── Linear Obsidian Dark Mode (Default / Signature Theme) ───────── */
 [data-theme="dark"] {
-  --color-bg-app: #0a0d12;
-  --color-bg-primary: #13161b;
-  --color-bg-secondary: #181d27;
-  --color-bg-tertiary: #252b37;
-  --color-bg-hover: #1f2633;
-  --color-bg-active: #252b37;
-  --color-bg-sidebar: #0a0d12;
-  --color-bg-sidebar-hover: rgba(255,255,255,0.06);
-  --color-bg-sidebar-active: rgba(255,255,255,0.10);
+  --color-bg-app: #08090a;
+  --color-bg-primary: #0f1011;
+  --color-bg-secondary: #141517;
+  --color-bg-tertiary: #1c1d20;
+  --color-bg-hover: rgba(255, 255, 255, 0.05);
+  --color-bg-active: rgba(255, 255, 255, 0.09);
+  --color-bg-sidebar: #08090a;
+  --color-bg-sidebar-hover: rgba(255, 255, 255, 0.05);
+  --color-bg-sidebar-active: rgba(255, 255, 255, 0.09);
 
-  --color-text-primary: #f7f7f7;
-  --color-text-secondary: #cecfd2;
-  --color-text-tertiary: #94979c;
-  --color-text-quaternary: #61656c;
-  --color-text-disabled: #61656c;
-  --color-text-placeholder: #61656c;
-  --color-text-sidebar: rgba(255,255,255,0.65);
+  --color-text-primary: #f7f8f8;
+  --color-text-secondary: #8a8f98;
+  --color-text-tertiary: #62666d;
+  --color-text-quaternary: #45484e;
+  --color-text-disabled: #383a40;
+  --color-text-placeholder: #4b4e54;
+  --color-text-sidebar: rgba(255, 255, 255, 0.65);
   --color-text-sidebar-active: #ffffff;
 
-  --color-border-primary: #252b37;
-  --color-border-secondary: #181d27;
-  --color-border-strong: #373a41;
-  --color-border-sidebar: rgba(255,255,255,0.08);
+  --color-border-primary: rgba(255, 255, 255, 0.08);
+  --color-border-secondary: rgba(255, 255, 255, 0.05);
+  --color-border-strong: rgba(255, 255, 255, 0.16);
+  --color-border-sidebar: rgba(255, 255, 255, 0.07);
 
-  --color-icon-primary: #cecfd2;
-  --color-icon-secondary: #94979c;
-  --color-icon-tertiary: #61656c;
+  --color-icon-primary: #f7f8f8;
+  --color-icon-secondary: #8a8f98;
+  --color-icon-tertiary: #62666d;
 
-  --seat-available-bg: #052e1c;
-  --seat-available-border: #087443;
-  --seat-available-text: #73e2a3;
+  /* ── Seat Status Colors (Linear Dark Mode) ────────────────────────── */
+  --seat-available-bg: rgba(16, 185, 129, 0.08);
+  --seat-available-border: rgba(16, 185, 129, 0.25);
+  --seat-available-text: #34d399;
+  --seat-available-dot: #10b981;
 
-  --seat-occupied-bg: #1f235b;
-  --seat-occupied-border: #3538cd;
-  --seat-occupied-text: #a4bcfd;
+  --seat-occupied-bg: rgba(94, 106, 210, 0.08);
+  --seat-occupied-border: rgba(94, 106, 210, 0.25);
+  --seat-occupied-text: #a5b4fc;
+  --seat-occupied-dot: #5e6ad2;
 
-  --seat-reserved-bg: #511c10;
-  --seat-reserved-border: #b93815;
-  --seat-reserved-text: #f9dbaf;
+  --seat-reserved-bg: rgba(249, 115, 22, 0.08);
+  --seat-reserved-border: rgba(249, 115, 22, 0.25);
+  --seat-reserved-text: #fdba74;
+  --seat-reserved-dot: #f97316;
 
-  --seat-payment-pending-bg: #4e2d09;
-  --seat-payment-pending-border: #93370d;
-  --seat-payment-pending-text: #fec84b;
+  --seat-payment-pending-bg: rgba(245, 158, 11, 0.08);
+  --seat-payment-pending-border: rgba(245, 158, 11, 0.25);
+  --seat-payment-pending-text: #fcd34d;
+  --seat-payment-pending-dot: #f59e0b;
 
-  --seat-payment-due-bg: #55160c;
-  --seat-payment-due-border: #b42318;
-  --seat-payment-due-text: #fda29b;
+  --seat-payment-due-bg: rgba(239, 68, 68, 0.08);
+  --seat-payment-due-border: rgba(239, 68, 68, 0.25);
+  --seat-payment-due-text: #fca5a5;
+  --seat-payment-due-dot: #ef4444;
 
-  --seat-expiring-bg: #542c0d;
-  --seat-expiring-border: #a15c07;
-  --seat-expiring-text: #fde272;
+  --seat-expiring-bg: rgba(234, 179, 8, 0.08);
+  --seat-expiring-border: rgba(234, 179, 8, 0.25);
+  --seat-expiring-text: #fef08a;
+  --seat-expiring-dot: #eab308;
 
-  --seat-maintenance-bg: #181d27;
-  --seat-maintenance-border: #373a41;
-  --seat-maintenance-text: #94979c;
+  --seat-maintenance-bg: rgba(255, 255, 255, 0.03);
+  --seat-maintenance-border: rgba(255, 255, 255, 0.08);
+  --seat-maintenance-text: #8a8f98;
+  --seat-maintenance-dot: #62666d;
 
-  --seat-blocked-bg: #0a0d12;
-  --seat-blocked-border: #252b37;
-  --seat-blocked-text: #61656c;
+  --seat-blocked-bg: rgba(0, 0, 0, 0.5);
+  --seat-blocked-border: rgba(255, 255, 255, 0.06);
+  --seat-blocked-text: #45484e;
+  --seat-blocked-dot: #383a40;
 
-  --shadow-xs: 0px 1px 2px rgba(0,0,0,0.4);
-  --shadow-sm: 0px 1px 3px rgba(0,0,0,0.4), 0px 1px 2px rgba(0,0,0,0.3);
-  --shadow-md: 0px 4px 8px -2px rgba(0,0,0,0.4), 0px 2px 4px -2px rgba(0,0,0,0.3);
-  --shadow-lg: 0px 12px 16px -4px rgba(0,0,0,0.35);
-  --shadow-xl: 0px 20px 24px -4px rgba(0,0,0,0.35);
-  --shadow-2xl: 0px 24px 48px -12px rgba(0,0,0,0.6);
-  --shadow-skeuomorphic: 0px 0px 0px 1px rgba(255, 255, 255, 0.08) inset, 0px -2px 0px 0px rgba(0, 0, 0, 0.25) inset;
+  /* ── Dark Shadows with Inset Highlights ────────────────────────────── */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.5), inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+  --shadow-md: 0 6px 16px -2px rgba(0, 0, 0, 0.6), inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
+  --shadow-lg: 0 12px 28px -4px rgba(0, 0, 0, 0.7), inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
+  --shadow-xl: 0 20px 40px -6px rgba(0, 0, 0, 0.8), inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
+  --shadow-2xl: 0 32px 64px -12px rgba(0, 0, 0, 0.9), inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
+  --shadow-skeuomorphic: inset 0 1px 0 0 rgba(255, 255, 255, 0.1), 0 2px 4px rgba(0, 0, 0, 0.6);
 }
-
