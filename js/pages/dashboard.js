@@ -17,7 +17,7 @@ export function renderDashboard(container) {
   // One-time suggestion for accounts created with Google: add a password for email sign-in.
   const nudgeKey = `sf_pwd_nudge_dismissed_${user.id || ''}`;
   let nudgeDismissed = false;
-  try { nudgeDismissed = localStorage.getItem(nudgeKey) === '1'; } catch (_) {}
+  try { nudgeDismissed = localStorage.getItem(nudgeKey) === '1'; } catch (_) { }
   const showPasswordNudge = user.hasPassword === false && user.email && !nudgeDismissed;
 
   container.innerHTML = `
@@ -66,7 +66,7 @@ export function renderDashboard(container) {
     <!-- KPI Cards -->
     <div class="grid-4" style="margin-bottom:var(--space-6);">
       ${renderStatCard('Total Seats', stats.totalSeats, '', 'seat-count', '#eef4ff', '#6172f3', icons.map)}
-      ${renderStatCard('Occupied', stats.occupied, `${Math.round((stats.occupied/Math.max(stats.totalSeats,1))*100)}% occupancy`, 'occupied', '#eef4ff', '#444ce7', icons.users)}
+      ${renderStatCard('Occupied', stats.occupied, `${Math.round((stats.occupied / Math.max(stats.totalSeats, 1)) * 100)}% occupancy`, 'occupied', '#eef4ff', '#444ce7', icons.users)}
       ${renderStatCard('Available', stats.available, `${stats.available} unassigned`, 'available', '#ecfdf3', '#17b26a', icons.checkCircle)}
       ${renderStatCard("Today's Revenue", utils.formatINR(stats.todayRevenue), `${utils.formatINR(stats.monthRevenue)} this month`, 'revenue', '#fef0c7', '#f79009', icons['dollar-sign'])}
     </div>
@@ -150,7 +150,7 @@ export function renderDashboard(container) {
           <button class="btn btn-secondary btn-sm" onclick="app.navigate('/memberships')">View All</button>
         </div>
         <div style="max-height:320px;overflow-y:auto;">
-          ${expiring.length ? expiring.slice(0,6).map(item => renderExpiryItem(item)).join('') : `
+          ${expiring.length ? expiring.slice(0, 6).map(item => renderExpiryItem(item)).join('') : `
             <div class="empty-state" style="padding:var(--space-8);">
               <div class="empty-icon">${icons.checkCircle}</div>
               <div class="empty-title" style="font-size:var(--text-sm);">No memberships expiring soon</div>
@@ -197,7 +197,7 @@ export function renderDashboard(container) {
   `;
 
   container.querySelector('#pwd-nudge-dismiss')?.addEventListener('click', () => {
-    try { localStorage.setItem(nudgeKey, '1'); } catch (_) {}
+    try { localStorage.setItem(nudgeKey, '1'); } catch (_) { }
     container.querySelector('#pwd-nudge')?.remove();
   });
 
@@ -225,7 +225,7 @@ export function renderDashboard(container) {
         duesCard.textContent = utils.formatINR(rep.totalOutstandingDues);
       }
     }
-  }).catch(() => {});
+  }).catch(() => { });
 }
 
 function renderStatCard(label, value, sub, id, iconBg, iconColor, iconSvg) {
@@ -247,9 +247,9 @@ function renderRevenueChart(data) {
     <div style="display:flex;flex-direction:column;gap:var(--space-3);">
       <div style="display:flex;align-items:flex-end;gap:var(--space-2);height:120px;">
         ${data.map((d, i) => {
-          const height = max > 0 ? Math.round((d.amount / max) * 100) : 5;
-          const isToday = i === data.length - 1;
-          return `
+    const height = max > 0 ? Math.round((d.amount / max) * 100) : 5;
+    const isToday = i === data.length - 1;
+    return `
             <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:var(--space-1);height:100%;">
               <div class="tooltip-wrap" style="flex:1;width:100%;display:flex;align-items:flex-end;">
                 <div style="width:100%;height:${Math.max(height, 4)}%;background:${isToday ? 'var(--sf-indigo-600)' : 'var(--sf-indigo-200)'};border-radius:var(--radius-xs) var(--radius-xs) 0 0;transition:height 0.5s;cursor:pointer;"
@@ -259,7 +259,7 @@ function renderRevenueChart(data) {
               </div>
             </div>
           `;
-        }).join('')}
+  }).join('')}
       </div>
       <div style="display:flex;gap:var(--space-2);">
         ${data.map(d => `<div style="flex:1;text-align:center;font-size:0.625rem;color:var(--color-text-quaternary);">${d.label}</div>`).join('')}
@@ -342,7 +342,7 @@ function renderExpiryItem(item) {
       <div class="avatar avatar-sm" style="background:${student.avatar};">${utils.initials(student.name)}</div>
       <div style="flex:1;min-width:0;">
         <div style="font-size:var(--text-sm);font-weight:var(--fw-medium);color:var(--color-text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${student.name}</div>
-        <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);">${seat ? 'Seat ' + seat.label : 'No seat'} · Exp ${utils.formatDate(endDate, {day:'numeric',month:'short'})}</div>
+        <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);">${seat ? 'Seat ' + seat.label : 'No seat'} · Exp ${utils.formatDate(endDate, { day: 'numeric', month: 'short' })}</div>
       </div>
       <div style="font-size:var(--text-xs);font-weight:var(--fw-semibold);color:${colors[urgency]};flex-shrink:0;">
         ${daysLeft === 0 ? 'Today' : daysLeft === 1 ? 'Tomorrow' : `${daysLeft}d left`}
@@ -396,7 +396,7 @@ function renderActivityItem(a) {
 
 // ── Quick Edit Custom Library & Branch Name ────────────────────────
 if (typeof window !== 'undefined') {
-  window.openEditLibraryNameModal = function() {
+  window.openEditLibraryNameModal = function () {
     const branchId = store.getActiveBranchId();
     const branch = store.getBranch(branchId);
     const org = store.organization || {};
@@ -429,7 +429,7 @@ if (typeof window !== 'undefined') {
     modal.open('Customize Library & Branch Name', bodyHtml, footerHtml);
   };
 
-  window.saveCustomLibraryName = async function(branchId) {
+  window.saveCustomLibraryName = async function (branchId) {
     const orgInput = document.getElementById('modal-edit-org-name');
     const branchInput = document.getElementById('modal-edit-branch-name');
     const btn = document.getElementById('btn-save-custom-library-name');

@@ -613,6 +613,40 @@ module.exports = withHandler(async function handler(req, res) {
     // Rate limit library creation per user (AUTH-09)
     await checkRateLimit(query, `create_library:user:${session.userId}`, 5, 86400);
 
+    // Enforce 1 Email / User = 1 Library Rule (Only 1 owned library per user)
+    const existingOrgCheck = await query(
+      `SELECT om.organization_id, o.name, o.slug, o.plan, o.onboarding_completed, o.subscription_status
+       FROM org_members om
+       JOIN organizations o ON o.id = om.organization_id
+       WHERE om.user_id = $1 AND om.role = 'owner' AND om.status = 'active'
+       ORDER BY o.created_at ASC
+       LIMIT 1`,
+      [session.userId]
+    );
+
+    if (existingOrgCheck.rows.length > 0) {
+      const existingOrg = existingOrgCheck.rows[0];
+      const switchRes = await switchOrganization(session.sessionId, existingOrg.organization_id, session.userId);
+      setSessionCookie(res, switchRes.token);
+
+      const activeLibrary = {
+        id: existingOrg.organization_id,
+        name: existingOrg.name,
+        slug: existingOrg.slug,
+        plan: existingOrg.plan,
+        onboarding_completed: existingOrg.onboarding_completed,
+        subscription_status: existingOrg.subscription_status,
+        role: 'owner',
+      };
+
+      return res.json({
+        ok: true,
+        state: existingOrg.onboarding_completed ? 'ready' : 'needs_onboarding',
+        activeLibrary,
+        message: 'Your account is already linked to your library. Redirecting to your dashboard.',
+      });
+    }
+
     const orgId = uid('ORG');
     const baseSlug = orgName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'library';
     const slugSuffix = crypto.randomBytes(3).toString('hex');
