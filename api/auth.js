@@ -619,7 +619,7 @@ module.exports = withHandler(async function handler(req, res) {
        FROM org_members om
        JOIN organizations o ON o.id = om.organization_id
        WHERE om.user_id = $1 AND om.role = 'owner' AND om.status = 'active'
-       ORDER BY o.created_at ASC
+       ORDER BY o.created_at DESC
        LIMIT 1`,
       [session.userId]
     );
