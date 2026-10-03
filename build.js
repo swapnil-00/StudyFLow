@@ -217,6 +217,11 @@ if (fs.existsSync(assetsDir)) {
   }
 }
 
+// Write Cloudflare _headers file for static asset security & caching
+const { generateHeadersFile } = require('./lib/security-headers');
+const headersContent = generateHeadersFile();
+fs.writeFileSync(path.join(publicDir, '_headers'), headersContent, 'utf8');
 
 console.log('Static distribution compiled to public/ directory for Cloudflare Workers deployment.');
+
 

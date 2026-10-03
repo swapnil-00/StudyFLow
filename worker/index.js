@@ -18,23 +18,8 @@ const dataHandler = require('../api/data');
 const writeHandler = require('../api/write');
 const reportsHandler = require('../api/reports');
 
-// ── Security headers (from vercel.json) ──────────────────────────────────────
-const SECURITY_HEADERS = {
-  'X-Content-Type-Options': 'nosniff',
-  'X-Frame-Options': 'SAMEORIGIN',
-  'Referrer-Policy': 'strict-origin-when-cross-origin',
-  'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
-  'Strict-Transport-Security': 'max-age=63072000; includeSubDomains',
-};
-
-const CSP_REPORT_ONLY =
-  "default-src 'self'; " +
-  "script-src 'self' 'unsafe-inline' https://apis.google.com https://www.gstatic.com https://www.google.com https://www.recaptcha.net; " +
-  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
-  "font-src 'self' https://fonts.gstatic.com data:; " +
-  "frame-src 'self' https://accounts.google.com https://*.firebaseapp.com https://www.google.com https://www.recaptcha.net https://recaptcha.net https://embed.diagrams.net; " +
-  "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com; " +
-  "object-src 'none'; base-uri 'self'";
+// ── Security headers (shared module with build.js) ─────────────────────────
+const { SECURITY_HEADERS, CSP_REPORT_ONLY } = require('../lib/security-headers');
 
 // ── Adapter: Cloudflare Request → Vercel-style req/res ───────────────────────
 
@@ -135,6 +120,13 @@ function makeRes() {
   return {
     res,
     toResponse() {
+      if (!state.finished) {
+        state.finished = true;
+        state.statusCode = 500;
+        state.headers.set('Content-Type', 'application/json');
+        state.body = JSON.stringify({ ok: false, error: 'Internal server error' });
+        resolveResponse();
+      }
       return responsePromise.then(() => {
         return new Response(state.body, {
           status: state.statusCode,
