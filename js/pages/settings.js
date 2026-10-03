@@ -202,8 +202,8 @@ export function renderSettings(container) {
           <div class="card-header"><div class="card-title">Email Delivery</div></div>
           <div class="card-body" style="display:flex;flex-direction:column;gap:var(--space-3);">
             <p style="font-size:12px;color:var(--color-text-secondary);margin:0;">
-              Password reset codes are sent by email. Send yourself a test to check the setup
-              (<code>RESEND_API_KEY</code> + <code>MAIL_FROM</code> in Cloudflare Workers settings).
+              Password reset and notification emails are sent via your configured provider. Send yourself a test to check the setup
+              (<code>BREVO_API_KEY</code> (preferred) or <code>RESEND_API_KEY</code>, plus <code>MAIL_FROM</code> in Cloudflare Workers settings).
             </p>
             <button class="btn btn-secondary" id="btn-send-test-email" onclick="sendTestEmail()">Send test email to ${esc(user.email || 'me')}</button>
             <div id="test-email-result" style="display:none;padding:var(--space-3);border-radius:var(--radius-lg);font-size:12px;line-height:1.5;"></div>
@@ -223,8 +223,9 @@ export function renderSettings(container) {
                     <div style="font-weight:600;color:var(--color-text-primary);">Google</div>
                     <div style="color:var(--color-text-tertiary);">${esc(user.email || '')}</div>
                   </div>
-                  <span class="badge ${user.hasGoogle ? 'badge-success' : 'badge-neutral'}">${user.hasGoogle ? '✓ Connected' : 'Not connected'}</span>
+                  <span class="badge badge-success">✓ Connected</span>
                 </div>
+                ${store.authMethods?.password !== false ? `
                 <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid var(--color-border);border-radius:8px;background:var(--color-bg-secondary);">
                   <div>
                     <div style="font-weight:600;color:var(--color-text-primary);">Email &amp; password</div>
@@ -234,6 +235,7 @@ export function renderSettings(container) {
                     ? '<span class="badge badge-success">✓ Set</span>'
                     : `<a class="btn btn-primary btn-sm" href="#/forgot-password?mode=set&autosend=1&email=${encodeURIComponent(user.email || '')}">Set password</a>`}
                 </div>
+                ` : ''}
               </div>
             </div>
 
@@ -250,6 +252,7 @@ export function renderSettings(container) {
               </div>
             </div>
 
+            ${store.authMethods?.password !== false ? `
             <div style="padding-top:var(--space-3);border-top:1px solid var(--color-border-secondary);">
               ${user.hasPassword === false ? `
               <div style="font-size:var(--text-sm);font-weight:600;color:var(--color-text-primary);margin-bottom:6px;">Password</div>
@@ -272,6 +275,7 @@ export function renderSettings(container) {
               <a href="#/forgot-password?email=${encodeURIComponent(user.email || '')}" style="display:block;margin-top:8px;font-size:12px;color:var(--color-primary);text-align:center;">Forgot your current password?</a>
               `}
             </div>
+            ` : ''}
           </div>
         </div>
       </div>

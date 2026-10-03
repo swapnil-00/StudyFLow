@@ -331,6 +331,13 @@ export function renderOnboardingPage() {
 }
 
 export function renderForgotPasswordPage(_container, params = {}) {
+  // If passwords are disabled, redirect to login page immediately
+  getClientConfig().then((config) => {
+    if (config?.authMethods?.password === false) {
+      window.location.hash = '#/login';
+    }
+  }).catch(() => {});
+
   const isSetMode = params.mode === 'set';
   const prefillEmail = String(params.email || '');
   const container = document.createElement('div');
@@ -721,7 +728,22 @@ export function renderInvitePage(token) {
   return container;
 }
 
-// ── Firebase Client SDK Loader ──────────────────────────────────────────────
+// ── Firebase Client SDK Loader & Client Config ──────────────────────────────
+let clientConfigPromise = null;
+
+async function getClientConfig() {
+  if (clientConfigPromise) return clientConfigPromise;
+  clientConfigPromise = (async () => {
+    try {
+      const configRes = await fetch('/api/auth?action=client_config');
+      const configData = await configRes.json();
+      if (configData.ok) return configData;
+    } catch (_) {}
+    return { authMethods: { google: true, password: false } };
+  })();
+  return clientConfigPromise;
+}
+
 let firebaseInitPromise = null;
 
 async function ensureFirebaseSdk() {
@@ -731,8 +753,7 @@ async function ensureFirebaseSdk() {
   if (firebaseInitPromise) return firebaseInitPromise;
 
   firebaseInitPromise = (async () => {
-    const configRes = await fetch('/api/auth?action=client_config');
-    const configData = await configRes.json();
+    const configData = await getClientConfig();
     if (!configData.ok || !configData.firebase?.projectId) {
       throw new Error('Firebase client configuration is not available on this server.');
     }
@@ -855,7 +876,25 @@ function setupLoginEvents(container) {
   const alertEl = container.querySelector('#auth-alert');
   const googleBtn = container.querySelector('#btn-google-login');
   const form = container.querySelector('#email-login-form');
+  const divider = container.querySelector('.auth-divider');
   const submitBtn = container.querySelector('#btn-email-submit');
+
+  // Adapt UI if password authentication is switched off
+  getClientConfig().then((config) => {
+    if (config?.authMethods?.password === false) {
+      if (form) form.style.display = 'none';
+      if (divider) divider.style.display = 'none';
+      let note = container.querySelector('.auth-google-only-note');
+      if (!note) {
+        note = document.createElement('p');
+        note.className = 'auth-google-only-note';
+        note.style.cssText = 'text-align:center;font-size:13px;color:var(--color-text-secondary);margin-top:16px;line-height:1.5;';
+        note.textContent = 'StudyFlow uses your Google account to sign in securely.';
+        const identityBtns = container.querySelector('.auth-identity-buttons');
+        if (identityBtns) identityBtns.insertAdjacentElement('afterend', note);
+      }
+    }
+  }).catch(() => {});
 
   // Password visibility toggle
   const pwdToggle = container.querySelector('.password-toggle-btn');
@@ -1024,7 +1063,25 @@ function setupSignupEvents(container) {
   const alertEl = container.querySelector('#auth-alert');
   const googleBtn = container.querySelector('#btn-google-signup');
   const form = container.querySelector('#email-signup-form');
+  const divider = container.querySelector('.auth-divider');
   const submitBtn = container.querySelector('#btn-signup-submit');
+
+  // Adapt UI if password authentication is switched off
+  getClientConfig().then((config) => {
+    if (config?.authMethods?.password === false) {
+      if (form) form.style.display = 'none';
+      if (divider) divider.style.display = 'none';
+      let note = container.querySelector('.auth-google-only-note');
+      if (!note) {
+        note = document.createElement('p');
+        note.className = 'auth-google-only-note';
+        note.style.cssText = 'text-align:center;font-size:13px;color:var(--color-text-secondary);margin-top:16px;line-height:1.5;';
+        note.textContent = 'StudyFlow uses your Google account to sign in securely.';
+        const identityBtns = container.querySelector('.auth-identity-buttons');
+        if (identityBtns) identityBtns.insertAdjacentElement('afterend', note);
+      }
+    }
+  }).catch(() => {});
 
   const pwdToggle = container.querySelector('.password-toggle-btn');
   const pwdInput = container.querySelector('#reg-password');

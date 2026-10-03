@@ -571,7 +571,7 @@ class App {
 
   async handleLogout() {
     await store.logout();
-    toast.show('Signed out successfully.', 'info');
+    toast.show('Signed out successfully. On a shared computer, also sign out of your Google account.', 'info');
     this._render();
     this.navigate('/login');
   }
@@ -827,7 +827,7 @@ class App {
 
     if (ok) {
       await store.logout();
-      toast.show('Signed out successfully.', 'info');
+      toast.show('Signed out successfully. On a shared computer, also sign out of your Google account.', 'info');
       this._render();
       this._navigate();
     }

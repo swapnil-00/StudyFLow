@@ -24,6 +24,7 @@ class Store {
     this._currentUser = null;
     this._authState = 'anonymous';
     this._libraries = [];
+    this._authMethods = { google: true, password: false };
     this._subscribers = [];
     this._loading = false;
     this._loaded = false;
@@ -57,6 +58,7 @@ class Store {
         this._organization = meJson.activeLibrary || null;
         this._authState = meJson.state || 'anonymous';
         this._libraries = meJson.libraries || [];
+        this._authMethods = meJson.authMethods || { google: true, password: false };
 
         // 2. Only use library data if in 'ready' state
         if (this._authState === 'ready') {
@@ -116,6 +118,10 @@ class Store {
 
   get libraries() {
     return this._libraries || [];
+  }
+
+  get authMethods() {
+    return this._authMethods || { google: true, password: false };
   }
 
   isAuthenticated() {

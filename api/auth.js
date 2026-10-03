@@ -5,7 +5,7 @@
 const crypto = require('crypto');
 const { query, withTransaction } = require('../lib/db');
 const { ensureMultiTenantSchema } = require('../lib/db-init');
-const { hashPassword, verifyPassword, verifyAgainstDummy, validatePasswordStrength, requireSession } = require('../lib/auth');
+const { hashPassword, verifyPassword, verifyAgainstDummy, validatePasswordStrength, requireSession, isPasswordAuthEnabled } = require('../lib/auth');
 const {
   createSession,
   validateSession,
@@ -27,10 +27,16 @@ const { activeProvider, sendMail, sendPasswordResetCode, sendPasswordChangedNoti
 const RESET_CODE_TTL_MINUTES = 10;
 const RESET_CODE_MAX_ATTEMPTS = 5;
 
+const passwordAuthDisabledError = () =>
+  new HttpError(
+    403,
+    'PASSWORD_AUTH_DISABLED',
+    'Email and password sign-in is not available. Please use "Continue with Google".'
+  );
+
 // Password-reset email can only work if a mail provider is configured (see lib/mailer.js).
-// Checked before looking up the account so the response never depends on whether it exists.
 function isMailConfigured() {
-  return Boolean(process.env.RESEND_API_KEY) || process.env.NODE_ENV !== 'production';
+  return activeProvider() !== 'none' || process.env.NODE_ENV !== 'production';
 }
 
 function mailProviderName() {
@@ -43,13 +49,15 @@ function describeMailError(err) {
   const raw = String(err?.message || err).replace(/\/\/[^@\s/]+@/g, '//***@');
   let hint = 'Check the email settings in the Cloudflare dashboard (Environment Variables).';
   if (/No email provider configured/i.test(raw)) {
-    hint = 'Set RESEND_API_KEY and MAIL_FROM as secrets in Cloudflare Workers settings.';
+    hint = 'Set BREVO_API_KEY (or RESEND_API_KEY) and MAIL_FROM as secrets in Cloudflare Workers settings.';
+  } else if (/key not found|401|Unauthorized|invalid.*key/i.test(raw)) {
+    hint = 'The API key (BREVO_API_KEY or RESEND_API_KEY) is invalid or was revoked. Check your provider dashboard.';
+  } else if (/sender.*not.*(valid|verified)|not verified/i.test(raw)) {
+    hint = 'MAIL_FROM is not verified by the provider. Under Brevo → Senders, verify studyflowbusiness0@gmail.com.';
   } else if (/testing emails|own email address|verify a domain|domain is not verified/i.test(raw)) {
     hint = 'Resend can only send from a domain you own and have verified. Verify your domain in Resend, add the DNS records in Cloudflare, and set MAIL_FROM to an address on that domain.';
-  } else if (/API key is invalid|401|Unauthorized/i.test(raw)) {
-    hint = 'The RESEND_API_KEY value is wrong or was revoked. Create a new key in Resend and update it in Cloudflare.';
   } else if (/from.*(invalid|not allowed)|sender/i.test(raw)) {
-    hint = 'MAIL_FROM is not allowed by the provider. For Resend it must use your verified domain.';
+    hint = 'MAIL_FROM is not allowed by the provider. Verify your sender email address in Brevo or Resend.';
   }
   return { error: raw.slice(0, 400), hint };
 }
@@ -154,6 +162,10 @@ module.exports = withHandler(async function handler(req, res) {
     const projectId = process.env.FIREBASE_PROJECT_ID || '';
     return res.json({
       ok: true,
+      authMethods: {
+        google: true,
+        password: isPasswordAuthEnabled(),
+      },
       firebase: {
         apiKey: process.env.FIREBASE_API_KEY || '',
         authDomain: process.env.FIREBASE_AUTH_DOMAIN || (projectId ? `${projectId}.firebaseapp.com` : ''),
@@ -171,7 +183,7 @@ module.exports = withHandler(async function handler(req, res) {
     }
 
     // Rate limit per IP (AUTH-14)
-    await checkRateLimit(query, `auth:session:ip:${ip}`, 30, 60);
+    await checkRateLimit(query, `auth:session:ip:${ip}`, 30, 60, { failClosed: true });
 
     const verified = await verifyFirebaseIdToken(idToken);
     const { uid: firebaseUid, email, email_verified, phone_number, name } = verified;
@@ -180,9 +192,9 @@ module.exports = withHandler(async function handler(req, res) {
     const authMethod = cleanPhone ? 'phone' : 'google';
 
     // Rate limit per Email / Phone and per Firebase UID (AUTH-14)
-    if (cleanEmail) await checkRateLimit(query, `auth:session:acc:${cleanEmail}`, 15, 60);
-    if (cleanPhone) await checkRateLimit(query, `auth:session:acc:${cleanPhone}`, 15, 60);
-    await checkRateLimit(query, `auth:session:uid:${firebaseUid}`, 15, 60);
+    if (cleanEmail) await checkRateLimit(query, `auth:session:acc:${cleanEmail}`, 15, 60, { failClosed: true });
+    if (cleanPhone) await checkRateLimit(query, `auth:session:acc:${cleanPhone}`, 15, 60, { failClosed: true });
+    await checkRateLimit(query, `auth:session:uid:${firebaseUid}`, 15, 60, { failClosed: true });
 
     let user = null;
 
@@ -371,8 +383,6 @@ module.exports = withHandler(async function handler(req, res) {
 
   // ── 2. LOGIN (Email + Password) ───────────────────────────────────────────
   // ── Email delivery self-test (owner only) ───────────────────────────────
-  // Reset-code sends fail silently to the user by design (no account enumeration), so owners
-  // need a way to see the real provider error while configuring RESEND_API_KEY / SMTP_URL.
   if (action === 'send_test_email') {
     const session = await requireSession(req);
     if (session.role !== 'owner') {
@@ -381,10 +391,10 @@ module.exports = withHandler(async function handler(req, res) {
     if (!session.email) {
       throw new HttpError(400, 'NO_EMAIL', 'Your account has no email address to send a test to.');
     }
-    await checkRateLimit(query, `testmail:user:${session.userId}`, 5, 3600);
+    await checkRateLimit(query, `testmail:user:${session.userId}`, 5, 3600, { failClosed: true });
 
     const provider = mailProviderName();
-    const from = process.env.MAIL_FROM || '(default) StudyFlow <onboarding@resend.dev>';
+    const from = process.env.MAIL_FROM || 'studyflowbusiness0@gmail.com';
     try {
       const result = await sendMail({
         to: session.email,
@@ -410,16 +420,16 @@ module.exports = withHandler(async function handler(req, res) {
   }
 
   // ── Identifier-first sign-in: which methods does this email use? ─────────
-  // Lets the login page ask for a password only when the account has one, so users of
-  // Google-created accounts are never prompted to type their Google password into this site.
-  // Unknown emails get the same answer as password accounts; only Google-only accounts differ.
   if (action === 'check_email') {
+    if (!isPasswordAuthEnabled()) {
+      return res.json({ ok: true, methods: ['google'] });
+    }
     const { email } = req.body || {};
     const cleanEmail = String(email || '').toLowerCase().trim();
     if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
       throw new HttpError(400, 'INVALID_EMAIL', 'Please enter a valid email address.');
     }
-    await checkRateLimit(query, `checkemail:ip:${ip}`, 30, 60);
+    await checkRateLimit(query, `checkemail:ip:${ip}`, 30, 60, { failClosed: true });
 
     const userRes = await query(
       'SELECT password_hash IS NOT NULL AS has_password, firebase_uid IS NOT NULL AS has_google FROM users WHERE LOWER(email) = $1',
@@ -433,14 +443,17 @@ module.exports = withHandler(async function handler(req, res) {
   }
 
   if (action === 'login') {
+    if (!isPasswordAuthEnabled()) {
+      throw passwordAuthDisabledError();
+    }
     const { email, password } = req.body || {};
     if (!email || !password) {
       throw new HttpError(400, 'MISSING_FIELDS', 'Email and password are required.');
     }
 
     const cleanEmail = email.toLowerCase().trim();
-    await checkRateLimit(query, `login:ip:${ip}`, 20, 60);
-    await checkRateLimit(query, `login:acc:${cleanEmail}`, 5, 300);
+    await checkRateLimit(query, `login:ip:${ip}`, 20, 60, { failClosed: true });
+    await checkRateLimit(query, `login:acc:${cleanEmail}`, 5, 300, { failClosed: true });
 
     const userRes = await query('SELECT * FROM users WHERE LOWER(email) = $1', [cleanEmail]);
 
@@ -527,6 +540,9 @@ module.exports = withHandler(async function handler(req, res) {
 
   // ── 3. REGISTER (Email + Password Sign-Up) ────────────────────────────────
   if (action === 'register') {
+    if (!isPasswordAuthEnabled()) {
+      throw passwordAuthDisabledError();
+    }
     const { name, email, password, phone, termsAccepted } = req.body || {};
 
     if (!name || !email || !password) {
@@ -540,7 +556,7 @@ module.exports = withHandler(async function handler(req, res) {
     const cleanEmail = email.toLowerCase().trim();
     validatePasswordStrength(password);
 
-    await checkRateLimit(query, `register:ip:${ip}`, 10, 3600);
+    await checkRateLimit(query, `register:ip:${ip}`, 10, 3600, { failClosed: true });
 
     const existing = await query('SELECT id, email_verified_at FROM users WHERE LOWER(email) = $1', [cleanEmail]);
     if (existing.rows.length > 0) {
@@ -765,6 +781,10 @@ module.exports = withHandler(async function handler(req, res) {
     return res.json({
       ok: true,
       state: sessionData.state,
+      authMethods: {
+        google: true,
+        password: isPasswordAuthEnabled(),
+      },
       user: {
         id: sessionData.userId,
         name: sessionData.name,
@@ -855,7 +875,7 @@ module.exports = withHandler(async function handler(req, res) {
       }
     }
 
-    await checkRateLimit(query, `invite:org:${session.orgId}`, 20, 3600);
+    await checkRateLimit(query, `invite:org:${session.orgId}`, 20, 3600, { failClosed: true });
 
     const rawToken = crypto.randomBytes(32).toString('hex');
     const tokenHash = hashSessionToken(rawToken);
@@ -1078,9 +1098,10 @@ module.exports = withHandler(async function handler(req, res) {
   }
 
   // ── 14. PASSWORD RESET / SET PASSWORD BY EMAIL CODE (AUTH-10) ──────────────
-  // Also how an account created with Google adds a password: proving access to the inbox
-  // is the same proof as for a reset.
   if (action === 'password_reset_request' || action === 'password_reset') {
+    if (!isPasswordAuthEnabled()) {
+      throw passwordAuthDisabledError();
+    }
     const { email } = req.body || {};
     const cleanEmail = String(email || '').toLowerCase().trim();
     if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
@@ -1090,8 +1111,8 @@ module.exports = withHandler(async function handler(req, res) {
       throw new HttpError(503, 'EMAIL_UNAVAILABLE', 'Password reset by email is not available right now. Please contact support.');
     }
 
-    await checkRateLimit(query, `pwreset:ip:${ip}`, 10, 3600);
-    await checkRateLimit(query, `pwreset:acc:${cleanEmail}`, 5, 3600);
+    await checkRateLimit(query, `pwreset:ip:${ip}`, 10, 3600, { failClosed: true });
+    await checkRateLimit(query, `pwreset:acc:${cleanEmail}`, 5, 3600, { failClosed: true });
 
     // A signed-in user asking for a code for their OWN email (e.g. "Set a password" from Settings)
     // may see the real delivery outcome; anyone else gets the generic, non-enumerating answer.
@@ -1134,7 +1155,6 @@ module.exports = withHandler(async function handler(req, res) {
         if (selfRequest) {
           throw new HttpError(502, 'EMAIL_SEND_FAILED', `We couldn't send the code to ${to}. ${hint}`);
         }
-        // Anonymous: same response either way (no account enumeration); the failure is logged.
       }
     }
 
@@ -1144,15 +1164,16 @@ module.exports = withHandler(async function handler(req, res) {
     });
   }
 
-  // Step 2 of reset: check the emailed code on its own. A correct code is consumed and exchanged
-  // for a one-time reset token (10 min), so the password form is only shown after the code is
-  // known to be right, and typing passwords never burns code attempts.
+  // Step 2 of reset: check the emailed code on its own.
   if (action === 'password_reset_verify') {
+    if (!isPasswordAuthEnabled()) {
+      throw passwordAuthDisabledError();
+    }
     const { email, code } = req.body || {};
     if (!email || !code) throw new HttpError(400, 'MISSING_FIELDS', 'Email and code are required.');
     const cleanEmail = String(email).toLowerCase().trim();
-    await checkRateLimit(query, `pwconfirm:ip:${ip}`, 20, 3600);
-    await checkRateLimit(query, `pwconfirm:acc:${cleanEmail}`, 10, 3600);
+    await checkRateLimit(query, `pwconfirm:ip:${ip}`, 20, 3600, { failClosed: true });
+    await checkRateLimit(query, `pwconfirm:acc:${cleanEmail}`, 10, 3600, { failClosed: true });
 
     const { evt } = await checkResetCode(cleanEmail, code);
     const resetToken = crypto.randomBytes(32).toString('base64url');
@@ -1165,17 +1186,19 @@ module.exports = withHandler(async function handler(req, res) {
     return res.json({ ok: true, resetToken, message: 'Code verified. Now choose your new password.' });
   }
 
-  // Step 3 of reset: set the password with the reset token from step 2 (or, for older clients,
-  // the code itself), then sign this device in.
+  // Step 3 of reset: set the password with the reset token from step 2
   if (action === 'password_reset_confirm') {
+    if (!isPasswordAuthEnabled()) {
+      throw passwordAuthDisabledError();
+    }
     const { email, code, resetToken, newPassword } = req.body || {};
     if (!email || (!code && !resetToken) || !newPassword) {
       throw new HttpError(400, 'MISSING_FIELDS', 'Email, verification and new password are required.');
     }
 
     const cleanEmail = String(email).toLowerCase().trim();
-    await checkRateLimit(query, `pwconfirm:ip:${ip}`, 20, 3600);
-    await checkRateLimit(query, `pwconfirm:acc:${cleanEmail}`, 10, 3600);
+    await checkRateLimit(query, `pwconfirm:ip:${ip}`, 20, 3600, { failClosed: true });
+    await checkRateLimit(query, `pwconfirm:acc:${cleanEmail}`, 10, 3600, { failClosed: true });
     validatePasswordStrength(newPassword);
 
     let user;
@@ -1217,7 +1240,6 @@ module.exports = withHandler(async function handler(req, res) {
     const sessionData = await validateSession(sessionToken);
 
     await logAuthEvent({ userId: user.id, organizationId: sessionData.orgId, event: 'password_reset_completed', method: 'code', ip, userAgent, success: true });
-    // Awaited: on serverless, work left running after the response can be frozen and lost.
     try {
       await sendPasswordChangedNotice({ to: user.email, ip, when: new Date() });
     } catch (err) {
@@ -1234,6 +1256,9 @@ module.exports = withHandler(async function handler(req, res) {
     if (!name) throw new HttpError(400, 'MISSING_NAME', 'Name is required');
 
     if (newPassword) {
+      if (!isPasswordAuthEnabled()) {
+        throw passwordAuthDisabledError();
+      }
       validatePasswordStrength(newPassword);
       const userRes = await query('SELECT password_hash FROM users WHERE id = $1', [session.userId]);
       const currentHash = userRes.rows[0]?.password_hash;
@@ -1243,8 +1268,6 @@ module.exports = withHandler(async function handler(req, res) {
         const check = await verifyPassword(currentPassword, currentHash);
         if (!check.valid) throw new HttpError(400, 'WRONG_PASSWORD', 'Current password is incorrect');
       } else {
-        // Adding a first password to a Google account requires proof beyond the session cookie
-        // (AUTH-12): a fresh Google sign-in (within 5 min) — otherwise use the emailed-code flow.
         if (!idToken) {
           throw new HttpError(400, 'REAUTH_REQUIRED',
             'To add a password to a Google account, use "Set password by email" on the sign-in page, or sign in with Google again.');
