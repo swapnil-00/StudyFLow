@@ -30,3 +30,7 @@ ANTIGRAVITY_FIX_PROMPT.md
 # Firebase service account keys
 *firebase-adminsdk*.json
 serviceAccountKey.json
+
+# Cloudflare Wrangler state
+.wrangler/
+

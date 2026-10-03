@@ -7,41 +7,72 @@ const path = require('path');
 const MAILER = path.join(__dirname, '..', 'lib', 'mailer.js');
 
 function loadMailer(env) {
-  const keys = ['RESEND_API_KEY', 'SMTP_URL', 'MAIL_FROM', 'EMAIL_PROVIDER'];
+  const keys = ['BREVO_API_KEY', 'RESEND_API_KEY', 'MAIL_FROM', 'NODE_ENV'];
   const saved = Object.fromEntries(keys.map(k => [k, process.env[k]]));
   for (const k of keys) delete process.env[k];
   Object.assign(process.env, env);
   delete require.cache[require.resolve(MAILER)];
   const mailer = require(MAILER);
-  return { mailer, restore: () => { for (const k of keys) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; } } };
+  return {
+    mailer,
+    restore: () => {
+      for (const k of keys) {
+        if (saved[k] === undefined) delete process.env[k];
+        else process.env[k] = saved[k];
+      }
+    }
+  };
 }
 
-const SMTP = 'smtps://sender%40gmail.com:xxxxxxxxxxxxxxxx@smtp.gmail.com:465';
-
 describe('Email provider selection', () => {
-  test('Gmail sender + SMTP + leftover RESEND_API_KEY → uses SMTP (Resend cannot send from gmail.com)', () => {
-    const { mailer, restore } = loadMailer({ RESEND_API_KEY: 're_test', SMTP_URL: SMTP, MAIL_FROM: 'StudyFlow <sender@gmail.com>' });
-    try { assert.equal(mailer.activeProvider(), 'smtp'); } finally { restore(); }
+  test('Brevo key present → uses Brevo (preferred provider)', () => {
+    const { mailer, restore } = loadMailer({ BREVO_API_KEY: 'xkeysib-test', RESEND_API_KEY: 're_test' });
+    try {
+      assert.equal(mailer.activeProvider(), 'brevo');
+    } finally {
+      restore();
+    }
   });
 
-  test('Own-domain sender + Resend + SMTP → uses Resend', () => {
-    const { mailer, restore } = loadMailer({ RESEND_API_KEY: 're_test', SMTP_URL: SMTP, MAIL_FROM: 'StudyFlow <no-reply@studyflow.in>' });
-    try { assert.equal(mailer.activeProvider(), 'resend'); } finally { restore(); }
+  test('Only Resend key present → uses Resend', () => {
+    const { mailer, restore } = loadMailer({ RESEND_API_KEY: 're_test' });
+    try {
+      assert.equal(mailer.activeProvider(), 'resend');
+    } finally {
+      restore();
+    }
   });
 
-  test('Only SMTP → SMTP; only Resend → Resend; nothing → none', () => {
-    let l = loadMailer({ SMTP_URL: SMTP, MAIL_FROM: 'StudyFlow <sender@gmail.com>' });
-    try { assert.equal(l.mailer.activeProvider(), 'smtp'); } finally { l.restore(); }
-    l = loadMailer({ RESEND_API_KEY: 're_test', MAIL_FROM: 'StudyFlow <no-reply@studyflow.in>' });
-    try { assert.equal(l.mailer.activeProvider(), 'resend'); } finally { l.restore(); }
-    l = loadMailer({});
-    try { assert.equal(l.mailer.activeProvider(), 'none'); } finally { l.restore(); }
+  test('No keys configured → returns none', () => {
+    const { mailer, restore } = loadMailer({});
+    try {
+      assert.equal(mailer.activeProvider(), 'none');
+    } finally {
+      restore();
+    }
   });
 
-  test('EMAIL_PROVIDER forces the choice when that provider is configured', () => {
-    let l = loadMailer({ RESEND_API_KEY: 're_test', SMTP_URL: SMTP, MAIL_FROM: 'StudyFlow <no-reply@studyflow.in>', EMAIL_PROVIDER: 'smtp' });
-    try { assert.equal(l.mailer.activeProvider(), 'smtp'); } finally { l.restore(); }
-    l = loadMailer({ SMTP_URL: SMTP, MAIL_FROM: 'StudyFlow <sender@gmail.com>', EMAIL_PROVIDER: 'resend' });
-    try { assert.equal(l.mailer.activeProvider(), 'smtp', 'falls back when forced provider is not configured'); } finally { l.restore(); }
+  test('In production with no keys → sendMail throws configuration error', async () => {
+    const { mailer, restore } = loadMailer({ NODE_ENV: 'production' });
+    try {
+      assert.equal(mailer.activeProvider(), 'none');
+      await assert.rejects(
+        () => mailer.sendMail({ to: 'user@example.com', subject: 'Test', text: 'Hello' }),
+        /No email provider configured/
+      );
+    } finally {
+      restore();
+    }
+  });
+
+  test('In non-production with no keys → sendMail logs warning and returns console provider', async () => {
+    const { mailer, restore } = loadMailer({ NODE_ENV: 'development' });
+    try {
+      assert.equal(mailer.activeProvider(), 'none');
+      const res = await mailer.sendMail({ to: 'user@example.com', subject: 'Test', text: 'Hello' });
+      assert.deepEqual(res, { delivered: false, provider: 'console', id: null });
+    } finally {
+      restore();
+    }
   });
 });
