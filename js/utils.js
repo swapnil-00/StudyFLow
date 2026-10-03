@@ -87,7 +87,7 @@ if (typeof window !== 'undefined') {
   // Boot timeout safeguard (15 seconds)
   setTimeout(function() {
     if (!window.__appLoaded && document.getElementById('app-loader')) {
-      window.showAppError('Connection timed out. Verify your Neon database connection and Vercel environment configuration.');
+      window.showAppError('Connection timed out. Verify your Neon database connection and environment configuration.');
     }
   }, 15000);
 

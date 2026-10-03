@@ -203,7 +203,7 @@ export function renderSettings(container) {
           <div class="card-body" style="display:flex;flex-direction:column;gap:var(--space-3);">
             <p style="font-size:12px;color:var(--color-text-secondary);margin:0;">
               Password reset codes are sent by email. Send yourself a test to check the setup
-              (Gmail <code>SMTP_URL</code> or <code>RESEND_API_KEY</code> + <code>MAIL_FROM</code> in Vercel).
+              (<code>RESEND_API_KEY</code> + <code>MAIL_FROM</code> in Cloudflare Workers settings).
             </p>
             <button class="btn btn-secondary" id="btn-send-test-email" onclick="sendTestEmail()">Send test email to ${esc(user.email || 'me')}</button>
             <div id="test-email-result" style="display:none;padding:var(--space-3);border-radius:var(--radius-lg);font-size:12px;line-height:1.5;"></div>

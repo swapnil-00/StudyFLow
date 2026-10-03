@@ -129,7 +129,7 @@ bundleContent += `// ─── APP CORE ───\n${appContent}\n`;
 fs.writeFileSync(bundlePath, bundleContent, 'utf8');
 console.log(`Bundle built successfully at ${bundlePath} (${(bundleContent.length / 1024).toFixed(1)} KB)`);
 
-// ─── 6. EXPORT STATIC DISTRIBUTION (public/) FOR VERCEL ───
+// ─── 6. EXPORT STATIC DISTRIBUTION (public/) FOR CLOUDFLARE WORKERS ───
 const publicDir = path.join(rootDir, 'public');
 const publicJsDir = path.join(publicDir, 'js');
 const publicCssDir = path.join(publicDir, 'css');
@@ -218,5 +218,5 @@ if (fs.existsSync(assetsDir)) {
 }
 
 
-console.log('Static distribution compiled to public/ directory for Vercel deployment.');
+console.log('Static distribution compiled to public/ directory for Cloudflare Workers deployment.');
 

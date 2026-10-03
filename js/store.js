@@ -3,7 +3,7 @@
 // All reads are from in-memory cache (loaded once on boot).
 // All writes go to /api/write immediately, then update the cache.
 
-const API_BASE = '';  // Same origin — works on Vercel and local
+const API_BASE = '';  // Same origin — works on Cloudflare Workers and local
 
 async function apiWrite(table, action, data, id, extraHeaders = {}) {
   const res = await fetch(`${API_BASE}/api/write`, {

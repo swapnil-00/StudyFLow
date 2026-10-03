@@ -30,7 +30,7 @@ const RESET_CODE_MAX_ATTEMPTS = 5;
 // Password-reset email can only work if a mail provider is configured (see lib/mailer.js).
 // Checked before looking up the account so the response never depends on whether it exists.
 function isMailConfigured() {
-  return Boolean(process.env.RESEND_API_KEY || process.env.SMTP_URL) || process.env.NODE_ENV !== 'production';
+  return Boolean(process.env.RESEND_API_KEY) || process.env.NODE_ENV !== 'production';
 }
 
 function mailProviderName() {
@@ -41,21 +41,15 @@ function mailProviderName() {
 // and signed-in users. Never shown for anonymous reset requests (no account enumeration).
 function describeMailError(err) {
   const raw = String(err?.message || err).replace(/\/\/[^@\s/]+@/g, '//***@');
-  let hint = 'Check the email settings in Vercel, then redeploy.';
+  let hint = 'Check the email settings in the Cloudflare dashboard (Environment Variables).';
   if (/No email provider configured/i.test(raw)) {
-    hint = 'Set SMTP_URL (Gmail app password) or RESEND_API_KEY in Vercel → Settings → Environment Variables, then redeploy.';
-  } else if (/nodemailer is not installed/i.test(raw)) {
-    hint = 'The deployed version is missing nodemailer. Redeploy the latest commit.';
-  } else if (/Username and Password not accepted|Invalid login|535|BadCredentials/i.test(raw)) {
-    hint = 'Gmail rejected the login. Use a 16-letter App Password (not your normal Gmail password, no spaces), and write the @ in the Gmail address as %40 inside SMTP_URL.';
+    hint = 'Set RESEND_API_KEY and MAIL_FROM as secrets in Cloudflare Workers settings.';
   } else if (/testing emails|own email address|verify a domain|domain is not verified/i.test(raw)) {
-    hint = 'Resend can only send from a domain you own and have verified (gmail.com can never be verified). Delete RESEND_API_KEY in Vercel and use Gmail SMTP (SMTP_URL + MAIL_FROM), or verify your own domain in Resend and set MAIL_FROM to an address on it. Then redeploy.';
+    hint = 'Resend can only send from a domain you own and have verified. Verify your domain in Resend, add the DNS records in Cloudflare, and set MAIL_FROM to an address on that domain.';
   } else if (/API key is invalid|401|Unauthorized/i.test(raw)) {
-    hint = 'The RESEND_API_KEY value is wrong or was revoked. Create a new key in Resend and update it in Vercel.';
-  } else if (/ENOTFOUND|ECONNREFUSED|ETIMEDOUT|ECONNRESET|Greeting never received|Invalid URL|Invalid protocol/i.test(raw)) {
-    hint = 'Could not connect to the mail server. SMTP_URL should look like smtps://name%40gmail.com:APPPASSWORD@smtp.gmail.com:465';
+    hint = 'The RESEND_API_KEY value is wrong or was revoked. Create a new key in Resend and update it in Cloudflare.';
   } else if (/from.*(invalid|not allowed)|sender/i.test(raw)) {
-    hint = 'MAIL_FROM is not allowed by the provider. For Gmail it must be the same Gmail address; for Resend it must use your verified domain.';
+    hint = 'MAIL_FROM is not allowed by the provider. For Resend it must use your verified domain.';
   }
   return { error: raw.slice(0, 400), hint };
 }
@@ -150,7 +144,9 @@ module.exports = withHandler(async function handler(req, res) {
   await ensureMultiTenantSchema();
 
   const action = req.body?.action || req.query?.action || (req.method === 'GET' ? 'me' : null);
-  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'ip';
+  // CF-Connecting-IP is set by Cloudflare and cannot be spoofed by the client.
+  // x-forwarded-for is a fallback for local development only.
+  const ip = req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for']?.split(',')[0]?.trim() || 'ip';
   const userAgent = req.headers['user-agent'] || '';
 
   // ── 0. CLIENT CONFIG (Public Firebase client parameters) ───────────────────

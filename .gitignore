@@ -1,5 +1,6 @@
 # Environment variables (CRITICAL: Contains Neon DB credentials)
 .env
+.dev.vars
 *.env.local
 .env.*.local
 

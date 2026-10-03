@@ -1,0 +1,31 @@
+# StudyFlow — Cloudflare Worker
+# Docs: https://developers.cloudflare.com/workers/wrangler/configuration/
+
+name = "studyflow"
+main = "worker/index.js"
+compatibility_date = "2025-04-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Smart Placement: run the Worker near the database, not near the user,
+# so every DB round-trip is fast. Users are in India; Neon is in us-east-2.
+[placement]
+mode = "smart"
+
+# Observability — replaces Vercel's function logs
+[observability]
+enabled = true
+
+# Static assets from the build output
+[assets]
+directory = "./public"
+not_found_handling = "single-page-application"
+
+# Hyperdrive binding — the owner creates the Hyperdrive config in the dashboard
+# pointing at the Neon connection string, then fills in the ID here.
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "7f49a0d576e041bcb994e1ebb31fbb7f"
+
+# Plain-text (non-secret) vars. Secrets are set with `wrangler secret put`.
+[vars]
+NODE_ENV = "production"
