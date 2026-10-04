@@ -3,8 +3,9 @@
 // ── Router ─────────────────────────────────────────────────────────
 const routes = {
   '/login': () => import('./pages/auth.js').then(m => m.renderLoginPage),
-  '/signup': () => import('./pages/auth.js').then(m => m.renderSignupPage),
-  '/setup-library': () => import('./pages/auth.js').then(m => m.renderSetupLibraryPage),
+  '/signup': () => { window.location.hash = '#/login'; return import('./pages/auth.js').then(m => m.renderLoginPage); },
+  '/setup-library': () => { window.location.hash = '#/login'; return import('./pages/auth.js').then(m => m.renderLoginPage); },
+  '/no-library': () => import('./pages/auth.js').then(m => m.renderNoLibraryPage),
   '/onboarding': () => import('./pages/auth.js').then(m => m.renderOnboardingPage),
   '/invite': () => import('./pages/auth.js').then(m => m.renderInvitePage),
   '/forgot-password': () => import('./pages/auth.js').then(m => m.renderForgotPasswordPage),
@@ -76,10 +77,16 @@ class App {
 
   _render() {
     const user = store.currentUser || { name: 'Admin', email: 'admin@studyflow.in', role: 'owner', avatarColor: '#6172f3' };
-    const org = store.organization || { name: 'StudyFlow Library', plan: 'trial' };
+    const org = store.organization || { name: 'StudyFlow Library', plan: 'starter' };
     const isAuth = store.isAuthenticated();
     const initials = utils.initials(user.name || 'User');
     const avatarColor = user.avatarColor || 'var(--color-primary)';
+    const isDemo = org.isDemo || org.plan === 'demo';
+    const isSuspended = org.subscriptionStatus === 'suspended';
+
+    const planBadge = isDemo
+      ? `<span class="badge" style="background:#f59e0b;color:#1e1e1e;font-weight:800;font-size:10px;padding:2px 6px;border-radius:4px;display:inline-block;letter-spacing:0.5px;">DEMO</span>`
+      : `<span style="font-size:10px;font-weight:700;color:var(--color-primary);letter-spacing:0.5px;text-transform:uppercase;">${(org.plan || 'starter')} Plan</span>`;
 
     document.getElementById('app').innerHTML = `
       <aside class="sidebar ${this.sidebarCollapsed ? 'collapsed' : ''}" id="sidebar">
@@ -87,7 +94,7 @@ class App {
           <div class="sidebar-logo-icon">SF</div>
           <div style="display:flex;flex-direction:column;overflow:hidden;line-height:1.2;">
             <span class="sidebar-logo-text truncate">${org.name || 'StudyFlow'}</span>
-            <span style="font-size:10px;font-weight:700;color:var(--color-primary);letter-spacing:0.5px;text-transform:uppercase;">${(org.plan || 'trial')} Plan</span>
+            ${planBadge}
           </div>
         </div>
 
@@ -99,7 +106,7 @@ class App {
           <div class="sidebar-user-avatar" style="background:${avatarColor};color:#ffffff;font-weight:700;">${initials}</div>
           <div class="sidebar-user-info">
             <div class="sidebar-user-name truncate">${user.name || 'Admin'}</div>
-            <div class="sidebar-user-role">${(user.role || 'Owner').toUpperCase()} · ${isAuth ? 'Cloud' : 'Demo'}</div>
+            <div class="sidebar-user-role">${(user.role || 'Owner').toUpperCase()} · ${isAuth ? 'Cloud' : (isDemo ? 'Demo' : 'Active')}</div>
           </div>
         </div>
 
@@ -111,6 +118,12 @@ class App {
       <div class="sidebar-overlay" id="sidebar-overlay" style="display:none;" onclick="app.closeMobileSidebar()"></div>
 
       <div class="main-area" id="main-area">
+        ${isSuspended ? `
+          <div style="background:#ef4444;color:#ffffff;padding:10px 16px;font-weight:600;font-size:13px;text-align:center;display:flex;align-items:center;justify-content:center;gap:8px;z-index:100;">
+            <span>⚠️ This library's subscription is inactive. Contact StudyFlow to reactivate.</span>
+            <button onclick="app.openContactModal()" style="background:#ffffff;color:#ef4444;border:none;padding:3px 10px;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;">Contact Support</button>
+          </div>
+        ` : ''}
         <header class="topbar" id="topbar">
           <button class="topbar-icon-btn" id="mobile-menu-btn" aria-label="Open mobile menu" onclick="app.openMobileSidebar()">
             ${icons.menu}
@@ -234,26 +247,26 @@ class App {
     const params = new URLSearchParams(rawHash.split('?')[1] || '');
 
     // ── Server Auth State Router Guard (AUTH-05, Plan §3.1) ──────────────
-    const authState = store.authState; // 'anonymous' | 'needs_library' | 'needs_onboarding' | 'ready'
-    const isAnonymousPath = ['/landing', '/login', '/signup', '/forgot-password'].includes(path) || path.startsWith('/invite');
+    const authState = store.authState; // 'anonymous' | 'no_library' | 'needs_onboarding' | 'ready'
+    const isAnonymousPath = ['/landing', '/login', '/forgot-password'].includes(path) || path.startsWith('/invite');
 
     if (authState === 'anonymous') {
       if (!isAnonymousPath) {
         window.location.hash = '#/login';
         return;
       }
-    } else if (authState === 'needs_library') {
-      if (path !== '/setup-library' && !path.startsWith('/invite')) {
-        window.location.hash = '#/setup-library';
+    } else if (authState === 'no_library') {
+      if (path !== '/no-library' && !path.startsWith('/invite') && path !== '/login') {
+        window.location.hash = '#/no-library';
         return;
       }
     } else if (authState === 'needs_onboarding') {
-      if (path !== '/onboarding' && path !== '/setup-library' && !path.startsWith('/invite')) {
+      if (path !== '/onboarding' && !path.startsWith('/invite')) {
         window.location.hash = '#/onboarding';
         return;
       }
     } else if (authState === 'ready') {
-      if (['/login', '/signup', '/setup-library', '/onboarding'].includes(path)) {
+      if (['/login', '/signup', '/setup-library', '/no-library', '/onboarding'].includes(path)) {
         window.location.hash = '#/dashboard';
         return;
       }
@@ -263,7 +276,7 @@ class App {
     this._updateActiveNav(path);
     this.closeMobileSidebar();
 
-    const isAuthRoute = ['/landing', '/login', '/signup', '/forgot-password', '/setup-library', '/onboarding'].includes(path) || path.startsWith('/invite');
+    const isAuthRoute = ['/landing', '/login', '/signup', '/forgot-password', '/setup-library', '/no-library', '/onboarding'].includes(path) || path.startsWith('/invite');
     const appEl = document.getElementById('app');
     if (appEl) {
       if (isAuthRoute) {
@@ -495,10 +508,10 @@ class App {
     if (existing) { existing.remove(); return; }
 
     const user = store.currentUser || { name: 'Admin', email: 'admin@studyflow.in', role: 'owner' };
-    const org = store.organization || { name: 'StudyFlow Library', plan: 'trial', seatLimit: 75 };
+    const org = store.organization || { name: 'StudyFlow Library', plan: 'starter', seatLimit: 100 };
     const isAuth = store.isAuthenticated();
     const currentSeats = store.getSeats().length;
-    const seatLimit = org.seatLimit || 75;
+    const seatLimit = org.seatLimit || 100;
 
     const rect = btn.getBoundingClientRect();
     const menu = document.createElement('div');
@@ -549,10 +562,10 @@ class App {
         </button>
       ` : `
         <button class="dropdown-item" onclick="app.openLoginModal(); document.getElementById('user-menu')?.remove()">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg> Log In to Your Cloud Library
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg> Sign In
         </button>
-        <button class="dropdown-item" style="color:var(--color-primary);font-weight:600;" onclick="app.openRegisterModal(); document.getElementById('user-menu')?.remove()">
-          ✨ Create New Library (Free Trial)
+        <button class="dropdown-item" style="color:var(--color-primary);font-weight:600;" onclick="app.openContactModal(); document.getElementById('user-menu')?.remove()">
+          ✨ Book a Demo / Contact Us
         </button>
       `}
     `;
@@ -565,8 +578,22 @@ class App {
     this.navigate('/login');
   }
 
-  openRegisterModal() {
-    this.navigate('/signup');
+  openContactModal() {
+    const email = 'studyflowbusiness0@gmail.com';
+    const bodyHTML = `
+      <div style="display:flex;flex-direction:column;gap:16px;padding:8px 0;">
+        <p style="font-size:14px;color:var(--color-text-secondary);line-height:1.5;margin:0;">
+          Get in touch with the StudyFlow team to set up your library, upgrade your plan, or book a live walkthrough.
+        </p>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <a href="mailto:${email}?subject=StudyFlow%20Demo%20%26%20Setup" class="btn btn-primary" style="display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+            Email: ${email}
+          </a>
+        </div>
+      </div>
+    `;
+    modal.open('Contact StudyFlow', bodyHTML, '<button class="btn btn-secondary" onclick="modal.close()">Close</button>', { size: 'sm' });
   }
 
   async handleLogout() {
@@ -698,102 +725,26 @@ class App {
 
   // ── SaaS Plan Upgrade Modal ───────────────────────────────────────
   openUpgradeModal() {
-    const org = store.organization || { plan: 'trial', seatLimit: 75 };
-    const currentPlan = org.plan || 'trial';
-
-    const tiers = [
-      {
-        id: 'starter',
-        name: 'Starter Plan',
-        price: '₹1,499',
-        period: '/ month',
-        seats: 'Up to 75 Seats',
-        branches: '1 Branch',
-        features: [
-          'Full Seat Map & Grid Visualizer',
-          'Student Profiles & Memberships',
-          'Payment Tracking & Receipts',
-          'Export CSV & Reports'
-        ],
-        highlight: false
-      },
-      {
-        id: 'pro',
-        name: 'Pro Plan',
-        badge: 'MOST POPULAR',
-        price: '₹3,499',
-        period: '/ month',
-        seats: 'Up to 250 Seats',
-        branches: 'Up to 3 Branches',
-        features: [
-          'Everything in Starter',
-          'WhatsApp Cloud Automation',
-          'Multi-Shift Seat Allocation',
-          'Expense Tracker & Profit Reports',
-          'Role-based Staff Management'
-        ],
-        highlight: true
-      },
-      {
-        id: 'enterprise',
-        name: 'Enterprise Plan',
-        price: '₹7,999',
-        period: '/ month',
-        seats: 'Up to 1,000 Seats',
-        branches: 'Unlimited Branches',
-        features: [
-          'Everything in Pro',
-          'Interactive Custom Room Designer',
-          'Dedicated Fast Database Node',
-          'Custom Invoicing & Branding',
-          '24/7 Priority Support & Onboarding'
-        ],
-        highlight: false
-      }
-    ];
+    const org = store.organization || { plan: 'starter', seatLimit: 100 };
+    const isDemo = org.isDemo || org.plan === 'demo';
+    const planName = isDemo ? 'Demo Plan' : `${(org.plan || 'starter').toUpperCase()} Plan`;
+    const seatLimit = org.seatLimit || 100;
 
     const bodyHTML = `
-      <div style="display:flex;flex-direction:column;gap:var(--space-6);">
-        <div style="text-align:center;">
-          <h3 style="font-size:var(--text-xl);font-weight:var(--fw-bold);color:var(--color-text-primary);margin:0;">Choose the Perfect Plan for Your Library</h3>
-          <p style="font-size:var(--text-sm);color:var(--color-text-secondary);margin-top:var(--space-2);">Scale your study rooms, branches, and student admissions seamlessly.</p>
+      <div style="display:flex;flex-direction:column;gap:16px;padding:8px 0;">
+        <div style="padding:16px;background:var(--color-bg-secondary);border-radius:var(--radius-md);border:1px solid var(--color-border-secondary);">
+          <div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:4px;">Current Subscription</div>
+          <div style="font-size:18px;font-weight:700;color:var(--color-text-primary);">${planName}</div>
+          <div style="font-size:13px;color:var(--color-text-secondary);margin-top:4px;">Seat Allocation Limit: <strong>${seatLimit} seats</strong></div>
         </div>
 
-        <div class="grid-3" style="gap:var(--space-4);align-items:stretch;">
-          ${tiers.map(t => {
-            const isCurrent = currentPlan.toLowerCase() === t.id;
-            return `
-              <div style="border-radius:var(--radius-xl);border:2px solid ${t.highlight ? 'var(--color-primary)' : 'var(--color-border-secondary)'};background:var(--color-bg-primary);padding:var(--space-5);display:flex;flex-direction:column;position:relative;box-shadow:${t.highlight ? 'var(--shadow-md)' : 'none'};">
-                ${t.badge ? `<div style="position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--color-primary);color:#fff;font-size:10px;font-weight:800;padding:2px 10px;border-radius:var(--radius-full);letter-spacing:0.5px;">${t.badge}</div>` : ''}
-                
-                <div style="font-size:var(--text-base);font-weight:var(--fw-bold);color:var(--color-text-primary);margin-top:${t.badge ? '4px' : '0'};">${t.name}</div>
-                <div style="display:flex;align-items:baseline;gap:4px;margin-top:var(--space-2);margin-bottom:var(--space-4);">
-                  <span style="font-size:var(--text-2xl);font-weight:800;color:var(--color-text-primary);">${t.price}</span>
-                  <span style="font-size:var(--text-xs);color:var(--color-text-tertiary);">${t.period}</span>
-                </div>
+        <p style="font-size:14px;color:var(--color-text-secondary);line-height:1.5;margin:0;">
+          To change your plan, expand seat capacity, or add more branches, please contact StudyFlow.
+        </p>
 
-                <div style="font-size:var(--text-xs);font-weight:700;color:var(--color-primary);margin-bottom:var(--space-3);padding-bottom:var(--space-2);border-bottom:1px solid var(--color-border-secondary);">
-                  ${t.seats} · ${t.branches}
-                </div>
-
-                <ul style="list-style:none;padding:0;margin:0 0 var(--space-5) 0;display:flex;flex-direction:column;gap:8px;flex:1;">
-                  ${t.features.map(f => `
-                    <li style="font-size:var(--text-xs);color:var(--color-text-secondary);display:flex;align-items:center;gap:6px;">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="color:var(--sf-success-600);flex-shrink:0;"><polyline points="20 6 9 17 4 12"/></svg>
-                      <span>${f}</span>
-                    </li>
-                  `).join('')}
-                </ul>
-
-                <button class="btn ${isCurrent ? 'btn-secondary' : (t.highlight ? 'btn-primary' : 'btn-secondary')} w-full"
-                  ${isCurrent ? 'disabled' : ''}
-                  onclick="app.selectPlan('${t.id}')">
-                  ${isCurrent ? '✓ Current Plan' : `Upgrade to ${t.name.split(' ')[0]}`}
-                </button>
-              </div>
-            `;
-          }).join('')}
-        </div>
+        <button class="btn btn-primary w-full" onclick="modal.close(); app.openContactModal();">
+          Contact StudyFlow
+        </button>
       </div>
     `;
 
@@ -801,19 +752,7 @@ class App {
       <button type="button" class="btn btn-secondary" onclick="modal.close()">Close</button>
     `;
 
-    modal.open('StudyFlow Subscription Plans', bodyHTML, footerHTML, { size: 'xl' });
-  }
-
-  async selectPlan(planId) {
-    try {
-      await store.upgradePlan(planId);
-      modal.close();
-      toast.show(`Successfully upgraded to the ${planId.toUpperCase()} Plan!`, 'success');
-      this._render();
-      this._navigate();
-    } catch (e) {
-      toast.show(e.message || 'Upgrade failed', 'error');
-    }
+    modal.open('Subscription & Plan', bodyHTML, footerHTML, { size: 'sm' });
   }
 
   async handleLogout() {

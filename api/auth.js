@@ -172,6 +172,10 @@ module.exports = withHandler(async function handler(req, res) {
         projectId,
         appId: process.env.FIREBASE_APP_ID || '',
       },
+      contact: {
+        email: process.env.CONTACT_EMAIL || 'studyflowbusiness0@gmail.com',
+        whatsapp: process.env.CONTACT_WHATSAPP || null,
+      },
     });
   }
 
@@ -245,47 +249,64 @@ module.exports = withHandler(async function handler(req, res) {
       }
     }
 
-    // Intent Handling (AUTH-07): Separate login from sign-up
+    // B1: Unknown Google account must NEVER create a user row unless there is a valid, unexpired, unrevoked invitation matching the verified Google email
     if (!user) {
-      if (intent === 'login') {
-        // AUTH-07: Never silently create accounts on login page
+      let validInvite = null;
+      if (inviteToken && cleanEmail && email_verified) {
+        const inviteHash = hashSessionToken(inviteToken);
+        const invRes = await query(
+          `SELECT i.*, o.is_demo 
+           FROM invitations i
+           JOIN organizations o ON o.id = i.organization_id
+           WHERE i.token_hash = $1 AND i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > CURRENT_TIMESTAMP`,
+          [inviteHash]
+        );
+        if (invRes.rows.length > 0) {
+          const inv = invRes.rows[0];
+          if (inv.is_demo) {
+            throw new HttpError(403, 'DEMO_LOCKED', "The demo library can't have other members.");
+          }
+          if (inv.email && inv.email.toLowerCase().trim() !== cleanEmail) {
+            throw new HttpError(403, 'INVITE_EMAIL_MISMATCH', 'This invitation was sent to a different email address.');
+          }
+          validInvite = inv;
+        }
+      }
+
+      if (!validInvite) {
         await logAuthEvent({ event: 'login_no_account', method: authMethod, ip, userAgent, success: false });
         throw new HttpError(
           404,
           'NO_ACCOUNT',
-          `No StudyFlow account found for ${cleanEmail || cleanPhone || 'this account'}. Please create a library or ask your library owner for an invite.`
+          'No StudyFlow library is linked to this Google account. Contact us to get your library set up.'
         );
       }
 
-      // Signup or Invite Intent: Create new user
+      // Valid invitation creates the user
       const newUserId = uid('USR');
       const avatarColor = randomAvatarColor();
-      const userName = (name || cleanEmail?.split('@')[0] || (cleanPhone ? `User ${cleanPhone.slice(-4)}` : 'Library User')).trim();
+      const userName = (name || cleanEmail.split('@')[0]).trim();
 
       const userInsert = await query(
         `INSERT INTO users (id, firebase_uid, email, phone_e164, phone, name, avatar_color, status, email_verified_at, phone_verified_at, terms_accepted_at, terms_version, token_version, created_at)
-         VALUES ($1, $2, $3, $4, $4, $5, $6, 'active', $7, $8, $9, '1.0', 1, CURRENT_TIMESTAMP)
+         VALUES ($1, $2, $3, $4, $4, $5, $6, 'active', CURRENT_TIMESTAMP, NULL, CURRENT_TIMESTAMP, '1.0', 1, CURRENT_TIMESTAMP)
          RETURNING *`,
         [
           newUserId,
           firebaseUid,
-          cleanEmail || null,
+          cleanEmail,
           cleanPhone || null,
           userName,
           avatarColor,
-          (cleanEmail && email_verified) ? new Date() : null,
-          cleanPhone ? new Date() : null,
-          termsAccepted ? new Date() : new Date(),
         ]
       );
       user = userInsert.rows[0];
 
-      // Record identity
       await query(
         `INSERT INTO user_identities (id, user_id, provider, provider_subject, created_at)
          VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
          ON CONFLICT (provider, provider_subject) DO NOTHING`,
-        [uid('IDN'), user.id, authMethod, cleanEmail || cleanPhone || firebaseUid]
+        [uid('IDN'), user.id, authMethod, cleanEmail || firebaseUid]
       );
     }
 
@@ -299,14 +320,22 @@ module.exports = withHandler(async function handler(req, res) {
     if (inviteToken) {
       const inviteHash = hashSessionToken(inviteToken);
       const invRes = await query(
-        `UPDATE invitations 
-         SET accepted_at = CURRENT_TIMESTAMP 
-         WHERE token_hash = $1 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > CURRENT_TIMESTAMP 
-         RETURNING *`,
+        `SELECT i.*, o.is_demo 
+         FROM invitations i
+         JOIN organizations o ON o.id = i.organization_id
+         WHERE i.token_hash = $1 AND i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > CURRENT_TIMESTAMP`,
         [inviteHash]
       );
       if (invRes.rows.length > 0) {
         const inv = invRes.rows[0];
+        if (inv.is_demo) {
+          throw new HttpError(403, 'DEMO_LOCKED', "The demo library can't have other members.");
+        }
+        if (inv.email && cleanEmail && inv.email.toLowerCase().trim() !== cleanEmail) {
+          throw new HttpError(403, 'INVITE_EMAIL_MISMATCH', 'This invitation was sent to a different email address.');
+        }
+
+        await query('UPDATE invitations SET accepted_at = CURRENT_TIMESTAMP WHERE id = $1', [inv.id]);
         inviteOrgId = inv.organization_id;
 
         await query(
@@ -357,10 +386,11 @@ module.exports = withHandler(async function handler(req, res) {
 
     // Fetch all memberships
     const memberships = await query(
-      `SELECT om.organization_id, om.role, o.name, o.slug, o.plan, o.onboarding_completed
+      `SELECT om.organization_id, om.role, o.name, o.slug, o.plan, o.onboarding_completed, o.is_demo
        FROM org_members om
        JOIN organizations o ON o.id = om.organization_id
-       WHERE om.user_id = $1 AND om.status = 'active'`,
+       WHERE om.user_id = $1 AND om.status = 'active'
+         AND (o.is_demo IS NOT TRUE OR om.role = 'owner')`,
       [user.id]
     );
 
@@ -538,185 +568,17 @@ module.exports = withHandler(async function handler(req, res) {
     });
   }
 
-  // ── 3. REGISTER (Email + Password Sign-Up) ────────────────────────────────
+  // ── 3. REGISTER (Email + Password Sign-Up: Disabled) ─────────────────────
   if (action === 'register') {
-    if (!isPasswordAuthEnabled()) {
-      throw passwordAuthDisabledError();
-    }
-    const { name, email, password, phone, termsAccepted } = req.body || {};
-
-    if (!name || !email || !password) {
-      throw new HttpError(400, 'MISSING_FIELDS', 'Name, email, and password are required.');
-    }
-
-    if (!termsAccepted) {
-      throw new HttpError(400, 'TERMS_REQUIRED', 'You must agree to the Terms of Service and Privacy Policy.');
-    }
-
-    const cleanEmail = email.toLowerCase().trim();
-    validatePasswordStrength(password);
-
-    await checkRateLimit(query, `register:ip:${ip}`, 10, 3600, { failClosed: true });
-
-    const existing = await query('SELECT id, email_verified_at FROM users WHERE LOWER(email) = $1', [cleanEmail]);
-    if (existing.rows.length > 0) {
-      throw new HttpError(409, 'EMAIL_EXISTS', 'An account with this email already exists. Please sign in.');
-    }
-
-    const userId = uid('USR');
-    const passwordHash = await hashPassword(password);
-    const avatarColor = randomAvatarColor();
-
-    await query(
-      `INSERT INTO users (id, name, email, password_hash, phone, avatar_color, status, terms_accepted_at, terms_version, token_version, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, 'active', CURRENT_TIMESTAMP, '1.0', 1, CURRENT_TIMESTAMP)`,
-      [userId, name.trim(), cleanEmail, passwordHash, phone ? phone.trim() : '', avatarColor]
-    );
-
-    await query(
-      `INSERT INTO user_identities (id, user_id, provider, provider_subject, created_at)
-       VALUES ($1, $2, 'password', $3, CURRENT_TIMESTAMP)`,
-      [uid('IDN'), userId, cleanEmail]
-    );
-
-    const { token: sessionToken } = await createSession({
-      userId,
-      ip,
-      userAgent,
-    });
-
-    setSessionCookie(res, sessionToken);
-
-    await logAuthEvent({
-      userId,
-      event: 'register_success',
-      method: 'password',
-      ip,
-      userAgent,
-      success: true,
-    });
-
-    return res.json({
-      ok: true,
-      state: 'needs_library',
-      user: {
-        id: userId,
-        name: name.trim(),
-        email: cleanEmail,
-        phone: phone || '',
-        avatarColor,
-        role: null,
-      },
-      activeLibrary: null,
-      libraries: [],
-      message: 'Account created successfully! Please set up your library.',
-    });
+    throw new HttpError(403, 'PASSWORD_AUTH_DISABLED', 'Password registration is disabled. Libraries and accounts are set up by StudyFlow. Please Continue with Google or contact StudyFlow.');
   }
 
-  // ── 4. CREATE LIBRARY (AUTH-02 & AUTH-09) ─────────────────────────────────
+  // ── 4. CREATE LIBRARY (Disabled: Owner-Provisioned Model) ─────────────────
   if (action === 'create_library' || action === 'create-library') {
-    const session = await requireSession(req);
-    const { orgName, city } = req.body || {};
-
-    if (!orgName || typeof orgName !== 'string' || !orgName.trim()) {
-      throw new HttpError(400, 'MISSING_FIELDS', 'Library name is required.');
-    }
-
-    // Rate limit library creation per user (AUTH-09)
-    await checkRateLimit(query, `create_library:user:${session.userId}`, 5, 86400);
-
-    // Enforce 1 Email / User = 1 Library Rule (Only 1 owned library per user)
-    const existingOrgCheck = await query(
-      `SELECT om.organization_id, o.name, o.slug, o.plan, o.onboarding_completed, o.subscription_status
-       FROM org_members om
-       JOIN organizations o ON o.id = om.organization_id
-       WHERE om.user_id = $1 AND om.role = 'owner' AND om.status = 'active'
-       ORDER BY o.created_at DESC
-       LIMIT 1`,
-      [session.userId]
-    );
-
-    if (existingOrgCheck.rows.length > 0) {
-      const existingOrg = existingOrgCheck.rows[0];
-      const switchRes = await switchOrganization(session.sessionId, existingOrg.organization_id, session.userId);
-      setSessionCookie(res, switchRes.token);
-
-      const activeLibrary = {
-        id: existingOrg.organization_id,
-        name: existingOrg.name,
-        slug: existingOrg.slug,
-        plan: existingOrg.plan,
-        onboarding_completed: existingOrg.onboarding_completed,
-        subscription_status: existingOrg.subscription_status,
-        role: 'owner',
-      };
-
-      return res.json({
-        ok: true,
-        state: existingOrg.onboarding_completed ? 'ready' : 'needs_onboarding',
-        activeLibrary,
-        message: 'Your account is already linked to your library. Redirecting to your dashboard.',
-      });
-    }
-
-    const orgId = uid('ORG');
-    const baseSlug = orgName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'library';
-    const slugSuffix = crypto.randomBytes(3).toString('hex');
-    const slug = `${baseSlug.substring(0, 80)}-${slugSuffix}`;
-
-    await withTransaction(async (client) => {
-      // 1. Create Organization
-      await client.query(
-        `INSERT INTO organizations (id, name, slug, email, phone, plan, seat_limit, subscription_status, currency, onboarding_completed)
-         VALUES ($1, $2, $3, $4, '', 'trial', 75, 'active', 'INR', FALSE)`,
-        [orgId, orgName.trim(), slug, session.email || '']
-      );
-
-      // 2. Insert Membership as 'owner' for THIS library only (AUTH-02)
-      await client.query(
-        `INSERT INTO org_members (user_id, organization_id, role, status)
-         VALUES ($1, $2, 'owner', 'active')
-         ON CONFLICT (user_id, organization_id) DO UPDATE SET role = 'owner', status = 'active'`,
-        [session.userId, orgId]
-      );
-
-      // 3. Settings entry
-      const defaultSettings = {
-        currency: 'INR',
-        timezone: 'Asia/Kolkata',
-        orgName: orgName.trim(),
-        city: city ? city.trim() : '',
-        theme: 'light',
-      };
-      await client.query(
-        `INSERT INTO settings (id, organization_id, currency, timezone, org_name, email, phone, data)
-         VALUES ($1, $2, 'INR', 'Asia/Kolkata', $3, $4, '', $5)
-         ON CONFLICT (id) DO NOTHING`,
-        [orgId, orgId, orgName.trim(), session.email || '', JSON.stringify(defaultSettings)]
-      );
-    });
-
-    // 4. Switch and rotate session
-    const switchRes = await switchOrganization(session.sessionId, orgId, session.userId);
-    setSessionCookie(res, switchRes.token);
-
-    const activeLibrary = {
-      id: orgId,
-      name: orgName.trim(),
-      slug,
-      plan: 'trial',
-      onboarding_completed: false,
-      subscription_status: 'active',
-      role: 'owner',
-    };
-
-    return res.json({
-      ok: true,
-      state: 'needs_onboarding',
-      activeLibrary,
-      message: 'Library created successfully! Please complete setup.',
-    });
+    await requireSession(req);
+    throw new HttpError(403, 'LIBRARY_CREATION_DISABLED', 'Libraries are set up by StudyFlow. Contact us to get started.');
   }
+
 
   // ── 5. SWITCH LIBRARY (AUTH-02) ───────────────────────────────────────────
   if (action === 'switch_library' || action === 'switch-library') {
@@ -854,6 +716,12 @@ module.exports = withHandler(async function handler(req, res) {
       throw new HttpError(403, 'FORBIDDEN', 'Only library owners or managers can send staff invitations.');
     }
 
+    // Demo library protection: invitations are blocked
+    const orgCheck = await query('SELECT is_demo FROM organizations WHERE id = $1', [session.orgId]);
+    if (orgCheck.rows[0]?.is_demo) {
+      throw new HttpError(403, 'DEMO_LOCKED', "The demo library can't have other members.");
+    }
+
     const { email, phone, role = 'staff', branchIds = [] } = req.body || {};
     if (!email && !phone) {
       throw new HttpError(400, 'MISSING_FIELDS', 'Either email or phone number is required.');
@@ -960,20 +828,28 @@ module.exports = withHandler(async function handler(req, res) {
 
     const tokenHash = hashSessionToken(token);
 
-    // Atomic accept check (AUTH-11)
-    const invRes = await query(
-      `UPDATE invitations 
-       SET accepted_at = CURRENT_TIMESTAMP 
-       WHERE token_hash = $1 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > CURRENT_TIMESTAMP 
-       RETURNING *`,
+    // Atomic accept check (AUTH-11) + demo lock + email match
+    const invCheck = await query(
+      `SELECT i.*, o.is_demo 
+       FROM invitations i
+       JOIN organizations o ON o.id = i.organization_id
+       WHERE i.token_hash = $1 AND i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > CURRENT_TIMESTAMP`,
       [tokenHash]
     );
 
-    if (invRes.rows.length === 0) {
+    if (invCheck.rows.length === 0) {
       throw new HttpError(400, 'INVITE_INVALID', 'Invitation is either invalid, already accepted, revoked, or expired.');
     }
 
-    const inv = invRes.rows[0];
+    const inv = invCheck.rows[0];
+    if (inv.is_demo) {
+      throw new HttpError(403, 'DEMO_LOCKED', "The demo library can't have other members.");
+    }
+    if (inv.email && session.email && inv.email.toLowerCase().trim() !== session.email.toLowerCase().trim()) {
+      throw new HttpError(403, 'INVITE_EMAIL_MISMATCH', 'This invitation was sent to a different email address.');
+    }
+
+    await query('UPDATE invitations SET accepted_at = CURRENT_TIMESTAMP WHERE id = $1', [inv.id]);
 
     // Add to org_members
     await query(

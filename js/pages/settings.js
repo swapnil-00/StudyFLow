@@ -5,12 +5,16 @@ export function renderSettings(container) {
 
   const settings = store.getSettings();
   const branches = store.getBranches();
-  const org = store.organization || { name: 'StudyFlow Library', plan: 'trial', seatLimit: 75 };
+  const org = store.organization || { name: 'StudyFlow Library', plan: 'starter', seatLimit: 100 };
   const user = store.currentUser || { name: 'Admin', email: 'admin@studyflow.in', role: 'owner' };
   const isAuth = store.isAuthenticated();
   const seatsCount = store.getSeats().length;
-  const seatLimit = org.seatLimit || 75;
+  const seatLimit = org.seatLimit || 100;
   const seatUsagePct = Math.min(100, Math.round((seatsCount / seatLimit) * 100));
+  const isDemo = Boolean(org.isDemo || org.plan === 'demo');
+  const isSuspended = org.subscription_status === 'suspended';
+  const statusLabel = isSuspended ? 'SUSPENDED' : (isDemo ? 'DEMO' : 'ACTIVE');
+  const statusBadgeClass = isSuspended ? 'badge-danger' : (isDemo ? 'badge-warning' : 'badge-success');
 
   container.innerHTML = `
     <div class="page-header">
@@ -28,7 +32,10 @@ export function renderSettings(container) {
         <div class="card-header" style="background:rgba(97, 114, 243, 0.04);">
           <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;width:100%;">
             <span>SaaS Plan & Subscription</span>
-            <span class="badge badge-indigo" style="font-size:11px;font-weight:700;text-transform:uppercase;padding:2px 8px;">${esc(org.plan)}</span>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <span class="badge ${statusBadgeClass}" style="font-size:11px;font-weight:700;text-transform:uppercase;padding:2px 8px;">${statusLabel}</span>
+              <span class="badge badge-indigo" style="font-size:11px;font-weight:700;text-transform:uppercase;padding:2px 8px;">${esc(org.plan || 'starter')}</span>
+            </div>
           </div>
         </div>
         <div class="card-body" style="display:flex;flex-direction:column;gap:var(--space-4);">
@@ -54,7 +61,7 @@ export function renderSettings(container) {
           </div>
 
           <div style="display:flex;gap:var(--space-2);margin-top:var(--space-2);">
-            <button class="btn btn-primary flex-1" onclick="modal.open('Upgrade Plan', '<p style=\\'margin-bottom:var(--space-4);line-height:1.6;\\'>To upgrade your subscription, expand seat capacity, or request dedicated deployment, please reach out to our team at <strong>sales@studyflow.in</strong> or WhatsApp support at <strong>+91 99999 99999</strong>.</p><a href=\\'mailto:sales@studyflow.in?subject=StudyFlow%20Plan%20Upgrade\\' class=\\'btn btn-primary w-full\\' style=\\'display:inline-block;text-align:center;text-decoration:none;\\'>Email Sales</a>', '<button class=\\'btn btn-secondary\\' onclick=\\'modal.close()\\'>Close</button>')">Contact Us</button>
+            <button class="btn btn-primary flex-1" onclick="app.openContactModal()">Contact Us</button>
             <button class="btn btn-secondary" onclick="app.openOnboardingModal()">Setup Wizard</button>
             ${isAuth ? `
               <button class="btn btn-secondary" onclick="app.handleLogout()">Sign Out</button>

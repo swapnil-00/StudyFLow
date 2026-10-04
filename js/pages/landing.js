@@ -44,7 +44,7 @@ export function renderLanding(container) {
                 ${icons.sun}
               </button>
               <button class="btn btn-ghost btn-sm" onclick="app.openLoginModal()">Sign In</button>
-              <button class="btn btn-primary btn-sm" onclick="app.openRegisterModal()">⚡ Start Free Trial</button>
+              <button class="btn btn-primary btn-sm" onclick="app.openContactModal()">⚡ Book a Demo</button>
             </div>
           </div>
         </header>
@@ -66,8 +66,8 @@ export function renderLanding(container) {
             </p>
 
             <div class="sf-hero-cta-group">
-              <button class="btn btn-primary btn-lg" onclick="app.openRegisterModal()" style="padding:14px 28px;font-size:15px;font-weight:700;box-shadow:0 8px 24px rgba(97,114,243,0.35);">
-                ✨ Create Free Library Account
+              <button class="btn btn-primary btn-lg" onclick="app.openContactModal()" style="padding:14px 28px;font-size:15px;font-weight:700;box-shadow:0 8px 24px rgba(97,114,243,0.35);">
+                ✨ Book a Demo / Contact Sales
               </button>
               <button class="btn btn-secondary btn-lg" onclick="app.navigate('/dashboard')" style="padding:14px 24px;font-size:15px;">
                 🚀 Explore Live Interactive App
@@ -75,9 +75,9 @@ export function renderLanding(container) {
             </div>
 
             <div class="sf-hero-trust-badges">
-              <div class="sf-trust-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> 14-Day Free Trial</div>
-              <div class="sf-trust-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> No Credit Card Required</div>
-              <div class="sf-trust-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Instant 30-Sec Setup</div>
+              <div class="sf-trust-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Personalized Demo</div>
+              <div class="sf-trust-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> No Setup Fees</div>
+              <div class="sf-trust-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Fast Guided Onboarding</div>
               <div class="sf-trust-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> 1-Click WhatsApp Invoices</div>
             </div>
 
@@ -271,8 +271,8 @@ export function renderLanding(container) {
                 <h3 style="font-size:22px;font-weight:800;color:var(--color-text-primary);margin-bottom:8px;">Ready to modernize your study hall?</h3>
                 <p style="font-size:14px;color:var(--color-text-secondary);margin-bottom:24px;">Manage students, create visual interactive seat layouts, collect payments, and send instant WhatsApp receipts in seconds.</p>
                 <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
-                  <button class="btn btn-primary btn-lg" onclick="app.openRegisterModal()">
-                    🚀 Start Free Trial (No Card Required)
+                  <button class="btn btn-primary btn-lg" onclick="app.openContactModal()">
+                    🚀 Book a Live Demo / Contact Us
                   </button>
                   <button class="btn btn-secondary btn-lg" onclick="app.openLoginModal()">
                     🔐 Sign In to Existing Library
@@ -327,8 +327,8 @@ export function renderLanding(container) {
                   <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Export Reports to Excel/CSV</li>
                 </ul>
 
-                <button class="btn btn-secondary w-full" onclick="app.openRegisterModal()">
-                  Start 14-Day Free Trial
+                <button class="btn btn-secondary w-full" onclick="app.openContactModal()">
+                  Book a Demo / Get Starter
                 </button>
               </div>
 
@@ -357,8 +357,8 @@ export function renderLanding(container) {
                   <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Priority WhatsApp Support</li>
                 </ul>
 
-                <button class="btn btn-primary w-full" onclick="app.openRegisterModal()" style="box-shadow:0 4px 16px rgba(97,114,243,0.4);">
-                  Start 14-Day Free Trial
+                <button class="btn btn-primary w-full" onclick="app.openContactModal()" style="box-shadow:0 4px 16px rgba(97,114,243,0.4);">
+                  Book a Demo / Get Pro
                 </button>
               </div>
 
@@ -386,8 +386,8 @@ export function renderLanding(container) {
                   <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> 24/7 Phone & Dedicated Manager</li>
                 </ul>
 
-                <button class="btn btn-secondary w-full" onclick="app.openRegisterModal()">
-                  Start 14-Day Free Trial
+                <button class="btn btn-secondary w-full" onclick="app.openContactModal()">
+                  Contact Sales for Enterprise
                 </button>
               </div>
             </div>
@@ -517,8 +517,8 @@ export function renderLanding(container) {
               Join 250+ reading rooms and libraries boosting their seat occupancy and fee collections with StudyFlow.
             </p>
             <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
-              <button class="btn btn-lg" onclick="app.openRegisterModal()" style="background:white;color:var(--color-primary);font-weight:700;padding:14px 28px;">
-                ✨ Start 14-Day Free Trial
+              <button class="btn btn-lg" onclick="app.openContactModal()" style="background:white;color:var(--color-primary);font-weight:700;padding:14px 28px;">
+                ✨ Book a Live Demo
               </button>
               <button class="btn btn-lg" onclick="app.openLoginModal()" style="background:rgba(255,255,255,0.15);color:white;border:1px solid rgba(255,255,255,0.3);padding:14px 24px;">
                 🔐 Existing Library Sign In
@@ -546,12 +546,12 @@ export function renderLanding(container) {
                 <a href="#features" onclick="scrollToSection(event, 'features')">Seat Map</a>
                 <a href="#features" onclick="scrollToSection(event, 'features')">WhatsApp Invoicing</a>
                 <a href="#pricing" onclick="scrollToSection(event, 'pricing')">Pricing Plans</a>
-                <a href="javascript:void(0)" onclick="app.openRegisterModal()">Free Trial</a>
+                <a href="javascript:void(0)" onclick="app.openContactModal()">Book a Demo</a>
               </div>
               <div class="sf-footer-col">
                 <div class="sf-footer-col-title">Account</div>
                 <a href="javascript:void(0)" onclick="app.openLoginModal()">Sign In</a>
-                <a href="javascript:void(0)" onclick="app.openRegisterModal()">Create Library</a>
+                <a href="javascript:void(0)" onclick="app.openContactModal()">Contact Sales</a>
                 <a href="javascript:void(0)" onclick="app.openUpgradeModal()">Upgrade Subscription</a>
               </div>
             </div>

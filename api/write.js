@@ -121,6 +121,11 @@ module.exports = withHandler(async function handler(req, res) {
     throw new HttpError(400, 'INVALID_MUTATION', 'table and action are required.');
   }
 
+  // ── B6: Subscription Suspension Check ──────────────────────────
+  if (session.organization?.subscription_status === 'suspended') {
+    throw new HttpError(403, 'SUBSCRIPTION_SUSPENDED', "This library's subscription is inactive. Contact StudyFlow to reactivate.");
+  }
+
   // ── SEC-008: RBAC Permission Check ────────────────────────────
   assertCan(session, table, action);
 
@@ -309,7 +314,11 @@ module.exports = withHandler(async function handler(req, res) {
 
       const result = await withTransaction(async client => {
         const orgRes = await client.query('SELECT seat_limit FROM organizations WHERE id = $1 FOR UPDATE', [orgId]);
-        const seatLimit = orgRes.rows[0]?.seat_limit || 75;
+        let seatLimit = orgRes.rows[0]?.seat_limit;
+        if (typeof seatLimit !== 'number' || isNaN(seatLimit)) {
+          console.warn(`[org:${orgId}] Missing or invalid seat_limit on organization record, defaulting to 100.`);
+          seatLimit = 100;
+        }
 
         const countRes = await client.query('SELECT COUNT(*) as count FROM seats WHERE organization_id = $1', [orgId]);
         const currentCount = parseInt(countRes.rows[0]?.count || 0);
@@ -348,7 +357,11 @@ module.exports = withHandler(async function handler(req, res) {
       const result = await withTransaction(async client => {
         // SEC-016: Atomic seat limit check with row lock on organization
         const orgRes = await client.query('SELECT seat_limit FROM organizations WHERE id = $1 FOR UPDATE', [orgId]);
-        const seatLimit = orgRes.rows[0]?.seat_limit || 75;
+        let seatLimit = orgRes.rows[0]?.seat_limit;
+        if (typeof seatLimit !== 'number' || isNaN(seatLimit)) {
+          console.warn(`[org:${orgId}] Missing or invalid seat_limit on organization record, defaulting to 100.`);
+          seatLimit = 100;
+        }
 
         const countRes = await client.query('SELECT COUNT(*) as count FROM seats WHERE organization_id = $1', [orgId]);
         const currentCount = parseInt(countRes.rows[0]?.count || 0);

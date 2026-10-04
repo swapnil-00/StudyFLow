@@ -233,12 +233,13 @@ module.exports = withHandler(async function handler(req, res) {
     id: org.id,
     name: org.name,
     slug: org.slug,
-    plan: org.plan || 'trial',
-    seatLimit: org.seat_limit || 75,
+    plan: org.plan || 'starter',
+    seatLimit: typeof org.seat_limit === 'number' ? org.seat_limit : 100,
     currentSeatCount: seats.rows.length,
     subscriptionStatus: org.subscription_status || 'active',
     currency: org.currency || 'INR',
     logoUrl: org.logo_url,
+    isDemo: Boolean(org.is_demo),
     onboardingCompleted: org.onboarding_completed !== false
   };
 

@@ -147,25 +147,6 @@ class Store {
     return json;
   }
 
-  async register(name, email, password, phone, termsAccepted) {
-    const res = await fetch(`${API_BASE}/api/auth`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'same-origin',
-      body: JSON.stringify({ action: 'register', name, email, password, phone, termsAccepted })
-    });
-    const json = await res.json();
-    if (!json.ok) throw new Error(json.error || 'Registration failed');
-
-    this._currentUser = json.user;
-    this._organization = null;
-    this._authState = json.state || 'needs_library';
-    this._libraries = [];
-    this._loaded = false;
-    await this.load();
-    return json;
-  }
-
   async sessionFromIdToken(idToken, intent = 'login', inviteToken = null, termsAccepted = false) {
     const res = await fetch(`${API_BASE}/api/auth`, {
       method: 'POST',
@@ -182,25 +163,8 @@ class Store {
 
     this._currentUser = json.user;
     this._organization = json.activeLibrary || null;
-    this._authState = json.state || 'needs_library';
+    this._authState = json.state || 'no_library';
     this._libraries = json.libraries || [];
-    this._loaded = false;
-    await this.load();
-    return json;
-  }
-
-  async createLibrary({ orgName, city }) {
-    const res = await fetch(`${API_BASE}/api/auth`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'same-origin',
-      body: JSON.stringify({ action: 'create_library', orgName, city })
-    });
-    const json = await res.json();
-    if (!json.ok) throw new Error(json.error || 'Failed to create library');
-
-    this._organization = json.activeLibrary;
-    this._authState = json.state || 'needs_onboarding';
     this._loaded = false;
     await this.load();
     return json;

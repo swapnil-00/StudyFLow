@@ -95,5 +95,52 @@ studyflow/
 
 ---
 
+## 🛠️ Admin: Managing Libraries (Owner CLI)
+
+StudyFlow uses an owner-controlled provisioning model. Stranger self-service signups and free trials are disabled on the web. Only the platform owner provisions customer libraries and manages plans via local CLI scripts.
+
+### 1. Provision a New Customer Library
+```bash
+# Dry run preview (default)
+node scripts/create-library.js --name "Apex Study Lounge" --owner-email owner@example.com --owner-name "Rahul Sharma" --plan starter --seats 100 --city "Pune"
+
+# Apply changes to database
+node scripts/create-library.js --name "Apex Study Lounge" --owner-email owner@example.com --owner-name "Rahul Sharma" --plan starter --seats 100 --city "Pune" --apply
+```
+*Next step:* The owner signs in via Google OAuth on the web app and completes the initial setup wizard (branch, study hall, seating layout).
+
+### 2. Change Plans or Seat Limits
+```bash
+# Upgrade or change plan
+node scripts/set-plan.js ORG-12345678 --plan growth --apply
+
+# Override seat capacity limit
+node scripts/set-plan.js ORG-12345678 --seats 300 --apply
+```
+
+### 3. Suspend or Reactivate a Library
+```bash
+# Suspend an organization (blocks all writes with 403 SUBSCRIPTION_SUSPENDED, read-only mode)
+node scripts/set-plan.js ORG-12345678 --status suspended --apply
+
+# Reactivate organization
+node scripts/set-plan.js ORG-12345678 --status active --apply
+```
+
+### 4. Configure & Seed the Demo Library
+```bash
+# 1. Create demo organization for owner
+node scripts/create-library.js --name "Swapnil Sample Library" --owner-email srchaudhari324@gmail.com --owner-name "Swapnil Chaudhari" --plan demo --seats 100 --apply
+
+# 2. Lock demo organization (blocks invitations with 403 DEMO_LOCKED)
+node scripts/set-demo.js --owner-email srchaudhari324@gmail.com --apply
+
+# 3. Owner completes wizard in web app, then seed realistic demo data
+node scripts/seed-demo.js --apply --email srchaudhari324@gmail.com
+```
+
+---
+
 ## 📄 License
 This project is licensed under the [MIT License](LICENSE).
+
