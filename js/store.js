@@ -235,27 +235,6 @@ class Store {
     return json;
   }
 
-  async upgradePlan(plan) {
-    const token = this.authToken;
-    const res = await fetch(`${API_BASE}/api/auth`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ action: 'upgrade_plan', plan })
-    });
-    const json = await res.json();
-    if (!json.ok) throw new Error(json.error || 'Upgrade failed');
-
-    if (this._organization) {
-      this._organization.plan = json.plan;
-      this._organization.seatLimit = json.seatLimit;
-    }
-    this._notify();
-    return json;
-  }
-
   isSeeded() {
     return this._loaded && (this._db?.branches?.length > 0);
   }

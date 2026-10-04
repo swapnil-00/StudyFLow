@@ -1,4 +1,4 @@
-// js/pages/auth.js — Dedicated Auth Pages: Login, Signup, Setup Library, Onboarding, Invite, Forgot Password
+// js/pages/auth.js — Auth pages: Login, No Library, Onboarding, Invite, Forgot Password
 // Multi-Tenant SaaS auth flow with strict state routing, Google OAuth, and zero fake defaults.
 
 export function renderLoginPage() {
@@ -105,16 +105,6 @@ export function renderNoLibraryPage() {
   }, 0);
 
   return container;
-}
-
-export function renderSignupPage() {
-  window.location.hash = '#/login';
-  return document.createElement('div');
-}
-
-export function renderSetupLibraryPage() {
-  window.location.hash = '#/login';
-  return document.createElement('div');
 }
 
 export function renderOnboardingPage() {

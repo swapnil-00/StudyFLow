@@ -65,6 +65,20 @@ function describeMailError(err) {
 const invalidResetCode = () =>
   new HttpError(400, 'INVALID_CODE', 'That code is incorrect or has expired. Use the code from the most recent email, or request a new one.');
 
+// Marks an invitation used. The accepted_at IS NULL condition makes this the single atomic
+// gate (AUTH-11): of two concurrent accepts of the same token, only one updates a row.
+async function claimInvitation(invitationId) {
+  const claimed = await query(
+    `UPDATE invitations SET accepted_at = CURRENT_TIMESTAMP
+     WHERE id = $1 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > CURRENT_TIMESTAMP
+     RETURNING id`,
+    [invitationId]
+  );
+  if (claimed.rows.length === 0) {
+    throw new HttpError(400, 'INVITE_INVALID', 'Invitation is either invalid, already accepted, revoked, or expired.');
+  }
+}
+
 // The newest reset request for an email. Older codes stop working as soon as a new one is sent.
 async function loadLatestResetRequest(cleanEmail) {
   const userRes = await query('SELECT id, email, status FROM users WHERE LOWER(email) = $1', [cleanEmail]);
@@ -335,7 +349,7 @@ module.exports = withHandler(async function handler(req, res) {
           throw new HttpError(403, 'INVITE_EMAIL_MISMATCH', 'This invitation was sent to a different email address.');
         }
 
-        await query('UPDATE invitations SET accepted_at = CURRENT_TIMESTAMP WHERE id = $1', [inv.id]);
+        await claimInvitation(inv.id);
         inviteOrgId = inv.organization_id;
 
         await query(
@@ -849,7 +863,7 @@ module.exports = withHandler(async function handler(req, res) {
       throw new HttpError(403, 'INVITE_EMAIL_MISMATCH', 'This invitation was sent to a different email address.');
     }
 
-    await query('UPDATE invitations SET accepted_at = CURRENT_TIMESTAMP WHERE id = $1', [inv.id]);
+    await claimInvitation(inv.id);
 
     // Add to org_members
     await query(

@@ -11,8 +11,8 @@ export function renderSettings(container) {
   const seatsCount = store.getSeats().length;
   const seatLimit = org.seatLimit || 100;
   const seatUsagePct = Math.min(100, Math.round((seatsCount / seatLimit) * 100));
-  const isDemo = Boolean(org.isDemo || org.plan === 'demo');
-  const isSuspended = org.subscription_status === 'suspended';
+  const isDemo = Boolean(org.isDemo || org.is_demo || org.plan === 'demo');
+  const isSuspended = (org.subscriptionStatus || org.subscription_status) === 'suspended';
   const statusLabel = isSuspended ? 'SUSPENDED' : (isDemo ? 'DEMO' : 'ACTIVE');
   const statusBadgeClass = isSuspended ? 'badge-danger' : (isDemo ? 'badge-warning' : 'badge-success');
 

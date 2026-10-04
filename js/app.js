@@ -81,8 +81,8 @@ class App {
     const isAuth = store.isAuthenticated();
     const initials = utils.initials(user.name || 'User');
     const avatarColor = user.avatarColor || 'var(--color-primary)';
-    const isDemo = org.isDemo || org.plan === 'demo';
-    const isSuspended = org.subscriptionStatus === 'suspended';
+    const isDemo = Boolean(org.isDemo || org.is_demo || org.plan === 'demo');
+    const isSuspended = (org.subscriptionStatus || org.subscription_status) === 'suspended';
 
     const planBadge = isDemo
       ? `<span class="badge" style="background:#f59e0b;color:#1e1e1e;font-weight:800;font-size:10px;padding:2px 6px;border-radius:4px;display:inline-block;letter-spacing:0.5px;">DEMO</span>`
@@ -578,18 +578,32 @@ class App {
     this.navigate('/login');
   }
 
-  openContactModal() {
-    const email = 'studyflowbusiness0@gmail.com';
+  async openContactModal() {
+    // Contact details come from the server (CONTACT_EMAIL / CONTACT_WHATSAPP); fetched once.
+    if (!this._contactPromise) {
+      this._contactPromise = fetch('/api/auth?action=client_config')
+        .then(r => r.json())
+        .then(j => j.contact || {})
+        .catch(() => ({}));
+    }
+    const contact = await this._contactPromise;
+    const email = contact.email || 'studyflowbusiness0@gmail.com';
+    const waDigits = String(contact.whatsapp || '').replace(/\D/g, '');
+    const waText = encodeURIComponent("Hi, I'd like a StudyFlow demo for my library.");
+    const whatsappBtn = waDigits ? `
+          <a href="https://wa.me/${waDigits}?text=${waText}" target="_blank" rel="noopener" class="btn btn-secondary" style="display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;">
+            WhatsApp: +${utils.escapeHtml(waDigits)}
+          </a>` : '';
     const bodyHTML = `
       <div style="display:flex;flex-direction:column;gap:16px;padding:8px 0;">
         <p style="font-size:14px;color:var(--color-text-secondary);line-height:1.5;margin:0;">
           Get in touch with the StudyFlow team to set up your library, upgrade your plan, or book a live walkthrough.
         </p>
         <div style="display:flex;flex-direction:column;gap:10px;">
-          <a href="mailto:${email}?subject=StudyFlow%20Demo%20%26%20Setup" class="btn btn-primary" style="display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;">
+          <a href="mailto:${encodeURIComponent(email)}?subject=StudyFlow%20Demo%20%26%20Setup" class="btn btn-primary" style="display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-            Email: ${email}
-          </a>
+            Email: ${utils.escapeHtml(email)}
+          </a>${whatsappBtn}
         </div>
       </div>
     `;
@@ -726,7 +740,7 @@ class App {
   // ── SaaS Plan Upgrade Modal ───────────────────────────────────────
   openUpgradeModal() {
     const org = store.organization || { plan: 'starter', seatLimit: 100 };
-    const isDemo = org.isDemo || org.plan === 'demo';
+    const isDemo = Boolean(org.isDemo || org.is_demo || org.plan === 'demo');
     const planName = isDemo ? 'Demo Plan' : `${(org.plan || 'starter').toUpperCase()} Plan`;
     const seatLimit = org.seatLimit || 100;
 

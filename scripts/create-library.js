@@ -61,6 +61,17 @@ async function main() {
 
   const args = parseArgs(process.argv);
 
+  // The is_demo column is added by the app itself (lib/db-init.js) the first time the new
+  // version runs. Check for it read-only, so running this before deploying fails clearly.
+  const col = await query(
+    "SELECT 1 FROM information_schema.columns WHERE table_name = 'organizations' AND column_name = 'is_demo'"
+  );
+  if (col.rows.length === 0) {
+    console.error("❌ The database schema is not up to date yet (organizations.is_demo is missing).");
+    console.error("   Deploy the latest version and open the site once, then run this script again.");
+    process.exit(1);
+  }
+
   if (!args.name || !args.ownerEmail) {
     console.log(`
 Usage: node scripts/create-library.js --name "<Library Name>" --owner-email <email> [options]
@@ -116,7 +127,6 @@ Options:
 
   const orgId = `ORG-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
   const userId = existingUser ? existingUser.id : `USR-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
-  const settingsId = `SET-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
   const baseSlug = args.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
   const slug = `${baseSlug || 'library'}-${orgId.slice(-4).toLowerCase()}`;
 
@@ -175,11 +185,20 @@ Options:
       [userId, orgId]
     );
 
-    // 4. Create settings row
+    // 4. Create settings row. Same columns and id convention (id = orgId) as the former
+    // create_library action, so it works on every schema version in use.
+    const defaultSettings = {
+      currency: 'INR',
+      timezone: 'Asia/Kolkata',
+      orgName: args.name,
+      city: args.city || '',
+      theme: 'light',
+    };
     await client.query(
-      `INSERT INTO settings (id, organization_id, org_name, email, address, currency, timezone, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, 'INR', 'Asia/Kolkata', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-      [settingsId, orgId, args.name, args.ownerEmail, args.city || null]
+      `INSERT INTO settings (id, organization_id, currency, timezone, org_name, email, phone, data)
+       VALUES ($1, $2, 'INR', 'Asia/Kolkata', $3, $4, '', $5)
+       ON CONFLICT (id) DO NOTHING`,
+      [orgId, orgId, args.name, args.ownerEmail, JSON.stringify(defaultSettings)]
     );
   });
 

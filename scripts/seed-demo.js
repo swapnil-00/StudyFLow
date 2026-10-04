@@ -129,16 +129,19 @@ async function main() {
   const orgRes = await pool.query(
     `SELECT o.id AS org_id, o.name, o.plan, o.seat_limit
      FROM users u
-     JOIN org_members m ON m.user_id = u.id AND m.status = 'active'
+     JOIN org_members m ON m.user_id = u.id AND m.status = 'active' AND m.role = 'owner'
      JOIN organizations o ON o.id = m.organization_id
-     WHERE LOWER(u.email) = LOWER($1)
+     WHERE LOWER(u.email) = LOWER($1) AND o.is_demo = TRUE
      ORDER BY m.created_at DESC
      LIMIT 1`,
     [targetEmail]
   );
 
+  // Demo data is only ever written into a library marked as the demo (is_demo), never into
+  // a real customer library, even if the email given owns one.
   if (orgRes.rows.length === 0) {
-    console.error(`❌ No active organization found for email: ${targetEmail}`);
+    console.error(`❌ No demo library (is_demo = TRUE) owned by: ${targetEmail}`);
+    console.error('   Create it with: node scripts/create-library.js --plan demo ...');
     process.exit(1);
   }
 

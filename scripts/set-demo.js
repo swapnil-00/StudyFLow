@@ -42,6 +42,17 @@ async function main() {
   }
 
   const args = parseArgs(process.argv);
+
+  // The is_demo column is added by the app itself (lib/db-init.js) the first time the new
+  // version runs. Check for it read-only, so running this before deploying fails clearly.
+  const col = await query(
+    "SELECT 1 FROM information_schema.columns WHERE table_name = 'organizations' AND column_name = 'is_demo'"
+  );
+  if (col.rows.length === 0) {
+    console.error("❌ The database schema is not up to date yet (organizations.is_demo is missing).");
+    console.error("   Deploy the latest version and open the site once, then run this script again.");
+    process.exit(1);
+  }
   const ownerEmail = args.ownerEmail || 'srchaudhari324@gmail.com';
 
   console.log(`\n======================================================`);
@@ -109,7 +120,10 @@ async function main() {
   if (!args.apply) {
     console.log(`\n💡 This was a DRY RUN. No changes were made.`);
     console.log(`👉 To apply these changes, re-run with --apply:`);
-    console.log(`   node scripts/set-demo.js --owner-email ${ownerEmail} ${membersRes.rows.length > 0 ? '--remove-other-members ' : ''}--apply\n`);
+    console.log(`   node scripts/set-demo.js --owner-email ${ownerEmail} --apply\n`);
+    if (membersRes.rows.length > 0) {
+      console.log(`   (Add --remove-other-members only if you also want to deactivate the members listed above.)\n`);
+    }
     process.exit(0);
   }
 
