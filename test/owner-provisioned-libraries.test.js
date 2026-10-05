@@ -26,8 +26,9 @@ describe('Owner-Provisioned Libraries & Demo Lock (Part E Acceptance)', () => {
     };
   });
 
-  // ── E1. Unknown Google account on signup/login -> 404 NO_ACCOUNT, no user created ──
-  test('E1. Unknown Google account on intent login/signup returns 404 NO_ACCOUNT and creates NO user row', async () => {
+  // ── E1. Unknown Google account on LOGIN -> 404 NO_ACCOUNT, no user created ──
+  // (Signup with accepted terms creates a Free-plan account: see test/signup-handler.test.js)
+  test('E1. Unknown Google account on intent login returns 404 NO_ACCOUNT and creates NO user row', async () => {
     const unknownGoogleEmail = 'stranger@example.com';
     const unknownGoogleUid = 'goog-uid-stranger';
 

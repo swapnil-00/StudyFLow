@@ -6,11 +6,14 @@ const crypto = require('crypto');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const { query, withTransaction } = require('../lib/db');
 
+const { PRICING, validateCustomSeats } = require('../lib/plans');
+
+// Seat capacity per plan (lib/plans.js). Custom needs --seats in blocks of CUSTOM_SEAT_STEP.
 const PLAN_SEAT_DEFAULTS = {
-  starter: 100,
-  growth: 250,
-  enterprise: 1000,
-  demo: 100
+  free: PRICING.FREE_SEAT_LIMIT,
+  basic: PRICING.BASE_SEATS,
+  custom: null,
+  demo: PRICING.BASE_SEATS
 };
 
 function maskEmail(email) {
@@ -26,7 +29,7 @@ function parseArgs(argv) {
     name: '',
     ownerEmail: '',
     ownerName: '',
-    plan: 'starter',
+    plan: 'free',
     seats: null,
     city: '',
     apply: false
@@ -80,7 +83,7 @@ Options:
   --name <string>         Library / reading hall name (required)
   --owner-email <string>  Owner's Google email (required)
   --owner-name <string>   Owner's display name (optional)
-  --plan <string>         starter | growth | enterprise | demo (default: starter)
+  --plan <string>         free | basic | custom | demo (default: free). custom needs --seats
   --seats <number>        Seat capacity limit (default: based on plan)
   --city <string>         City / Location (optional)
   --apply                 Execute changes (default is dry-run)
@@ -93,9 +96,17 @@ Options:
     process.exit(1);
   }
 
-  const seatLimit = args.seats && !isNaN(args.seats) && args.seats > 0
-    ? args.seats
-    : PLAN_SEAT_DEFAULTS[args.plan];
+  let seatLimit;
+  if (args.plan === 'custom') {
+    const v = validateCustomSeats(args.seats);
+    if (!v.ok) { console.error(`❌ ${v.error}`); process.exit(1); }
+    seatLimit = v.seats;
+  } else if (args.plan === 'demo' && args.seats && !isNaN(args.seats) && args.seats > 0) {
+    seatLimit = args.seats;
+  } else {
+    // Free and Basic are fixed by lib/plans.js; --seats is ignored for them
+    seatLimit = PLAN_SEAT_DEFAULTS[args.plan];
+  }
 
   const isDemo = args.plan === 'demo';
   const ownerName = args.ownerName || args.name + ' Owner';

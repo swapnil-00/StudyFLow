@@ -17,6 +17,9 @@ const authHandler = require('../api/auth');
 const dataHandler = require('../api/data');
 const writeHandler = require('../api/write');
 const reportsHandler = require('../api/reports');
+const billingHandler = require('../api/billing');
+const webhooksHandler = require('../api/webhooks');
+const { runScheduledJobs } = require('../lib/jobs');
 
 // ── Security headers (shared module with build.js) ─────────────────────────
 const { SECURITY_HEADERS, CSP_REPORT_ONLY } = require('../lib/security-headers');
@@ -24,31 +27,32 @@ const { SECURITY_HEADERS, CSP_REPORT_ONLY } = require('../lib/security-headers')
 // ── Adapter: Cloudflare Request → Vercel-style req/res ───────────────────────
 
 /**
- * Parse the request body as JSON, with a 1 MB size limit.
+ * Parse the request body as JSON, with a 1 MB size limit. The raw text is kept as well:
+ * webhook signatures (api/webhooks.js) are computed over the exact bytes received.
  */
 async function parseBody(request) {
   if (request.method === 'GET' || request.method === 'HEAD' || request.method === 'OPTIONS') {
-    return {};
+    return { body: {}, rawBody: '' };
   }
   const ct = request.headers.get('content-type') || '';
   if (!ct.includes('application/json')) {
-    return {};
+    return { body: {}, rawBody: '' };
   }
   try {
     const text = await request.text();
     if (text.length > 1 * 1024 * 1024) {
       throw new Error('Request body too large');
     }
-    return text ? JSON.parse(text) : {};
+    return { body: text ? JSON.parse(text) : {}, rawBody: text };
   } catch {
-    return {};
+    return { body: {}, rawBody: '' };
   }
 }
 
 /**
  * Build the req shim that api/*.js handlers expect.
  */
-function makeReq(request, body, url) {
+function makeReq(request, body, url, rawBody = '') {
   // Flatten headers into a plain object (lowercase keys, like Node HTTP)
   const headers = {};
   for (const [key, value] of request.headers.entries()) {
@@ -63,6 +67,7 @@ function makeReq(request, body, url) {
     url: url.pathname + url.search,
     headers,
     body,
+    rawBody,
     query: Object.fromEntries(url.searchParams),
   };
 }
@@ -144,7 +149,26 @@ const API_HANDLERS = {
   data: dataHandler,
   write: writeHandler,
   reports: reportsHandler,
+  billing: billingHandler,
+  webhooks: webhooksHandler,
 };
+
+/**
+ * Expose Worker vars/secrets as process.env for lib/ modules that read them. DATABASE_URL
+ * is deliberately never set here: every query must go through the request's Hyperdrive
+ * client, never a module-level Pool shared across requests.
+ */
+function exposeEnv(env) {
+  // Make FIREBASE_PROJECT_ID available to lib/firebase.js without process.env (for jose)
+  if (env.FIREBASE_PROJECT_ID) {
+    globalThis.__FIREBASE_PROJECT_ID = env.FIREBASE_PROJECT_ID;
+  }
+  for (const key of Object.keys(env)) {
+    if (typeof env[key] === 'string' && !process.env[key]) {
+      process.env[key] = env[key];
+    }
+  }
+}
 
 /**
  * Handle an API request: create a per-request DB, route to the handler,
@@ -162,26 +186,14 @@ async function handleApiRequest(request, env, ctx) {
     );
   }
 
-  // Make FIREBASE_PROJECT_ID available to lib/firebase.js without process.env (for jose)
-  if (env.FIREBASE_PROJECT_ID) {
-    globalThis.__FIREBASE_PROJECT_ID = env.FIREBASE_PROJECT_ID;
-  }
-
-  // Expose env vars as process.env for lib/ modules that read them. DATABASE_URL is
-  // deliberately never set here: every query must go through this request's Hyperdrive
-  // client, never a module-level Pool shared across requests.
-  for (const key of Object.keys(env)) {
-    if (typeof env[key] === 'string' && !process.env[key]) {
-      process.env[key] = env[key];
-    }
-  }
+  exposeEnv(env);
 
   let db;
   try {
     // Per-request database connection via Hyperdrive, scoped to this request only
     db = createRequestDb(env);
-    const body = await parseBody(request);
-    const req = makeReq(request, body, url);
+    const { body, rawBody } = await parseBody(request);
+    const req = makeReq(request, body, url, rawBody);
     const { res, toResponse } = makeRes();
 
     await runWithDb(db, () => handler(req, res));
@@ -201,6 +213,23 @@ async function handleApiRequest(request, env, ctx) {
 // ── Worker export ────────────────────────────────────────────────────────────
 
 export default {
+  /**
+   * Cron Trigger (wrangler.toml [triggers]): expire lapsed add-ons and send the day's
+   * automatic WhatsApp reminders. Runs once daily; every run is recorded in job_runs.
+   */
+  async scheduled(event, env, ctx) {
+    exposeEnv(env);
+    const db = createRequestDb(env);
+    try {
+      const summary = await runWithDb(db, () => runScheduledJobs({ cron: event.cron }));
+      console.log('Scheduled jobs finished:', JSON.stringify(summary));
+    } catch (err) {
+      console.error('Scheduled jobs failed:', err?.stack || err);
+    } finally {
+      ctx.waitUntil(db.cleanup());
+    }
+  },
+
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 

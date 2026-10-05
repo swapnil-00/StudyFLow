@@ -3,6 +3,7 @@
 const { query } = require('../lib/db');
 const { ensureMultiTenantSchema } = require('../lib/db-init');
 const { withHandler } = require('../lib/http');
+const { deriveSubscription } = require('../lib/subscription');
 
 module.exports = withHandler(async function handler(req, res) {
   // Ensure tables and columns exist
@@ -229,18 +230,26 @@ module.exports = withHandler(async function handler(req, res) {
     ...sanitizedData,
   };
 
+  // Plan, seat limit and WhatsApp mode are derived server-side (lib/subscription.js);
+  // the client only displays them.
+  const subscription = deriveSubscription(org);
   const organization = {
     id: org.id,
     name: org.name,
     slug: org.slug,
-    plan: org.plan || 'starter',
-    seatLimit: typeof org.seat_limit === 'number' ? org.seat_limit : 100,
+    plan: subscription.plan,
+    planName: subscription.planName,
+    seatLimit: subscription.seatLimit,
     currentSeatCount: seats.rows.length,
+    seatsUsed: seats.rows.length,
     subscriptionStatus: org.subscription_status || 'active',
     currency: org.currency || 'INR',
     logoUrl: org.logo_url,
-    isDemo: Boolean(org.is_demo),
-    onboardingCompleted: org.onboarding_completed !== false
+    phone: org.phone || '',
+    isDemo: subscription.isDemo,
+    onboardingCompleted: org.onboarding_completed !== false,
+    whatsappMode: subscription.whatsappMode,
+    subscription,
   };
 
   const db = {

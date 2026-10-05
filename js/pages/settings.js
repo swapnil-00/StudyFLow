@@ -5,16 +5,22 @@ export function renderSettings(container) {
 
   const settings = store.getSettings();
   const branches = store.getBranches();
-  const org = store.organization || { name: 'StudyFlow Library', plan: 'starter', seatLimit: 100 };
+  const org = store.organization || { name: 'StudyFlow Library', plan: 'free', seatLimit: 5 };
+  const sub = org.subscription || {};
   const user = store.currentUser || { name: 'Admin', email: 'admin@studyflow.in', role: 'owner' };
   const isAuth = store.isAuthenticated();
+  const isOwner = (user.role || 'owner') === 'owner';
   const seatsCount = store.getSeats().length;
-  const seatLimit = org.seatLimit || 100;
+  const seatLimit = Number(sub.seatLimit || org.seatLimit || org.seat_limit) || 5;
   const seatUsagePct = Math.min(100, Math.round((seatsCount / seatLimit) * 100));
+  const planName = sub.planName || org.planName || String(org.plan || 'free');
   const isDemo = Boolean(org.isDemo || org.is_demo || org.plan === 'demo');
   const isSuspended = (org.subscriptionStatus || org.subscription_status) === 'suspended';
   const statusLabel = isSuspended ? 'SUSPENDED' : (isDemo ? 'DEMO' : 'ACTIVE');
   const statusBadgeClass = isSuspended ? 'badge-danger' : (isDemo ? 'badge-warning' : 'badge-success');
+  const waLabel = sub.autoLabel || (org.whatsappMode === 'automatic' ? 'Automatic — Active' : 'Manual');
+  const waBadgeClass = (sub.whatsappMode || org.whatsappMode) === 'automatic' ? 'badge-success'
+    : (sub.autoStatus === 'expired' || sub.autoStatus === 'payment_failed') ? 'badge-danger' : 'badge-neutral';
 
   container.innerHTML = `
     <div class="page-header">
@@ -34,7 +40,7 @@ export function renderSettings(container) {
             <span>SaaS Plan & Subscription</span>
             <div style="display:flex;gap:6px;align-items:center;">
               <span class="badge ${statusBadgeClass}" style="font-size:11px;font-weight:700;text-transform:uppercase;padding:2px 8px;">${statusLabel}</span>
-              <span class="badge badge-indigo" style="font-size:11px;font-weight:700;text-transform:uppercase;padding:2px 8px;">${esc(org.plan || 'starter')}</span>
+              <span class="badge badge-indigo" style="font-size:11px;font-weight:700;text-transform:uppercase;padding:2px 8px;">${esc(planName)}</span>
             </div>
           </div>
         </div>
@@ -52,16 +58,23 @@ export function renderSettings(container) {
           <!-- Seat Usage Bar -->
           <div>
             <div style="display:flex;justify-content:space-between;font-size:var(--text-xs);margin-bottom:6px;">
-              <span style="font-weight:600;color:var(--color-text-secondary);">Seat Allocation Capacity</span>
-              <span style="font-weight:700;color:var(--color-text-primary);">${seatsCount} / ${seatLimit} seats (${seatUsagePct}%)</span>
+              <span style="font-weight:600;color:var(--color-text-secondary);">Seats used</span>
+              <span style="font-weight:700;color:${seatsCount >= seatLimit ? 'var(--sf-error-600)' : 'var(--color-text-primary)'};">${seatsCount} / ${seatLimit} seats (${seatUsagePct}%)</span>
             </div>
             <div style="width:100%;height:8px;background:var(--color-bg-secondary);border-radius:4px;overflow:hidden;">
-              <div style="width:${seatUsagePct}%;height:100%;background:${seatUsagePct > 90 ? 'var(--sf-error-500)' : (seatUsagePct > 70 ? 'var(--sf-warning-500)' : 'var(--color-primary)')};border-radius:4px;transition:width 0.3s;"></div>
+              <div style="width:${seatUsagePct}%;height:100%;background:${seatUsagePct >= 100 ? 'var(--sf-error-500)' : (seatUsagePct > 80 ? 'var(--sf-warning-500)' : 'var(--color-primary)')};border-radius:4px;transition:width 0.3s;"></div>
             </div>
           </div>
 
+          <!-- WhatsApp notification mode -->
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:var(--text-xs);">
+            <span style="font-weight:600;color:var(--color-text-secondary);">WhatsApp notifications</span>
+            <span class="badge ${waBadgeClass}">${esc(waLabel)}</span>
+          </div>
+          ${sub.autoReason ? `<div style="font-size:12px;color:var(--color-text-tertiary);margin-top:-6px;">${esc(sub.autoReason)}</div>` : ''}
+
           <div style="display:flex;gap:var(--space-2);margin-top:var(--space-2);">
-            <button class="btn btn-primary flex-1" onclick="app.openContactModal()">Contact Us</button>
+            ${isOwner && !isDemo ? `<button class="btn btn-primary flex-1" onclick="app.navigate('/billing')">Billing & Plan</button>` : `<button class="btn btn-primary flex-1" onclick="app.openContactModal()">Contact Us</button>`}
             <button class="btn btn-secondary" onclick="app.openOnboardingModal()">Setup Wizard</button>
             ${isAuth ? `
               <button class="btn btn-secondary" onclick="app.handleLogout()">Sign Out</button>

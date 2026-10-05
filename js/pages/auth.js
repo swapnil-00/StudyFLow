@@ -55,7 +55,9 @@ export function renderLoginPage() {
       </form>
 
       <div class="auth-footer">
-        New to StudyFlow? <a href="javascript:void(0)" id="auth-book-demo-link" class="auth-switch-link">Book a demo</a>
+        New to StudyFlow? <a href="#/signup" class="auth-switch-link">Create a free library</a>
+        <span style="color:var(--color-text-tertiary);"> · </span>
+        <a href="javascript:void(0)" id="auth-book-demo-link" class="auth-switch-link">Book a demo</a>
       </div>
     </div>
   `;
@@ -67,50 +69,180 @@ export function renderLoginPage() {
   return container;
 }
 
-export function renderNoLibraryPage() {
+const GOOGLE_ICON_SVG = `<svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/></svg>`;
+
+// Signup: Google only. Creates the account; the library itself is created on the next page.
+export function renderSignupPage() {
   const container = document.createElement('div');
   container.className = 'auth-page-container';
-  const user = store.currentUser || {};
   container.innerHTML = `
-    <div class="auth-card" style="text-align:center;">
+    <div class="auth-card">
       <div class="auth-header">
         <div class="auth-logo">SF</div>
-        <h1 class="auth-title">No Active Library</h1>
-        <p class="auth-subtitle">Signed in as <strong>${utils.escapeHtml(user.email || 'your account')}</strong></p>
+        <h1 class="auth-title">Create your library</h1>
+        <p class="auth-subtitle" id="signup-subtitle">Start free with 5 seats. Upgrade when you need more.</p>
       </div>
 
-      <div style="margin:20px 0;line-height:1.6;color:var(--color-text-secondary);font-size:14px;">
-        There is no active library linked to this account. StudyFlow accounts and libraries are provisioned directly by the StudyFlow team.
+      <div id="auth-alert" class="auth-alert" style="display:none;" role="alert" aria-live="assertive"></div>
+
+      <div class="form-group terms-checkbox-group" style="margin-top:4px;">
+        <label class="checkbox-label" style="display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--color-text-secondary);cursor:pointer;">
+          <input type="checkbox" id="reg-terms-check" style="margin-top:2px;" />
+          <span>I agree to the <a href="javascript:void(0)" style="color:var(--color-primary);text-decoration:underline;">Terms of Service</a> and <a href="javascript:void(0)" style="color:var(--color-primary);text-decoration:underline;">Privacy Policy</a>.</span>
+        </label>
       </div>
 
-      <div style="display:flex;flex-direction:column;gap:10px;margin-top:24px;">
-        <button type="button" class="btn btn-primary btn-block" id="btn-no-lib-contact">
-          Book a Demo / Contact Sales
-        </button>
-        <button type="button" class="btn btn-secondary btn-block" id="btn-no-lib-logout">
-          Sign out
-        </button>
+      <div class="auth-identity-buttons" style="margin-top:12px;">
+        <button type="button" class="btn-google" id="btn-google-signup">${GOOGLE_ICON_SVG} Sign up with Google</button>
+      </div>
+      <p style="text-align:center;font-size:13px;color:var(--color-text-secondary);margin-top:16px;line-height:1.5;">
+        StudyFlow uses your Google account to sign in securely. No password to remember.
+      </p>
+
+      <div class="auth-footer">
+        Already have a library? <a href="#/login" class="auth-switch-link">Sign in</a>
       </div>
     </div>
   `;
 
   setTimeout(() => {
-    container.querySelector('#btn-no-lib-contact')?.addEventListener('click', () => {
-      window.app?.openContactModal?.();
-    });
-    container.querySelector('#btn-no-lib-logout')?.addEventListener('click', async () => {
-      await store.logout();
-      window.location.hash = '#/login';
+    const alertEl = container.querySelector('#auth-alert');
+    const googleBtn = container.querySelector('#btn-google-signup');
+    const termsCheck = container.querySelector('#reg-terms-check');
+    getClientConfig().then((config) => {
+      const seats = config?.signup?.freeSeats;
+      if (seats) container.querySelector('#signup-subtitle').textContent = `Start free with ${seats} seats. Upgrade when you need more.`;
+    }).catch(() => {});
+    ensureFirebaseSdk().catch(() => {});
+
+    googleBtn.addEventListener('click', async () => {
+      alertEl.style.display = 'none';
+      if (!termsCheck.checked) {
+        showAuthAlert(alertEl, 'Please agree to the Terms of Service to create an account.');
+        termsCheck.focus();
+        return;
+      }
+      const origHtml = googleBtn.innerHTML;
+      googleBtn.disabled = true;
+      googleBtn.innerHTML = `<span class="spinner" style="width:16px;height:16px;border-width:2px;border-color:rgba(255,255,255,0.3);border-top-color:#ffffff;display:inline-block;vertical-align:middle;margin-right:8px;"></span><span>Connecting to Google...</span>`;
+      try {
+        await ensureFirebaseSdk();
+        const auth = window.firebase.auth();
+        const provider = new window.firebase.auth.GoogleAuthProvider();
+        const result = await auth.signInWithPopup(provider);
+        const idToken = await result.user.getIdToken();
+        googleBtn.innerHTML = `<span class="spinner" style="width:16px;height:16px;border-width:2px;border-color:rgba(255,255,255,0.3);border-top-color:#ffffff;display:inline-block;vertical-align:middle;margin-right:8px;"></span><span>Creating your account...</span>`;
+        const res = await store.sessionFromIdToken(idToken, 'signup', null, true);
+        // An existing account simply signs in and lands where it should
+        window.location.hash = res.state === 'ready' ? '#/dashboard'
+          : res.state === 'needs_onboarding' ? '#/onboarding'
+          : '#/setup-library';
+      } catch (err) {
+        if (err.code !== 'auth/popup-closed-by-user') {
+          showAuthAlert(alertEl, err.message || 'Google sign up failed');
+        }
+      } finally {
+        googleBtn.disabled = false;
+        googleBtn.innerHTML = origHtml;
+      }
     });
   }, 0);
 
   return container;
 }
 
+// Setup: name the library. It is created on the Free plan; limits come from the server.
+export function renderSetupLibraryPage() {
+  const container = document.createElement('div');
+  container.className = 'auth-page-container';
+  const user = store.currentUser || {};
+  container.innerHTML = `
+    <div class="auth-card">
+      <div class="auth-header">
+        <div class="auth-logo">SF</div>
+        <h1 class="auth-title">Set up your library</h1>
+        <p class="auth-subtitle">Signed in as <strong>${utils.escapeHtml(user.email || 'your account')}</strong></p>
+      </div>
+
+      <div id="auth-alert" class="auth-alert" style="display:none;" role="alert" aria-live="assertive"></div>
+
+      <div id="setup-plan-note" style="margin:0 0 14px;padding:10px 12px;border:1px solid var(--color-border-secondary);border-radius:var(--radius-md);background:var(--color-bg-secondary);font-size:12.5px;color:var(--color-text-secondary);line-height:1.5;">
+        Your library starts on the <strong>Free plan</strong>. You can upgrade from Billing whenever you need more seats.
+      </div>
+
+      <form id="setup-library-form" class="auth-form" onsubmit="event.preventDefault();">
+        <div class="form-group">
+          <label class="form-label" for="setup-org-name">Library / Reading Hall Name *</label>
+          <input type="text" id="setup-org-name" class="input" required placeholder="e.g. Apex Reading Lounge & Library" maxlength="120" />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="setup-org-city">City / Location *</label>
+          <input type="text" id="setup-org-city" class="input" required placeholder="e.g. Pune, Maharashtra" maxlength="100" />
+        </div>
+        <button type="submit" class="btn btn-primary btn-block" id="btn-setup-submit" style="margin-top:14px;">Create Library & Continue</button>
+      </form>
+
+      <div class="auth-footer" style="display:flex;justify-content:space-between;gap:12px;">
+        <a href="javascript:void(0)" id="btn-setup-contact" style="color:var(--color-text-secondary);font-size:12px;">Need help? Contact us</a>
+        <a href="javascript:void(0)" id="btn-logout-setup" style="color:var(--color-text-secondary);font-size:12px;">Sign out / Switch account</a>
+      </div>
+    </div>
+  `;
+
+  setTimeout(() => {
+    const alertEl = container.querySelector('#auth-alert');
+    const form = container.querySelector('#setup-library-form');
+    const submitBtn = container.querySelector('#btn-setup-submit');
+    getClientConfig().then((config) => {
+      const seats = config?.signup?.freeSeats;
+      if (seats) {
+        container.querySelector('#setup-plan-note').innerHTML =
+          `Your library starts on the <strong>Free plan</strong> with <strong>${seats} seats</strong>. Upgrade from Billing whenever you need more.`;
+      }
+    }).catch(() => {});
+
+    container.querySelector('#btn-setup-contact')?.addEventListener('click', () => window.app?.openContactModal?.());
+    container.querySelector('#btn-logout-setup')?.addEventListener('click', async () => {
+      await store.logout();
+      window.location.hash = '#/login';
+    });
+
+    form.addEventListener('submit', async () => {
+      const orgName = container.querySelector('#setup-org-name').value.trim();
+      const city = container.querySelector('#setup-org-city').value.trim();
+      if (!orgName || !city) {
+        showAuthAlert(alertEl, 'Please fill in both library name and city.');
+        return;
+      }
+      const origHtml = submitBtn.innerHTML;
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = `<span class="spinner" style="width:16px;height:16px;border-width:2px;border-color:rgba(255,255,255,0.3);border-top-color:#ffffff;display:inline-block;vertical-align:middle;margin-right:8px;"></span><span>Creating Library...</span>`;
+      try {
+        const res = await store.createLibrary({ orgName, city });
+        window.location.hash = res.state === 'ready' ? '#/dashboard' : '#/onboarding';
+      } catch (err) {
+        showAuthAlert(alertEl, err.message || 'Failed to create library');
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = origHtml;
+      }
+    });
+  }, 0);
+
+  return container;
+}
+
+// Kept for older links: a signed-in user without a library is sent to the setup page.
+export function renderNoLibraryPage() {
+  return renderSetupLibraryPage();
+}
+
 export function renderOnboardingPage() {
   const container = document.createElement('div');
   container.className = 'auth-page-container';
   const org = store.organization || { name: 'My Library' };
+  // Seat cap for the wizard comes from the plan (the server enforces it again)
+  const obSeatLimit = Math.max(1, Number(org.seatLimit || org.seat_limit || (org.subscription && org.subscription.seatLimit)) || 5);
+  const obPlanName = org.planName || (org.subscription && org.subscription.planName) || (org.plan ? String(org.plan).charAt(0).toUpperCase() + String(org.plan).slice(1) : 'Free');
 
   container.innerHTML = `
     <div class="auth-card" style="max-width:540px;">
@@ -143,8 +275,9 @@ export function renderOnboardingPage() {
         </div>
 
         <div class="form-group">
-          <label class="form-label" for="ob-seat-count">Initial Number of Seats (10 – 100)</label>
-          <input type="number" id="ob-seat-count" class="input" min="10" max="100" value="40" required />
+          <label class="form-label" for="ob-seat-count">Initial Number of Seats (1 – ${obSeatLimit})</label>
+          <input type="number" id="ob-seat-count" class="input" min="1" max="${obSeatLimit}" value="${Math.min(40, obSeatLimit)}" required />
+          <div style="font-size:12px;color:var(--color-text-tertiary);margin-top:4px;">Your ${utils.escapeHtml(obPlanName)} plan includes ${obSeatLimit} seats. You can add more later from Billing.</div>
         </div>
 
         <button type="submit" class="btn btn-primary btn-block" id="btn-ob-submit" style="margin-top:18px;">
@@ -175,7 +308,7 @@ export function renderOnboardingPage() {
       const branchName = container.querySelector('#ob-branch-name').value.trim();
       const city = container.querySelector('#ob-branch-city').value.trim();
       const roomName = container.querySelector('#ob-room-name').value.trim();
-      const seatCount = parseInt(container.querySelector('#ob-seat-count').value, 10) || 40;
+      const seatCount = Math.min(obSeatLimit, Math.max(1, parseInt(container.querySelector('#ob-seat-count').value, 10) || Math.min(40, obSeatLimit)));
 
       if (!branchName || !city || !roomName) {
         showAuthAlert(alertEl, 'Please fill in all required setup fields.');
@@ -819,8 +952,8 @@ function setupLoginEvents(container) {
 
         const res = await store.sessionFromIdToken(idToken, 'login');
 
-        if (res.state === 'no_library') {
-          window.location.hash = '#/no-library';
+        if (res.state === 'no_library' || res.state === 'needs_library') {
+          window.location.hash = '#/setup-library';
         } else if (res.state === 'needs_onboarding') {
           window.location.hash = '#/onboarding';
         } else {
@@ -829,9 +962,10 @@ function setupLoginEvents(container) {
       } catch (err) {
         if (err.code === 'NO_ACCOUNT') {
           alertEl.innerHTML = `
-            <div>No StudyFlow account found for this Google email.</div>
-            <div style="margin-top:8px;">
-              <button type="button" id="btn-login-contact" class="btn btn-sm btn-primary" style="display:inline-block;padding:4px 12px;font-size:12px;">Book a Demo / Contact Us</button>
+            <div>No StudyFlow library is linked to this Google email yet.</div>
+            <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+              <a href="#/signup" class="btn btn-sm btn-primary" style="display:inline-block;padding:4px 12px;font-size:12px;">Create a free library</a>
+              <button type="button" id="btn-login-contact" class="btn btn-sm btn-secondary" style="display:inline-block;padding:4px 12px;font-size:12px;">Contact us</button>
             </div>
           `;
           alertEl.className = 'auth-alert auth-alert-error';

@@ -3,9 +3,10 @@
 // ── Router ─────────────────────────────────────────────────────────
 const routes = {
   '/login': () => import('./pages/auth.js').then(m => m.renderLoginPage),
-  '/signup': () => { window.location.hash = '#/login'; return import('./pages/auth.js').then(m => m.renderLoginPage); },
-  '/setup-library': () => { window.location.hash = '#/login'; return import('./pages/auth.js').then(m => m.renderLoginPage); },
-  '/no-library': () => import('./pages/auth.js').then(m => m.renderNoLibraryPage),
+  '/signup': () => import('./pages/auth.js').then(m => m.renderSignupPage),
+  '/setup-library': () => import('./pages/auth.js').then(m => m.renderSetupLibraryPage),
+  '/no-library': () => import('./pages/auth.js').then(m => m.renderSetupLibraryPage),
+  '/billing': () => import('./pages/billing.js').then(m => m.renderBillingPage),
   '/onboarding': () => import('./pages/auth.js').then(m => m.renderOnboardingPage),
   '/invite': () => import('./pages/auth.js').then(m => m.renderInvitePage),
   '/forgot-password': () => import('./pages/auth.js').then(m => m.renderForgotPasswordPage),
@@ -84,9 +85,15 @@ class App {
     const isDemo = Boolean(org.isDemo || org.is_demo || org.plan === 'demo');
     const isSuspended = (org.subscriptionStatus || org.subscription_status) === 'suspended';
 
-    const planBadge = isDemo
+    const seatsUsed = store.isAuthenticated() ? store.getSeats().length : 0;
+    const seatLimit = Number(org.seatLimit || org.seat_limit) || 0;
+    const seatUsage = isAuth && seatLimit > 0
+      ? `<span class="sidebar-seat-usage" title="Seats used in your plan" style="font-size:10px;color:${seatsUsed >= seatLimit ? 'var(--sf-error-600)' : 'var(--color-text-tertiary)'};font-weight:600;">${seatsUsed} / ${seatLimit} seats</span>`
+      : '';
+    const planBadge = (isDemo
       ? `<span class="badge" style="background:#f59e0b;color:#1e1e1e;font-weight:800;font-size:10px;padding:2px 6px;border-radius:4px;display:inline-block;letter-spacing:0.5px;">DEMO</span>`
-      : `<span style="font-size:10px;font-weight:700;color:var(--color-primary);letter-spacing:0.5px;text-transform:uppercase;">${(org.plan || 'starter')} Plan</span>`;
+      : `<span style="font-size:10px;font-weight:700;color:var(--color-primary);letter-spacing:0.5px;text-transform:uppercase;">${utils.escapeHtml(org.planName || org.plan || 'free')} Plan</span>`)
+      + seatUsage;
 
     document.getElementById('app').innerHTML = `
       <aside class="sidebar ${this.sidebarCollapsed ? 'collapsed' : ''}" id="sidebar">
@@ -213,16 +220,18 @@ class App {
         { route: '/notifications', label: 'Notifications', icon: 'bell', badgeId: 'nav-notif-badge' },
       ]},
       { label: 'SYSTEM', items: [
+        { route: '/billing', label: 'Billing & Plan', icon: 'credit-card', ownerOnly: true },
         { route: '/activity', label: 'Activity Log', icon: 'activity' },
         { route: '/settings', label: 'Settings', icon: 'settings' },
       ]},
     ];
 
+    const role = (store.currentUser && store.currentUser.role) || 'owner';
     return navSections.map(section => `
       <div class="sidebar-section">
         <div class="sidebar-section-label">${section.label}</div>
         <div class="sidebar-nav-items">
-          ${section.items.map(item => `
+          ${section.items.filter(item => !item.ownerOnly || role === 'owner').map(item => `
             <div class="nav-item" data-route="${item.route}" onclick="app.navigate('${item.route}')">
               <div class="nav-icon">${icons[item.icon] || ''}</div>
               <span class="nav-label">${item.label}</span>
@@ -247,17 +256,18 @@ class App {
     const params = new URLSearchParams(rawHash.split('?')[1] || '');
 
     // ── Server Auth State Router Guard (AUTH-05, Plan §3.1) ──────────────
-    const authState = store.authState; // 'anonymous' | 'no_library' | 'needs_onboarding' | 'ready'
-    const isAnonymousPath = ['/landing', '/login', '/forgot-password'].includes(path) || path.startsWith('/invite');
+    const authState = store.authState; // 'anonymous' | 'no_library' | 'needs_library' | 'needs_onboarding' | 'ready'
+    const isAnonymousPath = ['/landing', '/login', '/signup', '/forgot-password'].includes(path) || path.startsWith('/invite');
 
     if (authState === 'anonymous') {
       if (!isAnonymousPath) {
         window.location.hash = '#/login';
         return;
       }
-    } else if (authState === 'no_library') {
-      if (path !== '/no-library' && !path.startsWith('/invite') && path !== '/login') {
-        window.location.hash = '#/no-library';
+    } else if (authState === 'no_library' || authState === 'needs_library') {
+      // Signed in, no library yet: create one on the Free plan
+      if (!['/setup-library', '/no-library', '/login'].includes(path) && !path.startsWith('/invite')) {
+        window.location.hash = '#/setup-library';
         return;
       }
     } else if (authState === 'needs_onboarding') {
@@ -739,34 +749,34 @@ class App {
 
   // ── SaaS Plan Upgrade Modal ───────────────────────────────────────
   openUpgradeModal() {
-    const org = store.organization || { plan: 'starter', seatLimit: 100 };
-    const isDemo = Boolean(org.isDemo || org.is_demo || org.plan === 'demo');
-    const planName = isDemo ? 'Demo Plan' : `${(org.plan || 'starter').toUpperCase()} Plan`;
-    const seatLimit = org.seatLimit || 100;
+    this.navigate('/billing');
+  }
 
+  /**
+   * Shown whenever the server refuses a seat beyond the plan (SEAT_LIMIT_REACHED).
+   * The numbers come from the server's response, never from the client.
+   */
+  showSeatLimitPrompt(message, details = {}) {
+    const esc = (s) => utils.escapeHtml(String(s == null ? '' : s));
+    const role = (store.currentUser && store.currentUser.role) || 'owner';
+    const used = details.seatsUsed != null ? details.seatsUsed : store.getSeats().length;
+    const limit = details.seatLimit != null ? details.seatLimit : (store.organization && store.organization.seatLimit) || 0;
     const bodyHTML = `
-      <div style="display:flex;flex-direction:column;gap:16px;padding:8px 0;">
-        <div style="padding:16px;background:var(--color-bg-secondary);border-radius:var(--radius-md);border:1px solid var(--color-border-secondary);">
-          <div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:4px;">Current Subscription</div>
-          <div style="font-size:18px;font-weight:700;color:var(--color-text-primary);">${planName}</div>
-          <div style="font-size:13px;color:var(--color-text-secondary);margin-top:4px;">Seat Allocation Limit: <strong>${seatLimit} seats</strong></div>
+      <div style="display:flex;flex-direction:column;gap:14px;padding:6px 0;">
+        <div style="padding:14px 16px;background:var(--color-bg-secondary);border-radius:var(--radius-md);border:1px solid var(--color-border-secondary);">
+          <div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:4px;">Seats used</div>
+          <div style="font-size:22px;font-weight:800;color:var(--sf-error-600);">${esc(used)} / ${esc(limit)}</div>
         </div>
-
-        <p style="font-size:14px;color:var(--color-text-secondary);line-height:1.5;margin:0;">
-          To change your plan, expand seat capacity, or add more branches, please contact StudyFlow.
-        </p>
-
-        <button class="btn btn-primary w-full" onclick="modal.close(); app.openContactModal();">
-          Contact StudyFlow
-        </button>
-      </div>
-    `;
-
-    const footerHTML = `
-      <button type="button" class="btn btn-secondary" onclick="modal.close()">Close</button>
-    `;
-
-    modal.open('Subscription & Plan', bodyHTML, footerHTML, { size: 'sm' });
+        <p style="font-size:14px;color:var(--color-text-primary);line-height:1.5;margin:0;">${esc(message || `You've reached your ${limit}-seat limit. Upgrade your plan to add more members.`)}</p>
+        ${role === 'owner'
+          ? `<p style="font-size:13px;color:var(--color-text-secondary);margin:0;">Plans: Basic — 100 seats, Automatic WhatsApp notifications add-on, or a Custom seat count. Prices are shown on the Billing page.</p>`
+          : `<p style="font-size:13px;color:var(--color-text-secondary);margin:0;">Ask your library owner to upgrade the plan.</p>`}
+      </div>`;
+    const footerHTML = role === 'owner'
+      ? `<button type="button" class="btn btn-secondary" onclick="modal.close()">Not now</button>
+         <button type="button" class="btn btn-primary" onclick="modal.close(); app.navigate('/billing')">View plans & upgrade</button>`
+      : `<button type="button" class="btn btn-secondary" onclick="modal.close()">Close</button>`;
+    modal.open('Seat limit reached', bodyHTML, footerHTML, { size: 'sm' });
   }
 
   async handleLogout() {

@@ -11,6 +11,7 @@ const { audit } = require('../lib/audit');
 const { encrypt } = require('../lib/crypto');
 const { HttpError } = require('../lib/errors');
 const { getTodayIST, addDaysIST, daysBetweenIST } = require('../lib/dates');
+const { seatLimitFor, normalizePlanKey, seatLimitMessage } = require('../lib/plans');
 
 function uid(prefix) {
   return `${prefix}-${crypto.randomUUID().replace(/-/g, '').substring(0, 9).toUpperCase()}`;
@@ -108,6 +109,19 @@ async function assertForeignEntity(client, foreignTable, entityId, orgId, branch
   if (res.rows.length === 0) {
     throw new HttpError(404, 'FOREIGN_NOT_FOUND', `Referenced ${foreignTable} record '${entityId}' does not exist in your organization.`);
   }
+}
+
+/**
+ * The plan's seat limit and the current seat count, read under FOR UPDATE on the
+ * organization row. Limits come from lib/plans.js, never from the request.
+ */
+async function lockedSeatCapacity(client, orgId) {
+  const orgRes = await client.query('SELECT plan, seat_limit, is_demo FROM organizations WHERE id = $1 FOR UPDATE', [orgId]);
+  const orgRow = orgRes.rows[0] || {};
+  const seatLimit = seatLimitFor(orgRow);
+  const countRes = await client.query('SELECT COUNT(*) as count FROM seats WHERE organization_id = $1', [orgId]);
+  const currentCount = parseInt(countRes.rows[0]?.count || 0, 10);
+  return { seatLimit, currentCount, planKey: normalizePlanKey(orgRow.plan) };
 }
 
 module.exports = withHandler(async function handler(req, res) {
@@ -313,18 +327,12 @@ module.exports = withHandler(async function handler(req, res) {
       if (!Array.isArray(list) || list.length === 0) return res.json({ ok: true, ids: [] });
 
       const result = await withTransaction(async client => {
-        const orgRes = await client.query('SELECT seat_limit FROM organizations WHERE id = $1 FOR UPDATE', [orgId]);
-        let seatLimit = orgRes.rows[0]?.seat_limit;
-        if (typeof seatLimit !== 'number' || isNaN(seatLimit)) {
-          console.warn(`[org:${orgId}] Missing or invalid seat_limit on organization record, defaulting to 100.`);
-          seatLimit = 100;
-        }
-
-        const countRes = await client.query('SELECT COUNT(*) as count FROM seats WHERE organization_id = $1', [orgId]);
-        const currentCount = parseInt(countRes.rows[0]?.count || 0);
-
+        // Plan seat limit, checked under a row lock so two concurrent inserts cannot both pass
+        const { seatLimit, currentCount, planKey } = await lockedSeatCapacity(client, orgId);
         if (currentCount + list.length > seatLimit) {
-          throw new HttpError(403, 'SEAT_LIMIT_REACHED', `Adding ${list.length} seats would exceed your seat limit of ${seatLimit}.`);
+          throw new HttpError(403, 'SEAT_LIMIT_REACHED',
+            `${seatLimitMessage(planKey, seatLimit)} (${currentCount} of ${seatLimit} used; adding ${list.length} would exceed it.)`,
+            { seatLimit, seatsUsed: currentCount, plan: planKey, requested: list.length });
         }
 
         const insertedIds = [];
@@ -356,18 +364,10 @@ module.exports = withHandler(async function handler(req, res) {
 
       const result = await withTransaction(async client => {
         // SEC-016: Atomic seat limit check with row lock on organization
-        const orgRes = await client.query('SELECT seat_limit FROM organizations WHERE id = $1 FOR UPDATE', [orgId]);
-        let seatLimit = orgRes.rows[0]?.seat_limit;
-        if (typeof seatLimit !== 'number' || isNaN(seatLimit)) {
-          console.warn(`[org:${orgId}] Missing or invalid seat_limit on organization record, defaulting to 100.`);
-          seatLimit = 100;
-        }
-
-        const countRes = await client.query('SELECT COUNT(*) as count FROM seats WHERE organization_id = $1', [orgId]);
-        const currentCount = parseInt(countRes.rows[0]?.count || 0);
-
+        const { seatLimit, currentCount, planKey } = await lockedSeatCapacity(client, orgId);
         if (currentCount >= seatLimit) {
-          throw new HttpError(403, 'SEAT_LIMIT_REACHED', `Your plan seat limit (${seatLimit}) has been reached. Please contact support to upgrade.`);
+          throw new HttpError(403, 'SEAT_LIMIT_REACHED', seatLimitMessage(planKey, seatLimit),
+            { seatLimit, seatsUsed: currentCount, plan: planKey, requested: 1 });
         }
 
         await assertForeignEntity(client, 'branches', s.branchId, orgId);

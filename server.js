@@ -47,8 +47,9 @@ function parseBody(req) {
       body += chunk.toString();
     });
     req.on('end', () => {
-      try { resolve(body ? JSON.parse(body) : {}); }
-      catch (e) { resolve({}); }
+      // rawBody is kept for webhook signature checks (api/webhooks.js)
+      try { resolve({ body: body ? JSON.parse(body) : {}, rawBody: body }); }
+      catch (e) { resolve({ body: {}, rawBody: body }); }
     });
     req.on('error', reject);
   });
@@ -116,8 +117,8 @@ const server = http.createServer(async (req, res) => {
       try { delete require.cache[require.resolve('./lib/db-init.js')]; } catch {}
 
       const handler = require(handlerPath);
-      const body = await parseBody(req);
-      const shimReq = { method: req.method, url: req.url, headers: req.headers, body, query: Object.fromEntries(url.searchParams) };
+      const { body, rawBody } = await parseBody(req);
+      const shimReq = { method: req.method, url: req.url, headers: req.headers, body, rawBody, query: Object.fromEntries(url.searchParams) };
       const shimRes = makeRes(res);
       await handler(shimReq, shimRes);
     } catch (err) {

@@ -14,9 +14,6 @@ export function renderLanding(container) {
   }
 
   function render() {
-    const starter = getPrice(1499);
-    const pro = getPrice(3499);
-    const enterprise = getPrice(7999);
 
     container.innerHTML = `
       <div class="sf-landing-wrapper">
@@ -283,116 +280,102 @@ export function renderLanding(container) {
           </div>
         </section>
 
-        <!-- ── SaaS Pricing Plans ── -->
+        <!-- ── Pricing (numbers hydrated from /api/auth?action=client_config → pricing; lib/plans.js is the source) ── -->
         <section class="sf-section" id="pricing">
           <div class="sf-landing-container">
             <div class="sf-section-header">
-              <div class="sf-pill-badge">TRANSPARENT PRICING</div>
-              <h2 class="sf-section-title">Simple, Predictable Plans for Every Library</h2>
-              <p class="sf-section-subtitle">Choose the plan that fits your seat capacity. Upgrade or downgrade anytime.</p>
-
-              <!-- Billing Cycle Toggle -->
-              <div class="sf-pricing-toggle-wrap">
-                <span class="${billingCycle === 'monthly' ? 'active' : ''}" onclick="window.setLandingBilling('monthly')">Monthly Billing</span>
-                <button class="sf-pricing-toggle-btn ${billingCycle === 'annual' ? 'on' : ''}" onclick="window.toggleLandingBilling()">
-                  <span class="sf-toggle-handle"></span>
-                </button>
-                <span class="${billingCycle === 'annual' ? 'active' : ''}" onclick="window.setLandingBilling('annual')">
-                  Annual Billing <span class="sf-save-badge">Save 20%</span>
-                </span>
-              </div>
+              <div class="sf-pill-badge">SIMPLE PRICING</div>
+              <h2 class="sf-section-title">Start free. Pay once for the seats you need.</h2>
+              <p class="sf-section-subtitle">No monthly fee for the software: <strong data-pricing="basic-price">₹5,000</strong> per <span data-pricing="block-seats">100</span> seats, one-time. Automatic WhatsApp reminders are an optional monthly add-on.</p>
             </div>
 
             <div class="grid-3" style="gap:24px;align-items:stretch;">
-              <!-- Starter Plan -->
+              <!-- Free -->
               <div class="sf-price-card">
                 <div class="sf-price-header">
-                  <div class="sf-plan-name">Starter Plan</div>
-                  <p class="sf-plan-desc">Ideal for small reading rooms & single branch study spaces.</p>
+                  <div class="sf-plan-name">Free</div>
+                  <p class="sf-plan-desc">Try the complete product with a small reading room. No card, no time limit.</p>
                   <div class="sf-price-amount">
-                    <span class="sf-price-val">${starter.price}</span>
-                    <span class="sf-price-period">${starter.period}</span>
+                    <span class="sf-price-val">₹0</span>
+                    <span class="sf-price-period">forever</span>
                   </div>
                 </div>
-
                 <div class="sf-plan-limits">
-                  <strong>Up to 75 Seats</strong> · 1 Branch Location
+                  <strong><span data-pricing="free-seats">5</span> Seats</strong> · 1 Branch
                 </div>
-
                 <ul class="sf-plan-features">
-                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Full Interactive Seat Map</li>
-                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Student Directory & Profiles</li>
-                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Payment Ledger & PDF Receipts</li>
-                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> 1-Click Free WhatsApp Sharing</li>
-                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Export Reports to Excel/CSV</li>
+                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Interactive seat map & layout designer</li>
+                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Students, memberships & payments</li>
+                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> PDF receipts & expense tracking</li>
+                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> 1-click manual WhatsApp reminders</li>
                 </ul>
-
-                <button class="btn btn-secondary w-full" onclick="app.openContactModal()">
-                  Book a Demo / Get Starter
-                </button>
+                <a class="btn btn-secondary w-full" href="#/signup">Start free</a>
               </div>
 
-              <!-- Pro Plan (Popular) -->
+              <!-- Basic (featured) -->
               <div class="sf-price-card featured">
                 <div class="sf-popular-ribbon">MOST POPULAR</div>
                 <div class="sf-price-header">
-                  <div class="sf-plan-name">Pro Plan</div>
-                  <p class="sf-plan-desc">For growing libraries scaling multi-shift capacity & automation.</p>
+                  <div class="sf-plan-name">Basic</div>
+                  <p class="sf-plan-desc">Everything a single-branch study library needs. Pay once, use forever.</p>
                   <div class="sf-price-amount">
-                    <span class="sf-price-val">${pro.price}</span>
-                    <span class="sf-price-period">${pro.period}</span>
+                    <span class="sf-price-val" data-pricing="basic-price">₹5,000</span>
+                    <span class="sf-price-period">one-time</span>
                   </div>
                 </div>
-
                 <div class="sf-plan-limits" style="color:var(--color-primary);font-weight:700;">
-                  <strong>Up to 250 Seats</strong> · Up to 3 Branches
+                  <strong><span data-pricing="basic-seats">100</span> Seats</strong> · Manual WhatsApp included
                 </div>
-
                 <ul class="sf-plan-features">
-                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Everything in Starter Plan</li>
-                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> <strong>Multi-Shift Seat Allocations</strong></li>
-                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> <strong>1-Click WhatsApp Messaging & Reminders</strong></li>
-                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Expense & Profit Margin Reports</li>
-                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Staff Management (Up to 5 staff)</li>
-                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Priority WhatsApp Support</li>
+                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Everything in Free</li>
+                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> <strong>Up to <span data-pricing="basic-seats">100</span> seats</strong></li>
+                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Staff accounts & activity log</li>
+                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Optional automatic WhatsApp add-on</li>
+                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Priority WhatsApp support</li>
                 </ul>
-
-                <button class="btn btn-primary w-full" onclick="app.openContactModal()" style="box-shadow:0 4px 16px rgba(97,114,243,0.4);">
-                  Book a Demo / Get Pro
-                </button>
+                <a class="btn btn-primary w-full" href="#/signup" style="box-shadow:0 4px 16px rgba(97,114,243,0.4);">Start free, upgrade in the app</a>
               </div>
 
-              <!-- Enterprise Plan -->
+              <!-- Custom -->
               <div class="sf-price-card">
                 <div class="sf-price-header">
-                  <div class="sf-plan-name">Enterprise Plan</div>
-                  <p class="sf-plan-desc">For large multi-branch chains and commercial study lounges.</p>
+                  <div class="sf-plan-name">Custom</div>
+                  <p class="sf-plan-desc">More than <span data-pricing="basic-seats">100</span> seats? Pay the same rate for every block of <span data-pricing="block-seats">100</span>.</p>
                   <div class="sf-price-amount">
-                    <span class="sf-price-val">${enterprise.price}</span>
-                    <span class="sf-price-period">${enterprise.period}</span>
+                    <span class="sf-price-val" data-pricing="basic-price">₹5,000</span>
+                    <span class="sf-price-period">per <span data-pricing="block-seats">100</span> seats, one-time</span>
                   </div>
                 </div>
-
                 <div class="sf-plan-limits">
-                  <strong>Up to 1,000 Seats</strong> · Unlimited Branches
+                  <strong><span data-pricing="custom-min">200</span> – <span data-pricing="custom-max">5,000</span> Seats</strong> · Multiple branches
                 </div>
-
                 <ul class="sf-plan-features">
-                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Everything in Pro Plan</li>
-                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Interactive Custom Room Designer</li>
-                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Dedicated Neon Database Instance</li>
-                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Custom Branding & Invoicing Header</li>
-                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Historical Data Migration Support</li>
-                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> 24/7 Phone & Dedicated Manager</li>
+                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Everything in Basic</li>
+                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> 200 seats → <span data-pricing="price-200">₹10,000</span></li>
+                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> 500 seats → <span data-pricing="price-500">₹25,000</span></li>
+                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> 1,000 seats → <span data-pricing="price-1000">₹50,000</span></li>
                 </ul>
+                <a class="btn btn-secondary w-full" href="javascript:void(0)" onclick="app.openContactModal()">Talk to us</a>
+              </div>
+            </div>
 
-                <button class="btn btn-secondary w-full" onclick="app.openContactModal()">
-                  Contact Sales for Enterprise
-                </button>
+            <!-- Automatic WhatsApp add-on -->
+            <div class="sf-price-card" style="margin-top:24px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;">
+              <div style="flex:1;min-width:260px;">
+                <div class="sf-plan-name">Automatic WhatsApp Notifications <span class="badge badge-indigo" style="margin-left:6px;">Add-on</span></div>
+                <p class="sf-plan-desc" style="margin-top:6px;">Fee reminders, overdue nudges and renewal notices sent for you every morning from StudyFlow's WhatsApp number. Prepay 1, 3, 6 or 12 months; switch back to manual any time.</p>
+              </div>
+              <div style="text-align:right;">
+                <div class="sf-price-amount" style="justify-content:flex-end;">
+                  <span class="sf-price-val" data-pricing="auto-per-seat">₹10</span>
+                  <span class="sf-price-period">per seat / month</span>
+                </div>
+                <div style="font-size:13px;color:var(--color-text-secondary);">e.g. <strong data-pricing="auto-100">₹1,000</strong>/month for 100 seats · Paid plans only</div>
               </div>
             </div>
           </div>
         </section>
+
 
         <!-- ── Customer Testimonials ── -->
         <section class="sf-section sf-testimonials-section" id="testimonials">
@@ -585,5 +568,39 @@ export function renderLanding(container) {
     el.classList.toggle('open');
   };
 
+  // Prices on this page are placeholders until the server's pricing (lib/plans.js) arrives.
+  function hydratePricingFromServer() {
+    fetch('/api/auth?action=client_config')
+      .then(r => r.json())
+      .then(cfg => {
+        const p = cfg && cfg.pricing;
+        if (!p) return;
+        const inr = (n) => {
+          const s = String(Math.round(Number(n) || 0));
+          return '₹' + (s.length > 3 ? s.slice(0, -3).replace(/\B(?=(\d{2})+(?!\d))/g, ',') + ',' + s.slice(-3) : s);
+        };
+        const num = (n) => Number(n || 0).toLocaleString('en-IN');
+        const values = {
+          'free-seats': num(p.free.seats),
+          'basic-seats': num(p.basic.seats),
+          'basic-price': inr(p.basic.price),
+          'block-seats': num(p.custom.blockSeats),
+          'custom-min': num(p.custom.minSeats),
+          'custom-max': num(p.custom.maxSeats),
+          'price-200': inr((200 / p.custom.blockSeats) * p.custom.pricePerBlock),
+          'price-500': inr((500 / p.custom.blockSeats) * p.custom.pricePerBlock),
+          'price-1000': inr((1000 / p.custom.blockSeats) * p.custom.pricePerBlock),
+          'auto-per-seat': inr(p.autoNotify.perSeatMonthly),
+          'auto-100': inr(p.autoNotify.perSeatMonthly * 100),
+        };
+        container.querySelectorAll('[data-pricing]').forEach(el => {
+          const v = values[el.getAttribute('data-pricing')];
+          if (v !== undefined) el.textContent = v;
+        });
+      })
+      .catch(() => {});
+  }
+
   render();
+  hydratePricingFromServer();
 }

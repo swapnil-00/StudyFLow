@@ -97,26 +97,40 @@ studyflow/
 
 ## 🛠️ Admin: Managing Libraries (Owner CLI)
 
-StudyFlow uses an owner-controlled provisioning model. Stranger self-service signups and free trials are disabled on the web. Only the platform owner provisions customer libraries and manages plans via local CLI scripts.
+Anyone can create a library with Google sign-in; it starts on the **Free plan (5 seats)**. Paid plans
+(Basic: 100 seats for ₹5,000 one-time; Custom: ₹5,000 per 100 seats) and the **Automatic WhatsApp
+notifications add-on** (₹10 per seat per month, prepaid) are bought from **Billing & Plan** inside the
+app through Cashfree. All prices and limits live in `lib/plans.js`; limits are enforced server-side
+in `api/write.js`. The scripts below cover manual payments (UPI / bank transfer) and the demo library.
 
-### 1. Provision a New Customer Library
+### 1. Provision a Library by Hand (optional: customers can also self-sign-up)
 ```bash
 # Dry run preview (default)
-node scripts/create-library.js --name "Apex Study Lounge" --owner-email owner@example.com --owner-name "Rahul Sharma" --plan starter --seats 100 --city "Pune"
+node scripts/create-library.js --name "Apex Study Lounge" --owner-email owner@example.com --owner-name "Rahul Sharma" --plan basic --city "Pune"
 
 # Apply changes to database
-node scripts/create-library.js --name "Apex Study Lounge" --owner-email owner@example.com --owner-name "Rahul Sharma" --plan starter --seats 100 --city "Pune" --apply
+node scripts/create-library.js --name "Apex Study Lounge" --owner-email owner@example.com --owner-name "Rahul Sharma" --plan basic --city "Pune" --apply
 ```
+Plans: `free` (default, 5 seats) · `basic` (100 seats) · `custom --seats 300` (blocks of 100) · `demo`.
 *Next step:* The owner signs in via Google OAuth on the web app and completes the initial setup wizard (branch, study hall, seating layout).
 
-### 2. Change Plans or Seat Limits
+### 2. Record a Manual Payment / Change Plans or Seats
 ```bash
-# Upgrade or change plan
-node scripts/set-plan.js ORG-12345678 --plan growth --apply
+# Customer paid ₹5,000 by UPI for Basic
+node scripts/set-plan.js ORG-12345678 --plan basic --apply
 
-# Override seat capacity limit
-node scripts/set-plan.js ORG-12345678 --seats 300 --apply
+# Customer paid for 300 seats (₹15,000)
+node scripts/set-plan.js ORG-12345678 --plan custom --seats 300 --apply
+
+# Customer paid 3 months of automatic WhatsApp notifications (100 seats × ₹10 × 3 = ₹3,000)
+node scripts/set-plan.js ORG-12345678 --auto-months 3 --apply
+
+# Switch the add-on off / on without a payment (on requires an active paid period)
+node scripts/set-plan.js ORG-12345678 --auto-cancel --apply
+node scripts/set-plan.js ORG-12345678 --whatsapp automatic --apply
 ```
+Every change goes through `lib/subscription.js`, the same code the Cashfree webhook uses, and is
+recorded in `billing_orders` with `provider = 'manual'`.
 
 ### 3. Suspend or Reactivate a Library
 ```bash

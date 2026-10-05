@@ -23,6 +23,8 @@ const { checkRateLimit } = require('../lib/ratelimit');
 const { withHandler } = require('../lib/http');
 const { HttpError } = require('../lib/errors');
 const { activeProvider, sendMail, sendPasswordResetCode, sendPasswordChangedNotice } = require('../lib/mailer');
+const { PRICING, publicPricing, seatLimitFor } = require('../lib/plans');
+const cashfree = require('../lib/cashfree');
 
 const RESET_CODE_TTL_MINUTES = 10;
 const RESET_CODE_MAX_ATTEMPTS = 5;
@@ -190,6 +192,10 @@ module.exports = withHandler(async function handler(req, res) {
         email: process.env.CONTACT_EMAIL || 'studyflowbusiness0@gmail.com',
         whatsapp: process.env.CONTACT_WHATSAPP || null,
       },
+      // Anyone can create a library on the Free plan (lib/plans.js decides the limits).
+      signup: { enabled: true, freeSeats: PRICING.FREE_SEAT_LIMIT },
+      pricing: publicPricing(),
+      payments: { provider: 'cashfree', configured: cashfree.isConfigured(), mode: cashfree.getConfig().mode },
     });
   }
 
@@ -287,16 +293,28 @@ module.exports = withHandler(async function handler(req, res) {
         }
       }
 
-      if (!validInvite) {
+      // Self-signup (Free plan) is allowed from the signup page only: a login attempt by an
+      // unknown account is still refused (AUTH-07), so a typo never silently creates an account.
+      const selfSignup = !validInvite && intent === 'signup';
+      if (!validInvite && !selfSignup) {
         await logAuthEvent({ event: 'login_no_account', method: authMethod, ip, userAgent, success: false });
         throw new HttpError(
           404,
           'NO_ACCOUNT',
-          'No StudyFlow library is linked to this Google account. Contact us to get your library set up.'
+          'No StudyFlow library is linked to this Google account yet. Create a free library to get started, or ask your library owner for an invite.'
         );
       }
+      if (selfSignup) {
+        if (!cleanEmail || !email_verified) {
+          throw new HttpError(403, 'EMAIL_UNVERIFIED', 'Your Google account email is not verified.');
+        }
+        if (!termsAccepted) {
+          throw new HttpError(400, 'TERMS_REQUIRED', 'Please accept the Terms of Service and Privacy Policy to create an account.');
+        }
+        await checkRateLimit(query, `auth:signup:ip:${ip}`, 10, 3600, { failClosed: true });
+      }
 
-      // Valid invitation creates the user
+      // A valid invitation or a self-signup creates the user
       const newUserId = uid('USR');
       const avatarColor = randomAvatarColor();
       const userName = (name || cleanEmail.split('@')[0]).trim();
@@ -587,10 +605,106 @@ module.exports = withHandler(async function handler(req, res) {
     throw new HttpError(403, 'PASSWORD_AUTH_DISABLED', 'Password registration is disabled. Libraries and accounts are set up by StudyFlow. Please Continue with Google or contact StudyFlow.');
   }
 
-  // ── 4. CREATE LIBRARY (Disabled: Owner-Provisioned Model) ─────────────────
+  // ── 4. CREATE LIBRARY (Free plan; AUTH-02 & AUTH-09) ──────────────────────
   if (action === 'create_library' || action === 'create-library') {
-    await requireSession(req);
-    throw new HttpError(403, 'LIBRARY_CREATION_DISABLED', 'Libraries are set up by StudyFlow. Contact us to get started.');
+    const session = await requireSession(req);
+    const { orgName, city } = req.body || {};
+
+    if (!orgName || typeof orgName !== 'string' || !orgName.trim()) {
+      throw new HttpError(400, 'MISSING_FIELDS', 'Library name is required.');
+    }
+
+    // Rate limit library creation per user (AUTH-09)
+    await checkRateLimit(query, `create_library:user:${session.userId}`, 5, 86400, { failClosed: true });
+
+    // 1 Email / User = 1 Library: an owner who already has a library is sent back to it
+    const existingOrgCheck = await query(
+      `SELECT om.organization_id, o.name, o.slug, o.plan, o.onboarding_completed, o.subscription_status
+       FROM org_members om
+       JOIN organizations o ON o.id = om.organization_id
+       WHERE om.user_id = $1 AND om.role = 'owner' AND om.status = 'active'
+       ORDER BY o.created_at DESC
+       LIMIT 1`,
+      [session.userId]
+    );
+
+    if (existingOrgCheck.rows.length > 0) {
+      const existingOrg = existingOrgCheck.rows[0];
+      const switchRes = await switchOrganization(session.sessionId, existingOrg.organization_id, session.userId);
+      setSessionCookie(res, switchRes.token);
+      return res.json({
+        ok: true,
+        state: existingOrg.onboarding_completed ? 'ready' : 'needs_onboarding',
+        activeLibrary: {
+          id: existingOrg.organization_id,
+          name: existingOrg.name,
+          slug: existingOrg.slug,
+          plan: existingOrg.plan,
+          onboarding_completed: existingOrg.onboarding_completed,
+          subscription_status: existingOrg.subscription_status,
+          role: 'owner',
+        },
+        message: 'Your account is already linked to your library. Redirecting to your dashboard.',
+      });
+    }
+
+    const orgId = uid('ORG');
+    const baseSlug = orgName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'library';
+    const slug = `${baseSlug.substring(0, 80)}-${crypto.randomBytes(3).toString('hex')}`;
+    const cleanName = orgName.trim().slice(0, 255);
+
+    await withTransaction(async (client) => {
+      // Every self-created library starts on the Free plan. The seat limit is set from
+      // lib/plans.js here and enforced from there again on every seat insert.
+      await client.query(
+        `INSERT INTO organizations (id, name, slug, email, phone, plan, seat_limit, subscription_status, currency, onboarding_completed,
+                                    whatsapp_mode, whatsapp_auto_status)
+         VALUES ($1, $2, $3, $4, '', 'free', $5, 'active', 'INR', FALSE, 'manual', 'not_subscribed')`,
+        [orgId, cleanName, slug, session.email || '', PRICING.FREE_SEAT_LIMIT]
+      );
+
+      await client.query(
+        `INSERT INTO org_members (user_id, organization_id, role, status)
+         VALUES ($1, $2, 'owner', 'active')
+         ON CONFLICT (user_id, organization_id) DO UPDATE SET role = 'owner', status = 'active'`,
+        [session.userId, orgId]
+      );
+
+      const defaultSettings = {
+        currency: 'INR',
+        timezone: 'Asia/Kolkata',
+        orgName: cleanName,
+        city: city ? String(city).trim().slice(0, 100) : '',
+        theme: 'light',
+      };
+      await client.query(
+        `INSERT INTO settings (id, organization_id, currency, timezone, org_name, email, phone, data)
+         VALUES ($1, $2, 'INR', 'Asia/Kolkata', $3, $4, '', $5)
+         ON CONFLICT (id) DO NOTHING`,
+        [orgId, orgId, cleanName, session.email || '', JSON.stringify(defaultSettings)]
+      );
+    });
+
+    const switchRes = await switchOrganization(session.sessionId, orgId, session.userId);
+    setSessionCookie(res, switchRes.token);
+
+    await logAuthEvent({ userId: session.userId, organizationId: orgId, event: 'library_created', method: 'self_signup', ip, userAgent, success: true, metadata: { plan: 'free' } });
+
+    return res.json({
+      ok: true,
+      state: 'needs_onboarding',
+      activeLibrary: {
+        id: orgId,
+        name: cleanName,
+        slug,
+        plan: 'free',
+        seat_limit: PRICING.FREE_SEAT_LIMIT,
+        onboarding_completed: false,
+        subscription_status: 'active',
+        role: 'owner',
+      },
+      message: `Library created on the Free plan (${PRICING.FREE_SEAT_LIMIT} seats). Please complete setup.`,
+    });
   }
 
 
@@ -920,8 +1034,17 @@ module.exports = withHandler(async function handler(req, res) {
     }
 
     const { branchName, city, floorName, roomName, seatCount = 40, plans = [] } = req.body || {};
+    let seatsCreated = 0;
+    let seatLimit = null;
 
     await withTransaction(async (client) => {
+      // The wizard can never create more seats than the plan allows (lib/plans.js),
+      // checked under a row lock like every other seat insert (api/write.js).
+      const orgRow = await client.query('SELECT plan, seat_limit, is_demo FROM organizations WHERE id = $1 FOR UPDATE', [orgId]);
+      seatLimit = seatLimitFor(orgRow.rows[0] || {});
+      const existingSeats = await client.query('SELECT COUNT(*)::int AS n FROM seats WHERE organization_id = $1', [orgId]);
+      const seatRoom = Math.max(0, seatLimit - (existingSeats.rows[0]?.n || 0));
+
       // Check if branches already exist
       const branchCheck = await client.query('SELECT id FROM branches WHERE organization_id = $1 LIMIT 1', [orgId]);
       let branchId;
@@ -942,7 +1065,9 @@ module.exports = withHandler(async function handler(req, res) {
         );
 
         const roomId = uid('RM');
-        const numSeats = Math.min(Math.max(parseInt(seatCount, 10) || 30, 10), 150);
+        const requestedSeats = Math.min(Math.max(parseInt(seatCount, 10) || 30, 1), 150);
+        const numSeats = Math.min(requestedSeats, seatRoom);
+        seatsCreated = numSeats;
         await client.query(
           `INSERT INTO rooms (id, organization_id, floor_id, branch_id, name, room_type, capacity)
            VALUES ($1, $2, $3, $4, $5, 'general', $6)`,
@@ -984,7 +1109,15 @@ module.exports = withHandler(async function handler(req, res) {
       );
     });
 
-    return res.json({ ok: true, state: 'ready', message: 'Onboarding completed successfully! Library is ready.' });
+    return res.json({
+      ok: true,
+      state: 'ready',
+      seatsCreated,
+      seatLimit,
+      message: seatsCreated > 0
+        ? `Onboarding completed! ${seatsCreated} seat${seatsCreated === 1 ? '' : 's'} created (plan limit ${seatLimit}).`
+        : 'Onboarding completed successfully! Library is ready.',
+    });
   }
 
   // ── 14. PASSWORD RESET / SET PASSWORD BY EMAIL CODE (AUTH-10) ──────────────

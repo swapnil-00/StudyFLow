@@ -9,6 +9,7 @@ export function renderNotifications(container) {
   const branchId = store.getActiveBranchId();
   const branch = store.getBranch(branchId);
   const branchName = branch?.name || 'StudyFlow Library';
+  const waSub = (store.organization && store.organization.subscription) || { whatsappMode: store.organization?.whatsappMode || 'manual', autoLabel: 'Manual', autoReason: '' };
 
   let currentTab = 'payment_due'; // 'payment_due' | 'payment_overdue' | 'expiring' | 'announcements' | 'alerts'
   let searchQuery = '';
@@ -137,7 +138,9 @@ export function renderNotifications(container) {
         <div class="page-header-row">
           <div>
             <h1 class="page-title">WhatsApp Reminders</h1>
-            <p class="page-subtitle">1-click manual WhatsApp reminders, dues alerts, and member announcements</p>
+            <p class="page-subtitle">${waSub.whatsappMode === 'automatic'
+              ? 'Fee and expiry reminders are sent automatically every morning. Use this page for anything extra.'
+              : '1-click manual WhatsApp reminders, dues alerts, and member announcements'}</p>
           </div>
           <div style="display:flex;gap:var(--space-3);">
             <button class="btn btn-secondary" id="btn-send-next-reminder" style="color:var(--sf-success-700);border-color:var(--sf-success-300);">
@@ -148,6 +151,17 @@ export function renderNotifications(container) {
             </button>
           </div>
         </div>
+      </div>
+
+      <!-- Notification mode (from the subscription; the server decides) -->
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 14px;margin-bottom:var(--space-5);border:1px solid var(--color-border-secondary);border-radius:var(--radius-lg);background:var(--color-bg-secondary);font-size:13px;">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span style="font-weight:600;color:var(--color-text-secondary);">Notification mode</span>
+          <span class="badge ${waSub.whatsappMode === 'automatic' ? 'badge-success' : (waSub.autoStatus === 'expired' || waSub.autoStatus === 'payment_failed') ? 'badge-danger' : 'badge-neutral'}">${esc(waSub.autoLabel || 'Manual')}</span>
+          <span style="color:var(--color-text-tertiary);">${esc(waSub.autoReason || '')}</span>
+        </div>
+        ${(store.currentUser?.role || 'owner') === 'owner' && !store.organization?.isDemo
+          ? `<button class="btn btn-secondary btn-sm" onclick="app.navigate('/billing')">${waSub.whatsappMode === 'automatic' ? 'Manage' : 'Turn on automatic'}</button>` : ''}
       </div>
 
       <!-- Overview Cards -->

@@ -61,15 +61,23 @@ describe('Owner-provisioned libraries: real handler', () => {
   });
   after(() => setMockVerifier(null));
 
-  for (const intent of ['login', 'signup']) {
-    test(`unknown Google account with intent "${intent}" gets 404 NO_ACCOUNT and no user row`, async () => {
-      const db = fakeDb([RATE_OK]);
-      const res = await call(db, { action: 'session', idToken: 'tok', intent });
-      assert.equal(res.statusCode, 404);
-      assert.equal(res.body.code, 'NO_ACCOUNT');
-      assert.equal(inserted(db.log, /INSERT INTO users/).length, 0, 'must not create a user');
-    });
-  }
+  test('unknown Google account with intent "login" gets 404 NO_ACCOUNT and no user row', async () => {
+    const db = fakeDb([RATE_OK]);
+    const res = await call(db, { action: 'session', idToken: 'tok', intent: 'login' });
+    assert.equal(res.statusCode, 404);
+    assert.equal(res.body.code, 'NO_ACCOUNT');
+    assert.equal(inserted(db.log, /INSERT INTO users/).length, 0, 'must not create a user');
+  });
+
+  // Self-signup on the Free plan is covered in test/signup-handler.test.js; here only the
+  // guard that signup needs explicit consent.
+  test('unknown Google account with intent "signup" but no accepted terms creates no user', async () => {
+    const db = fakeDb([RATE_OK]);
+    const res = await call(db, { action: 'session', idToken: 'tok', intent: 'signup' });
+    assert.equal(res.statusCode, 400);
+    assert.equal(res.body.code, 'TERMS_REQUIRED');
+    assert.equal(inserted(db.log, /INSERT INTO users/).length, 0, 'must not create a user');
+  });
 
   test('register always returns 403', async () => {
     const db = fakeDb([RATE_OK]);

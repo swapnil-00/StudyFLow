@@ -13,7 +13,43 @@ async function apiWrite(table, action, data, id, extraHeaders = {}) {
     body: JSON.stringify({ table, action, data, id }),
   });
   const json = await res.json();
-  if (!json.ok) throw new Error(json.error || 'Write failed');
+  if (!json.ok) {
+    const err = new Error(json.error || 'Write failed');
+    err.code = json.code;
+    err.status = res.status;
+    err.details = json.details;
+    // The server refused a seat beyond the plan: show the upgrade prompt wherever it happened.
+    if (json.code === 'SEAT_LIMIT_REACHED' && window.app && typeof window.app.showSeatLimitPrompt === 'function') {
+      window.app.showSeatLimitPrompt(json.error, json.details || {});
+    }
+    throw err;
+  }
+  return json;
+}
+
+// POST /api/billing. Errors carry the server's code so pages can react (e.g. PAYMENTS_NOT_CONFIGURED).
+async function billingCall(action, body = {}) {
+  let res;
+  try {
+    res = await fetch(`${API_BASE}/api/billing`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ action, ...body }),
+    });
+  } catch (_) {
+    const err = new Error("Can't reach StudyFlow. Check your internet connection and try again.");
+    err.code = 'NETWORK';
+    throw err;
+  }
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json.ok) {
+    const err = new Error(json.error || 'Request failed. Please try again.');
+    err.code = json.code;
+    err.status = res.status;
+    err.details = json.details;
+    throw err;
+  }
   return json;
 }
 
@@ -217,6 +253,49 @@ class Store {
     this._libraries = [];
     this._loaded = false;
     await this.load();
+  }
+
+  // Self-signup: a new library on the Free plan (limits come from the server).
+  async createLibrary({ orgName, city }) {
+    const res = await fetch(`${API_BASE}/api/auth`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ action: 'create_library', orgName, city })
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!json.ok) {
+      const err = new Error(json.error || 'Failed to create library');
+      err.code = json.code;
+      throw err;
+    }
+    this._organization = json.activeLibrary || null;
+    this._authState = json.state || 'needs_onboarding';
+    this._loaded = false;
+    await this.load();
+    return json;
+  }
+
+  // ── Billing (api/billing.js) ─────────────────────────────────────
+  billingStatus() { return billingCall('status'); }
+  billingQuote(params) { return billingCall('quote', params); }
+  billingCheckout(params) { return billingCall('checkout', params); }
+  billingSync(orderId) { return billingCall('sync', { orderId }); }
+  billingSetWhatsappMode(mode) { return billingCall('set_whatsapp_mode', { mode }); }
+  billingCancelAutoNotify() { return billingCall('cancel_auto_notify'); }
+  billingRunRemindersNow() { return billingCall('run_reminders_now'); }
+  billingWhatsappTest(phone) { return billingCall('whatsapp_test', { phone }); }
+
+  /** Refresh the organization/plan after a purchase without reloading every table. */
+  async refreshOrganization() {
+    try {
+      const res = await fetch(`${API_BASE}/api/auth?action=me`, { credentials: 'same-origin' });
+      const json = await res.json();
+      if (json.ok && json.activeLibrary) {
+        this._organization = { ...(this._organization || {}), ...json.activeLibrary };
+        this._notify();
+      }
+    } catch (_) { /* best effort */ }
   }
 
   async completeOnboarding(onboardingData) {

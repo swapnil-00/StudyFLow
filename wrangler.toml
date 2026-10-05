@@ -28,7 +28,17 @@ not_found_handling = "single-page-application"
 binding = "HYPERDRIVE"
 id = "7f49a0d576e041bcb994e1ebb31fbb7f"
 
-# Plain-text (non-secret) vars. Secrets are set with `wrangler secret put`.
+# Daily job (lib/jobs.js): expire lapsed WhatsApp add-ons, then send automatic reminders.
+# 03:30 UTC = 09:00 IST. Test locally: wrangler dev --test-scheduled, then
+# curl "http://localhost:8787/__scheduled?cron=30+3+*+*+*"
+[triggers]
+crons = ["30 3 * * *"]
+
+# Plain-text (non-secret) vars. Secrets are set with `wrangler secret put`:
+#   CASHFREE_APP_ID, CASHFREE_SECRET_KEY            (payments)
+#   WHATSAPP_TOKEN, WHATSAPP_PHONE_ID               (automatic reminders)
 [vars]
 NODE_ENV = "production"
 AUTH_PASSWORD_ENABLED = "false"
+APP_URL = "https://studyflow.studyflow01.workers.dev"
+CASHFREE_ENV = "sandbox"
