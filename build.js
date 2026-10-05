@@ -20,6 +20,8 @@ const serviceFiles = [
   'notification-service.js'
 ];
 
+// Known pages first (keeps the bundle order stable); any other js/pages/*.js is appended
+// automatically so a new page can never be left out of the bundle.
 const pageFiles = [
   'auth.js',
   'landing.js',
@@ -36,8 +38,17 @@ const pageFiles = [
   'notifications.js',
   'activity.js',
   'settings.js',
-  'layout-editor.js'
+  'layout-editor.js',
+  'billing.js'
 ];
+// Legacy files with no route; left out of the bundle on purpose.
+const unroutedPages = ['attendance.js', 'reservations.js'];
+for (const file of fs.readdirSync(pagesDir).filter(f => f.endsWith('.js')).sort()) {
+  if (!pageFiles.includes(file) && !unroutedPages.includes(file)) {
+    console.log(`Including page not in the list: ${file}`);
+    pageFiles.push(file);
+  }
+}
 
 
 let bundleContent = `// StudyFlow Bundled Application Scripts\nwindow.Pages = window.Pages || {};\n\n`;
@@ -89,33 +100,27 @@ for (const file of pageFiles) {
 // ─── 5. APP CORE ───
 let appContent = fs.readFileSync(appJsPath, 'utf8');
 
-// Replace dynamic imports with sync window.Pages lookup
-const routeReplacements = {
-  "'/login': () => import('./pages/auth.js').then(m => m.renderLoginPage)": "'/login': () => Promise.resolve(window.Pages.renderLoginPage)",
-  "'/signup': () => import('./pages/auth.js').then(m => m.renderSignupPage)": "'/signup': () => Promise.resolve(window.Pages.renderSignupPage)",
-  "'/setup-library': () => import('./pages/auth.js').then(m => m.renderSetupLibraryPage)": "'/setup-library': () => Promise.resolve(window.Pages.renderSetupLibraryPage)",
-  "'/onboarding': () => import('./pages/auth.js').then(m => m.renderOnboardingPage)": "'/onboarding': () => Promise.resolve(window.Pages.renderOnboardingPage)",
-  "'/invite': () => import('./pages/auth.js').then(m => m.renderInvitePage)": "'/invite': () => Promise.resolve(window.Pages.renderInvitePage)",
-  "'/forgot-password': () => import('./pages/auth.js').then(m => m.renderForgotPasswordPage)": "'/forgot-password': () => Promise.resolve(window.Pages.renderForgotPasswordPage)",
-  "'/landing': () => import('./pages/landing.js').then(m => m.renderLanding)": "'/landing': () => Promise.resolve(window.Pages.renderLanding)",
-  "'/dashboard': () => import('./pages/dashboard.js').then(m => m.renderDashboard)": "'/dashboard': () => Promise.resolve(window.Pages.renderDashboard)",
-  "'/seat-map': () => import('./pages/seat-map.js').then(m => m.renderSeatMap)": "'/seat-map': () => Promise.resolve(window.Pages.renderSeatMap)",
-  "'/students': () => import('./pages/students.js').then(m => m.renderStudents)": "'/students': () => Promise.resolve(window.Pages.renderStudents)",
-  "'/student': () => import('./pages/student-profile.js').then(m => m.renderStudentProfile)": "'/student': () => Promise.resolve(window.Pages.renderStudentProfile)",
-  "'/memberships': () => import('./pages/memberships.js').then(m => m.renderMemberships)": "'/memberships': () => Promise.resolve(window.Pages.renderMemberships)",
-  "'/payments': () => import('./pages/payments.js').then(m => m.renderPayments)": "'/payments': () => Promise.resolve(window.Pages.renderPayments)",
-  "'/floors': () => import('./pages/floors.js').then(m => m.renderFloors)": "'/floors': () => Promise.resolve(window.Pages.renderFloors)",
-  "'/expenses': () => import('./pages/expenses.js').then(m => m.renderExpenses)": "'/expenses': () => Promise.resolve(window.Pages.renderExpenses)",
-  "'/reports': () => import('./pages/reports.js').then(m => m.renderReports)": "'/reports': () => Promise.resolve(window.Pages.renderReports)",
-  "'/staff': () => import('./pages/staff.js').then(m => m.renderStaff)": "'/staff': () => Promise.resolve(window.Pages.renderStaff)",
-  "'/notifications': () => import('./pages/notifications.js').then(m => m.renderNotifications)": "'/notifications': () => Promise.resolve(window.Pages.renderNotifications)",
-  "'/activity': () => import('./pages/activity.js').then(m => m.renderActivity)": "'/activity': () => Promise.resolve(window.Pages.renderActivity)",
-  "'/settings': () => import('./pages/settings.js').then(m => m.renderSettings)": "'/settings': () => Promise.resolve(window.Pages.renderSettings)",
-  "'/layout-editor': () => import('./pages/layout-editor.js').then(m => m.renderLayoutEditor)": "'/layout-editor': () => Promise.resolve(window.Pages.renderLayoutEditor)"
-};
-
-for (const [search, replace] of Object.entries(routeReplacements)) {
-  appContent = appContent.replace(search, replace);
+// Replace every dynamic page import with a sync window.Pages lookup:
+//   import('./pages/<file>.js').then(m => m.<render>)  →  Promise.resolve(window.Pages.<render>)
+// All pages are already in the bundle (section 4), so nothing is fetched at runtime.
+appContent = appContent.replace(
+  /import\('\.\/pages\/[a-zA-Z0-9_-]+\.js'\)\.then\(m\s*=>\s*m\.([a-zA-Z0-9_]+)\)/g,
+  'Promise.resolve(window.Pages.$1)'
+);
+//   (await import('./pages/<file>.js')).<render>  →  window.Pages.<render>
+appContent = appContent.replace(
+  /\(await import\('\.\/pages\/[a-zA-Z0-9_-]+\.js'\)\)\.([a-zA-Z0-9_]+)/g,
+  'window.Pages.$1'
+);
+const leftoverImport = appContent.match(/import\('\.\/pages\/[^']+'\)/);
+if (leftoverImport) {
+  throw new Error(`build: unrewritten page import in js/app.js: ${leftoverImport[0]}. Use the form import('./pages/x.js').then(m => m.renderX).`);
+}
+for (const name of appContent.match(/window\.Pages\.([a-zA-Z0-9_]+)/g) || []) {
+  const fn = name.replace('window.Pages.', '');
+  if (!bundleContent.includes(`window.Pages.${fn} = function`)) {
+    throw new Error(`build: router references window.Pages.${fn} but no page file exports function ${fn}`);
+  }
 }
 
 // Make sure init runs reliably
