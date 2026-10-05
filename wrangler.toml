@@ -42,3 +42,6 @@ NODE_ENV = "production"
 AUTH_PASSWORD_ENABLED = "false"
 APP_URL = "https://studyflow.studyflow01.workers.dev"
 CASHFREE_ENV = "sandbox"
+# Automatic WhatsApp add-on is ON HOLD: cannot be bought, shown or sent until "true"
+# (also needs WHATSAPP_TOKEN / WHATSAPP_PHONE_ID secrets and approved templates).
+AUTO_NOTIFY_ENABLED = "false"

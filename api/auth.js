@@ -23,7 +23,7 @@ const { checkRateLimit } = require('../lib/ratelimit');
 const { withHandler } = require('../lib/http');
 const { HttpError } = require('../lib/errors');
 const { activeProvider, sendMail, sendPasswordResetCode, sendPasswordChangedNotice } = require('../lib/mailer');
-const { PRICING, publicPricing, seatLimitFor } = require('../lib/plans');
+const { PRICING, publicPricing, seatLimitFor, featureFlags } = require('../lib/plans');
 const cashfree = require('../lib/cashfree');
 
 const RESET_CODE_TTL_MINUTES = 10;
@@ -195,6 +195,7 @@ module.exports = withHandler(async function handler(req, res) {
       // Anyone can create a library on the Free plan (lib/plans.js decides the limits).
       signup: { enabled: true, freeSeats: PRICING.FREE_SEAT_LIMIT },
       pricing: publicPricing(),
+      features: featureFlags(),
       payments: { provider: 'cashfree', configured: cashfree.isConfigured(), mode: cashfree.getConfig().mode },
     });
   }

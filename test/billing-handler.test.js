@@ -1,5 +1,6 @@
 // test/billing-handler.test.js — Real api/billing.js and api/webhooks.js against a scripted DB
 'use strict';
+process.env.AUTO_NOTIFY_ENABLED = 'true'; // the add-on is on hold in production; these tests cover it switched on
 const { test, describe, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('crypto');

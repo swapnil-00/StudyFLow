@@ -286,7 +286,7 @@ export function renderLanding(container) {
             <div class="sf-section-header">
               <div class="sf-pill-badge">SIMPLE PRICING</div>
               <h2 class="sf-section-title">Start free. Pay once for the seats you need.</h2>
-              <p class="sf-section-subtitle">No monthly fee for the software: <strong data-pricing="basic-price">₹5,000</strong> per <span data-pricing="block-seats">100</span> seats, one-time. Automatic WhatsApp reminders are an optional monthly add-on.</p>
+              <p class="sf-section-subtitle">No monthly fee for the software: <strong data-pricing="basic-price">₹5,000</strong> per <span data-pricing="block-seats">100</span> seats, one-time.</p>
             </div>
 
             <div class="grid-3" style="gap:24px;align-items:stretch;">
@@ -330,7 +330,7 @@ export function renderLanding(container) {
                   <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Everything in Free</li>
                   <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> <strong>Up to <span data-pricing="basic-seats">100</span> seats</strong></li>
                   <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Staff accounts & activity log</li>
-                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Optional automatic WhatsApp add-on</li>
+                  <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> 1-click WhatsApp reminders & receipts</li>
                   <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Priority WhatsApp support</li>
                 </ul>
                 <a class="btn btn-primary w-full" href="#/signup" style="box-shadow:0 4px 16px rgba(97,114,243,0.4);">Start free, upgrade in the app</a>
@@ -359,8 +359,8 @@ export function renderLanding(container) {
               </div>
             </div>
 
-            <!-- Automatic WhatsApp add-on -->
-            <div class="sf-price-card" style="margin-top:24px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;">
+            <!-- Automatic WhatsApp add-on: hidden until the server reports features.autoNotify -->
+            <div class="sf-price-card" data-feature="auto-notify" style="display:none;margin-top:24px;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;">
               <div style="flex:1;min-width:260px;">
                 <div class="sf-plan-name">Automatic WhatsApp Notifications <span class="badge badge-indigo" style="margin-left:6px;">Add-on</span></div>
                 <p class="sf-plan-desc" style="margin-top:6px;">Fee reminders, overdue nudges and renewal notices sent for you every morning from StudyFlow's WhatsApp number. Prepay 1, 3, 6 or 12 months; switch back to manual any time.</p>
@@ -597,6 +597,9 @@ export function renderLanding(container) {
           const v = values[el.getAttribute('data-pricing')];
           if (v !== undefined) el.textContent = v;
         });
+        if (cfg.features && cfg.features.autoNotify) {
+          container.querySelectorAll('[data-feature="auto-notify"]').forEach(el => { el.style.display = 'flex'; });
+        }
       })
       .catch(() => {});
   }

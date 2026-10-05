@@ -153,6 +153,7 @@ export function renderNotifications(container) {
         </div>
       </div>
 
+      ${waSub.autoFeatureEnabled ? `
       <!-- Notification mode (from the subscription; the server decides) -->
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 14px;margin-bottom:var(--space-5);border:1px solid var(--color-border-secondary);border-radius:var(--radius-lg);background:var(--color-bg-secondary);font-size:13px;">
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
@@ -162,7 +163,7 @@ export function renderNotifications(container) {
         </div>
         ${(store.currentUser?.role || 'owner') === 'owner' && !store.organization?.isDemo
           ? `<button class="btn btn-secondary btn-sm" onclick="app.navigate('/billing')">${waSub.whatsappMode === 'automatic' ? 'Manage' : 'Turn on automatic'}</button>` : ''}
-      </div>
+      </div>` : ''}
 
       <!-- Overview Cards -->
       <div class="grid-4" style="margin-bottom:var(--space-6);">

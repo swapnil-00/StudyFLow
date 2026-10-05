@@ -69,6 +69,8 @@ module.exports = withHandler(async function handler(req, res) {
       subscription: sub,
       seatsUsed: seats.rows[0]?.n || 0,
       pricing: plans.publicPricing(),
+      features: plans.featureFlags(),
+      phone: org.phone || '',
       payments: { provider: 'cashfree', configured: cashfree.isConfigured(), mode: cashfree.getConfig().mode, sdkUrl: cashfree.SDK_URL },
       whatsapp: { configured: whatsapp.isConfigured(), lastRun },
       contact: contactInfo(),
@@ -81,6 +83,9 @@ module.exports = withHandler(async function handler(req, res) {
     const { kind, plan, seats, months } = req.body || {};
     let quote;
     if (kind === 'auto_notify') {
+      if (!plans.isAutoNotifyEnabled()) {
+        throw new HttpError(403, 'AUTO_NOTIFY_ON_HOLD', 'Automatic WhatsApp notifications are not available yet.');
+      }
       const sub = await subscription.loadSubscription(orgId);
       quote = plans.quoteAutoNotify({ seatLimit: sub.seatLimit, months });
     } else {
@@ -103,6 +108,9 @@ module.exports = withHandler(async function handler(req, res) {
     let quote;
     let record;
     if (kind === 'auto_notify') {
+      if (!plans.isAutoNotifyEnabled()) {
+        throw new HttpError(403, 'AUTO_NOTIFY_ON_HOLD', 'Automatic WhatsApp notifications are not available yet.');
+      }
       if (!sub.autoEligible) {
         throw new HttpError(403, 'AUTO_NOTIFY_NOT_ELIGIBLE', 'Automatic WhatsApp notifications are available on paid plans. Upgrade your plan first.');
       }
@@ -231,6 +239,10 @@ module.exports = withHandler(async function handler(req, res) {
   }
 
   // ── Owner tools: run today's reminders now / send a test message ───────────
+  if ((action === 'run_reminders_now' || action === 'whatsapp_test') && !plans.isAutoNotifyEnabled()) {
+    throw new HttpError(403, 'AUTO_NOTIFY_ON_HOLD', 'Automatic WhatsApp notifications are not available yet.');
+  }
+
   if (action === 'run_reminders_now') {
     requireOwner(session);
     await checkRateLimit(query, `billing:run_now:${orgId}`, 3, 3600);

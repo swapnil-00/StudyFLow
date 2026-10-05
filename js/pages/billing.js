@@ -153,6 +153,8 @@ export function renderBillingPage(container, params = {}) {
   }
 
   function autoNotifyCard() {
+    // On hold: the add-on is not offered until the server enables it (AUTO_NOTIFY_ENABLED)
+    if (!state.features || !state.features.autoNotify) return '';
     const sub = state.subscription;
     const p = state.pricing;
     const months = p.autoNotify.prepayMonths;

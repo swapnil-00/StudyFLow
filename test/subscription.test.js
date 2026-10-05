@@ -1,5 +1,6 @@
 // test/subscription.test.js — Subscription state machine (lib/subscription.js)
 'use strict';
+process.env.AUTO_NOTIFY_ENABLED = 'true'; // the add-on is on hold in production; these tests cover it switched on
 const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
 const sub = require('../lib/subscription');

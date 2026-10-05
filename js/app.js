@@ -769,7 +769,7 @@ class App {
         </div>
         <p style="font-size:14px;color:var(--color-text-primary);line-height:1.5;margin:0;">${esc(message || `You've reached your ${limit}-seat limit. Upgrade your plan to add more members.`)}</p>
         ${role === 'owner'
-          ? `<p style="font-size:13px;color:var(--color-text-secondary);margin:0;">Plans: Basic — 100 seats, Automatic WhatsApp notifications add-on, or a Custom seat count. Prices are shown on the Billing page.</p>`
+          ? `<p style="font-size:13px;color:var(--color-text-secondary);margin:0;">Plans: Basic — 100 seats, or a Custom seat count in blocks of 100. Prices are shown on the Billing page.</p>`
           : `<p style="font-size:13px;color:var(--color-text-secondary);margin:0;">Ask your library owner to upgrade the plan.</p>`}
       </div>`;
     const footerHTML = role === 'owner'
