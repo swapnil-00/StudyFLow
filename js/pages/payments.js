@@ -568,7 +568,7 @@ export function renderPayments(container) {
             notes
           });
         }
-        const receiptLine = receiptDoc?.verifyUrl ? `Receipt ${receiptDoc.documentNumber} · Verify: ${receiptDoc.verifyUrl}` : '';
+        const receiptLine = receiptDoc?.documentNumber && receiptDoc.documentNumber !== 'PENDING' ? `Receipt: ${receiptDoc.documentNumber}` : '';
 
         const pendingAfter = membershipId ? store.getPendingAmount(membershipId) : 0;
         const formattedDate = utils.formatDate(date, { day: '2-digit', month: 'short', year: 'numeric' });
@@ -638,7 +638,8 @@ export function renderPayments(container) {
                 receipt_number: receiptNum,
                 balance: pendingAfter.toLocaleString('en-IN'),
                 invoice_line: receiptLine
-              }
+              },
+              document: receiptDoc
             });
           }
         });

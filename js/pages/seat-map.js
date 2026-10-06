@@ -799,8 +799,8 @@ window.confirmAssignSeat = async function() {
         });
       }
     }
-    // Invoice number + verify link for the WhatsApp message (server-issued, tamper-evident)
-    const invoiceLine = invoice?.verifyUrl ? `Invoice ${invoice.documentNumber} · Verify: ${invoice.verifyUrl}` : '';
+    // Invoice number for the WhatsApp message; the bill itself goes as a PDF (no link for the student)
+    const invoiceLine = invoice?.documentNumber && invoice.documentNumber !== 'PENDING' ? `Invoice: ${invoice.documentNumber}` : '';
 
     modal.close();
     drawer.close();
@@ -863,6 +863,9 @@ window.confirmAssignSeat = async function() {
             <button class="btn btn-secondary btn-sm" onclick="invoiceGenerator.previewDocument('${invoice.id}')">
               ${icons['file-text'] || ''} View Invoice
             </button>
+            <button class="btn btn-secondary btn-sm" onclick="invoiceGenerator.downloadPdfById('${invoice.id}')">
+              ${icons.download || ''} PDF
+            </button>
           ` : ''}
         </div>
         <div style="display:flex;gap:var(--space-2);">
@@ -894,7 +897,8 @@ window.confirmAssignSeat = async function() {
               amount: finalAmount.toLocaleString('en-IN'),
               payment_status: payStatusDisplay,
               invoice_line: invoiceLine
-            }
+            },
+            document: invoice
           });
         }
       });
@@ -1230,7 +1234,7 @@ window.confirmPayment = async function(membershipId, studentId) {
         notes
       });
     }
-    const receiptLine = receiptDoc?.verifyUrl ? `Receipt ${receiptDoc.documentNumber} · Verify: ${receiptDoc.verifyUrl}` : '';
+    const receiptLine = receiptDoc?.documentNumber && receiptDoc.documentNumber !== 'PENDING' ? `Receipt: ${receiptDoc.documentNumber}` : '';
 
     const pendingAfter = store.getPendingAmount(membershipId);
     const receiptNum = receiptDoc?.documentNumber || payment.receiptNumber || 'REC';
@@ -1285,7 +1289,8 @@ window.confirmPayment = async function(membershipId, studentId) {
     `, `
       <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
         <div>
-          ${receiptDoc ? `<button class="btn btn-secondary btn-sm" onclick="invoiceGenerator.previewDocument('${receiptDoc.id}')">${icons.eye || ''} View / Print Receipt</button>` : ''}
+          ${receiptDoc ? `<button class="btn btn-secondary btn-sm" onclick="invoiceGenerator.previewDocument('${receiptDoc.id}')">${icons.eye || ''} View Receipt</button>
+          <button class="btn btn-secondary btn-sm" onclick="invoiceGenerator.downloadPdfById('${receiptDoc.id}')">${icons.download || ''} PDF</button>` : ''}
         </div>
         <button class="btn btn-primary btn-sm" onclick="modal.close(); app._navigate();">Done</button>
       </div>
@@ -1306,7 +1311,8 @@ window.confirmPayment = async function(membershipId, studentId) {
               receipt_number: receiptNum,
               balance: pendingAfter.toLocaleString('en-IN'),
               invoice_line: receiptLine
-            }
+            },
+            document: receiptDoc
           });
         }
       });
@@ -1538,8 +1544,10 @@ window.confirmRenew = async function(studentId, seatId) {
               student_name: student?.name || 'Student',
               seat_number: seatLabel,
               end_date: formattedEndDate,
-              amount: finalAmount.toLocaleString('en-IN')
-            }
+              amount: finalAmount.toLocaleString('en-IN'),
+              invoice_line: renewInvoiceDoc?.documentNumber && renewInvoiceDoc.documentNumber !== 'PENDING' ? `Invoice: ${renewInvoiceDoc.documentNumber}` : ''
+            },
+            document: renewInvoiceDoc || null
           });
         }
       });

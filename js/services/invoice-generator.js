@@ -108,6 +108,210 @@ const invoiceGenerator = {
     return store.saveDocument(documentData);
   },
 
+  // ── 2a. Real PDF (jsPDF): what the owner downloads or shares on WhatsApp ──
+  // Text-based (small, selectable), with the QR, the verification code and PDF metadata
+  // (title/subject/keywords carry number, validity, amount and code). Rupee amounts are
+  // written as "Rs." because the built-in PDF fonts have no ₹ glyph.
+  buildPdf(doc, libs = {}) {
+    const jsPDF = libs.jsPDF || (typeof window !== 'undefined' && window.jspdf && window.jspdf.jsPDF);
+    const qrcode = libs.qrcode || (typeof window !== 'undefined' && window.qrcode);
+    if (!jsPDF) throw new Error('PDF library not loaded');
+    const rs = (n) => `Rs. ${Number(n || 0).toLocaleString('en-IN')}`;
+    const s = (v) => (v == null ? '' : String(v));
+    const isReceipt = doc.documentType === 'receipt';
+    const total = Number(doc.finalAmount != null ? doc.finalAmount : (doc.amount || 0));
+    const paid = Number(doc.paidAmount != null ? doc.paidAmount : (doc.amount || 0));
+    const pending = Math.max(0, Number(doc.pendingAmount != null ? doc.pendingAmount : total - paid));
+    const period = doc.startDate && doc.endDate ? `${doc.startDate} to ${doc.endDate}` : '';
+    const library = s(doc.branchName || 'Study Library');
+    const origin = (doc.verifyUrl && doc.verifyUrl.split('/#/')[0]) || (typeof location !== 'undefined' ? location.origin : '');
+
+    const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
+    pdf.setProperties({
+      title: [s(doc.documentNumber), library, period, rs(total), doc.verificationCode ? `Verify ${doc.verificationCode}` : ''].filter(Boolean).join(' · '),
+      subject: `${isReceipt ? 'Payment receipt' : 'Tax invoice'} ${s(doc.documentNumber)} for ${s(doc.studentName)}${period ? `; valid ${period}` : ''}; amount ${rs(total)}; status ${s(doc.status)}${doc.verificationCode ? `; verification code ${doc.verificationCode}` : ''}`,
+      author: `${library} via StudyFlow`,
+      keywords: [s(doc.documentNumber), doc.verificationCode, doc.startDate, doc.endDate, 'StudyFlow'].filter(Boolean).join(', '),
+      creator: 'StudyFlow',
+    });
+
+    const L = 40, R = 555, W = R - L;
+    const dark = [24, 29, 39], gray = [83, 88, 98], light = [113, 118, 128], rule = [233, 234, 235];
+    const text = (str, x, y, o = {}) => {
+      pdf.setFont('helvetica', o.bold ? 'bold' : 'normal');
+      pdf.setFontSize(o.size || 10);
+      pdf.setTextColor(...(o.color || dark));
+      pdf.text(s(str), x, y, { align: o.align || 'left', maxWidth: o.maxWidth });
+    };
+    const hr = (y) => { pdf.setDrawColor(...rule); pdf.setLineWidth(0.8); pdf.line(L, y, R, y); };
+
+    // Header
+    pdf.setFillColor(...dark); pdf.roundedRect(L, 40, 36, 36, 8, 8, 'F');
+    text('SF', L + 18, 63, { bold: true, size: 14, color: [255, 255, 255], align: 'center' });
+    text('StudyFlow', L + 46, 58, { bold: true, size: 16 });
+    text(library, L + 46, 74, { size: 10, color: gray });
+    text(isReceipt ? 'PAYMENT RECEIPT' : 'TAX INVOICE', R, 56, { bold: true, size: 15, align: 'right' });
+    text(`# ${s(doc.documentNumber)}`, R, 72, { size: 10, color: gray, align: 'right' });
+    const statusColor = (doc.status === 'PAID' || doc.status === 'SUCCESS') ? [7, 148, 85] : doc.status === 'PARTIAL' ? [220, 104, 3] : [217, 45, 32];
+    text(`● ${s(doc.status || '')}`, R, 88, { bold: true, size: 9, color: statusColor, align: 'right' });
+    hr(102);
+
+    // Parties
+    text('BILLED TO', L, 122, { bold: true, size: 8, color: light });
+    text(s(doc.studentName || 'Student'), L, 138, { bold: true, size: 12 });
+    text(`Phone: ${s(doc.studentPhone || 'N/A')}`, L, 152, { size: 9, color: gray });
+    if (doc.studentId) text(`Student ID: ${s(doc.studentId)}`, L, 164, { size: 8, color: light });
+    text('LIBRARY DETAILS', R, 122, { bold: true, size: 8, color: light, align: 'right' });
+    text(s(doc.branchAddress || ''), R, 138, { size: 9, align: 'right', maxWidth: 240 });
+    text(`Support: ${s(doc.branchPhone || '')}`, R, 152, { size: 9, color: gray, align: 'right' });
+    text(`Date: ${s(doc.date || '')}`, R, 164, { size: 8, color: light, align: 'right' });
+    hr(180);
+
+    // Facility card
+    pdf.setFillColor(250, 250, 250); pdf.setDrawColor(...rule); pdf.roundedRect(L, 194, W, 62, 6, 6, 'FD');
+    text('ALLOCATED FACILITY', L + 12, 210, { bold: true, size: 8, color: light });
+    const cols = [['Seat', s(doc.seatNumber || 'N/A')], ['Room', s(doc.roomName || 'General')], ['Plan', s(doc.planName || 'Monthly')], ['Valid until', s(doc.endDate || 'N/A')]];
+    cols.forEach(([k, v], i) => {
+      const x = L + 12 + i * (W - 24) / 4;
+      text(k, x, 228, { size: 8, color: light });
+      text(v, x, 244, { bold: true, size: 11, maxWidth: (W - 24) / 4 - 8 });
+    });
+
+    // Line item
+    pdf.setFillColor(250, 250, 250); pdf.rect(L, 272, W, 22, 'F');
+    text('Description', L + 10, 287, { bold: true, size: 9, color: gray });
+    text('Period', L + 330, 287, { bold: true, size: 9, color: gray });
+    text('Amount', R - 10, 287, { bold: true, size: 9, color: gray, align: 'right' });
+    text(`Library study space access (${s(doc.planName || 'Membership')})`, L + 10, 312, { size: 10 });
+    text(`Seat ${s(doc.seatNumber || '-')}, ${s(doc.roomName || 'Study area')}`, L + 10, 325, { size: 8, color: light });
+    text(period || '-', L + 330, 312, { size: 9, color: gray });
+    text(rs(doc.baseAmount != null ? doc.baseAmount : total), R - 10, 312, { bold: true, size: 11, align: 'right' });
+    hr(338);
+
+    // Payment info (left) and totals (right)
+    text(`Payment method: ${s(doc.paymentMethod || 'UPI')}`, L, 360, { bold: true, size: 9 });
+    text(`Reference: ${s(doc.paymentRef || 'Verified')}`, L, 374, { size: 9, color: gray });
+    text(`Paid on: ${s(doc.paymentDate || doc.date || '')}`, L, 388, { size: 9, color: gray });
+    let ty = 360;
+    const totalRow = (label, value, o = {}) => { text(label, R - 150, ty, { size: 9, color: o.color || gray, bold: o.bold }); text(value, R, ty, { size: 10, bold: true, color: o.color || dark, align: 'right' }); ty += 16; };
+    if (Number(doc.discount) > 0) totalRow('Discount', `- ${rs(doc.discount)}`, { color: [7, 148, 85] });
+    totalRow('Total fee', rs(total));
+    totalRow('Amount paid', rs(paid), { color: [7, 148, 85] });
+    if (pending > 0) totalRow('Balance due', rs(pending), { color: [217, 45, 32], bold: true });
+    hr(Math.max(ty, 400) + 6);
+
+    // Verification block
+    let vy = Math.max(ty, 400) + 24;
+    pdf.setFillColor(250, 250, 250); pdf.setDrawColor(207, 212, 220); pdf.roundedRect(L, vy, W, 108, 6, 6, 'FD');
+    let tx = L + 14;
+    if (doc.verificationCode && qrcode && doc.verifyUrl) {
+      try {
+        const qr = qrcode(0, 'M'); qr.addData(doc.verifyUrl); qr.make();
+        const n = qr.getModuleCount(); const cell = 84 / n;
+        pdf.setFillColor(...dark);
+        for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (qr.isDark(r, c)) pdf.rect(L + 12 + c * cell, vy + 12 + r * cell, cell, cell, 'F');
+        tx = L + 112;
+      } catch (_) { /* no QR */ }
+    }
+    if (doc.verificationCode) {
+      text('VERIFICATION', tx, vy + 22, { bold: true, size: 8, color: light });
+      text(`Code: ${doc.verificationCode}`, tx, vy + 40, { bold: true, size: 13 });
+      const lines = [
+        `Scan the QR or open ${origin}/#/verify and enter the ${isReceipt ? 'receipt' : 'invoice'} number and this code to confirm it against ${library}'s records.`,
+        `${period ? `Valid ${period}. ` : ''}Issued ${doc.issuedAt ? new Date(doc.issuedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : s(doc.date)}. An edited copy will not match the record.`,
+      ];
+      let ly = vy + 58;
+      for (const line of lines) {
+        const wrapped = pdf.splitTextToSize(line, R - tx - 14);
+        text(wrapped, tx, ly, { size: 8.5, color: gray });
+        ly += wrapped.length * 11;
+      }
+    } else {
+      text('This copy was generated before the server issued the document; reopen it for the verified version.', tx, vy + 40, { size: 9, color: gray, maxWidth: W - 28 });
+    }
+
+    // Footer
+    text('Thank you for studying with us.', L, 800, { bold: true, size: 9 });
+    text('Computer-generated document; no signature required.', L, 812, { size: 8, color: light });
+    text('StudyFlow', R, 800, { bold: true, size: 9, align: 'right' });
+    text(origin.replace(/^https?:\/\//, ''), R, 812, { size: 8, color: light, align: 'right' });
+    return pdf;
+  },
+
+  _jsPdfPromise: null,
+  ensureJsPdf() {
+    if (typeof window === 'undefined') return Promise.reject(new Error('browser only'));
+    if (window.jspdf && window.jspdf.jsPDF) return Promise.resolve(window.jspdf.jsPDF);
+    if (!this._jsPdfPromise) {
+      this._jsPdfPromise = new Promise((resolve, reject) => {
+        const sc = document.createElement('script');
+        sc.src = '/vendor/jspdf.umd.min.js';
+        sc.onload = () => (window.jspdf && window.jspdf.jsPDF ? resolve(window.jspdf.jsPDF) : reject(new Error('PDF library failed to load')));
+        sc.onerror = () => { this._jsPdfPromise = null; reject(new Error('PDF library failed to load. Check your connection and try again.')); };
+        document.head.appendChild(sc);
+      });
+    }
+    return this._jsPdfPromise;
+  },
+
+  async pdfBlob(doc) {
+    const jsPDF = await this.ensureJsPdf();
+    return this.buildPdf(doc, { jsPDF }).output('blob');
+  },
+
+  pdfFileName(doc) {
+    return `${String(doc.documentNumber || 'document').replace(/[^A-Za-z0-9_-]/g, '_')}.pdf`;
+  },
+
+  _saveBlob(blob, name) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  },
+
+  async downloadPdf(doc) {
+    try {
+      const blob = await this.pdfBlob(doc);
+      this._saveBlob(blob, this.pdfFileName(doc));
+      return true;
+    } catch (err) {
+      if (typeof toast !== 'undefined') toast.show(err.message || 'Could not create the PDF.', 'error', 6000);
+      return false;
+    }
+  },
+
+  downloadPdfById(docId) {
+    const doc = store.getDocument(docId);
+    if (!doc) { if (typeof toast !== 'undefined') toast.show('Document not found', 'error'); return; }
+    return this.downloadPdf(doc);
+  },
+
+  /** Phones can share a file straight into WhatsApp; elsewhere the PDF is downloaded instead. */
+  canShareFiles() {
+    try {
+      return typeof navigator !== 'undefined' && typeof navigator.canShare === 'function' &&
+        navigator.canShare({ files: [new File([''], 'x.pdf', { type: 'application/pdf' })] });
+    } catch (_) { return false; }
+  },
+
+  async sharePdf(doc, { text = '' } = {}) {
+    let blob;
+    try { blob = await this.pdfBlob(doc); }
+    catch (err) { if (typeof toast !== 'undefined') toast.show(err.message || 'Could not create the PDF.', 'error', 6000); return 'failed'; }
+    const file = new File([blob], this.pdfFileName(doc), { type: 'application/pdf' });
+    if (this.canShareFiles() && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: doc.documentNumber, text });
+        return 'shared';
+      } catch (err) {
+        if (err && err.name === 'AbortError') return 'cancelled';
+      }
+    }
+    this._saveBlob(blob, file.name);
+    return 'downloaded';
+  },
+
   // ── 2b. Verification block (code + QR) printed on every issued document ──
   verificationBlockHTML(doc, esc) {
     if (!doc.verificationCode) {
@@ -316,8 +520,11 @@ const invoiceGenerator = {
           Document ID: ${esc(doc.id)}
         </div>
         <div style="display:flex;gap:var(--space-2);">
+          <button class="btn btn-primary btn-sm" id="btn-download-doc-action" data-doc-id="${escAttr(doc.id)}">
+            ${icons.download || ''} Download PDF
+          </button>
           <button class="btn btn-secondary btn-sm" id="btn-print-doc-action" data-doc-id="${escAttr(doc.id)}">
-            ${icons.printer || ''} Print / PDF
+            ${icons.printer || ''} Print
           </button>
           <button class="btn btn-secondary btn-sm" onclick="modal.close()">
             Close
@@ -331,6 +538,12 @@ const invoiceGenerator = {
       if (printBtn) {
         printBtn.addEventListener('click', () => {
           invoiceGenerator.printDocument(printBtn.getAttribute('data-doc-id'));
+        });
+      }
+      const dlBtn = document.getElementById('btn-download-doc-action');
+      if (dlBtn) {
+        dlBtn.addEventListener('click', () => {
+          invoiceGenerator.downloadPdfById(dlBtn.getAttribute('data-doc-id'));
         });
       }
     }, 50);

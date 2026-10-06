@@ -220,8 +220,11 @@
   /**
    * Opens the reusable "Send on WhatsApp" composer modal.
    */
-  function openComposer({ studentId, templateKey = 'custom', variables = {}, onSent = null }) {
+  function openComposer({ studentId, templateKey = 'custom', variables = {}, onSent = null, document: attachment = null }) {
     if (typeof modal === 'undefined') return;
+    // WhatsApp links cannot carry a file: the bill is shared from the phone's share sheet
+    // (straight into WhatsApp) or downloaded and dropped into the chat.
+    const canShareFiles = Boolean(attachment && typeof invoiceGenerator !== 'undefined' && invoiceGenerator.canShareFiles && invoiceGenerator.canShareFiles());
     const student = (typeof store !== 'undefined' && store.getStudent) ? store.getStudent(studentId) : null;
     const settings = (typeof store !== 'undefined' && store.getSettings) ? store.getSettings() : {};
 
@@ -277,6 +280,21 @@
           <textarea class="textarea" id="wa-composer-text" rows="7" style="font-size:var(--text-sm);line-height:1.5;resize:vertical;" maxlength="1500">${esc(initialText)}</textarea>
         </div>
 
+        ${attachment ? `
+        <!-- The bill as a PDF -->
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;border:1px dashed var(--color-border-secondary);border-radius:var(--radius-md);background:var(--color-bg-secondary);">
+          <div style="font-size:12px;line-height:1.5;">
+            <div style="font-weight:600;color:var(--color-text-primary);">📄 ${esc(attachment.documentType === 'receipt' ? 'Receipt' : 'Invoice')} ${esc(attachment.documentNumber)} (PDF)</div>
+            <div style="color:var(--color-text-tertiary);">${canShareFiles
+              ? 'Send the message first, then tap <strong>Share PDF</strong>, choose WhatsApp and the same student.'
+              : 'Download the PDF, then drag it into the WhatsApp chat that opens.'}</div>
+          </div>
+          <div style="display:flex;gap:6px;">
+            ${canShareFiles ? '<button type="button" class="btn btn-secondary btn-sm" id="wa-btn-share-pdf">Share PDF</button>' : ''}
+            <button type="button" class="btn btn-secondary btn-sm" id="wa-btn-download-pdf">Download PDF</button>
+          </div>
+        </div>` : ''}
+
         <!-- Open In Preference Toggle -->
         <div style="display:flex;justify-content:space-between;align-items:center;padding-top:var(--space-2);border-top:1px solid var(--color-border-secondary);">
           <div style="font-size:var(--text-xs);color:var(--color-text-secondary);">
@@ -326,6 +344,19 @@
           localStorage.setItem('sf_wa_mode', mode);
         }
       });
+    });
+
+    // PDF of the bill (share sheet on phones, download elsewhere)
+    document.getElementById('wa-btn-share-pdf')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget; btn.disabled = true;
+      const result = await invoiceGenerator.sharePdf(attachment, { text: textarea?.value || '' });
+      btn.disabled = false;
+      if (result === 'downloaded' && typeof toast !== 'undefined') toast.show('Sharing is not available here, so the PDF was downloaded. Attach it in the chat.', 'info', 6000);
+    });
+    document.getElementById('wa-btn-download-pdf')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget; btn.disabled = true;
+      await invoiceGenerator.downloadPdf(attachment);
+      btn.disabled = false;
     });
 
     // Edit student helper

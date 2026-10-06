@@ -236,6 +236,17 @@ const { generateHeadersFile } = require('./lib/security-headers');
 const headersContent = generateHeadersFile();
 fs.writeFileSync(path.join(publicDir, '_headers'), headersContent, 'utf8');
 
+// Vendor files loaded on demand by the app (same origin, so the CSP stays 'self'):
+// jsPDF (MIT) builds invoice/receipt PDFs in the browser when the owner downloads or shares a bill.
+const vendorDir = path.join(publicDir, 'vendor');
+if (!fs.existsSync(vendorDir)) fs.mkdirSync(vendorDir, { recursive: true });
+const jsPdfSrc = path.join(rootDir, 'node_modules', 'jspdf', 'dist', 'jspdf.umd.min.js');
+if (fs.existsSync(jsPdfSrc)) {
+  fs.copyFileSync(jsPdfSrc, path.join(vendorDir, 'jspdf.umd.min.js'));
+} else {
+  console.warn('jspdf not installed; PDF download/share will be unavailable. Run npm install.');
+}
+
 console.log('Static distribution compiled to public/ directory for Cloudflare Workers deployment.');
 
 
