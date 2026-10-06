@@ -799,8 +799,9 @@ window.confirmAssignSeat = async function() {
         });
       }
     }
-    // Invoice number for the WhatsApp message; the bill itself goes as a PDF (no link for the student)
-    const invoiceLine = invoice?.documentNumber && invoice.documentNumber !== 'PENDING' ? `Invoice: ${invoice.documentNumber}` : '';
+    // Invoice number + verify link for the WhatsApp message: the student opens it to see and
+    // download the bill from the library's record (server-issued, tamper-evident)
+    const invoiceLine = invoice?.verifyUrl ? `Invoice ${invoice.documentNumber} · Verify: ${invoice.verifyUrl}` : '';
 
     modal.close();
     drawer.close();
@@ -897,8 +898,7 @@ window.confirmAssignSeat = async function() {
               amount: finalAmount.toLocaleString('en-IN'),
               payment_status: payStatusDisplay,
               invoice_line: invoiceLine
-            },
-            document: invoice
+            }
           });
         }
       });
@@ -1234,7 +1234,7 @@ window.confirmPayment = async function(membershipId, studentId) {
         notes
       });
     }
-    const receiptLine = receiptDoc?.documentNumber && receiptDoc.documentNumber !== 'PENDING' ? `Receipt: ${receiptDoc.documentNumber}` : '';
+    const receiptLine = receiptDoc?.verifyUrl ? `Receipt ${receiptDoc.documentNumber} · Verify: ${receiptDoc.verifyUrl}` : '';
 
     const pendingAfter = store.getPendingAmount(membershipId);
     const receiptNum = receiptDoc?.documentNumber || payment.receiptNumber || 'REC';
@@ -1311,8 +1311,7 @@ window.confirmPayment = async function(membershipId, studentId) {
               receipt_number: receiptNum,
               balance: pendingAfter.toLocaleString('en-IN'),
               invoice_line: receiptLine
-            },
-            document: receiptDoc
+            }
           });
         }
       });
@@ -1545,9 +1544,8 @@ window.confirmRenew = async function(studentId, seatId) {
               seat_number: seatLabel,
               end_date: formattedEndDate,
               amount: finalAmount.toLocaleString('en-IN'),
-              invoice_line: renewInvoiceDoc?.documentNumber && renewInvoiceDoc.documentNumber !== 'PENDING' ? `Invoice: ${renewInvoiceDoc.documentNumber}` : ''
-            },
-            document: renewInvoiceDoc || null
+              invoice_line: renewInvoiceDoc?.verifyUrl ? `Invoice ${renewInvoiceDoc.documentNumber} · Verify: ${renewInvoiceDoc.verifyUrl}` : ''
+            }
           });
         }
       });

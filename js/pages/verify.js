@@ -76,11 +76,17 @@ export function renderVerifyPage(container, params = {}) {
           <strong>✓ Verified.</strong> ${esc(d.documentType === 'receipt' ? 'Receipt' : 'Invoice')} <strong>${esc(d.documentNumber)}</strong> was issued by <strong>${esc(d.branchName)}</strong> on ${esc(issued)}.
           ${d.startDate && d.endDate ? ` Valid ${esc(d.startDate)} to ${esc(d.endDate)}.` : ''} Amount ₹${Number(d.finalAmount || 0).toLocaleString('en-IN')} (${esc(d.status)}).
         </div>
-        <div style="text-align:right;margin-bottom:10px;">
-          <button class="btn btn-secondary btn-sm" id="verify-print">Download / Print PDF</button>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:10px;">
+          <button class="btn btn-primary btn-sm" id="verify-download">Download PDF</button>
+          <button class="btn btn-secondary btn-sm" id="verify-print">Print</button>
         </div>
         <div style="max-height:70vh;overflow:auto;">${window.invoiceGenerator ? window.invoiceGenerator.renderDocumentHTML(d) : ''}</div>`;
       page.querySelector('#verify-print')?.addEventListener('click', () => window.invoiceGenerator && window.invoiceGenerator.printDoc(d));
+      page.querySelector('#verify-download')?.addEventListener('click', async (e) => {
+        e.currentTarget.disabled = true;
+        if (window.invoiceGenerator) await window.invoiceGenerator.downloadPdf(d);
+        e.currentTarget.disabled = false;
+      });
     } catch (err) {
       result().innerHTML = `<div class="auth-alert alert-error" style="display:block;">${esc(err.message || 'Verification is unavailable right now.')}</div>`;
     } finally {
