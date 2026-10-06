@@ -286,11 +286,11 @@
           <div style="font-size:12px;line-height:1.5;">
             <div style="font-weight:600;color:var(--color-text-primary);">📄 ${esc(attachment.documentType === 'receipt' ? 'Receipt' : 'Invoice')} ${esc(attachment.documentNumber)} (PDF)</div>
             <div style="color:var(--color-text-tertiary);">${canShareFiles
-              ? 'Send the message first, then tap <strong>Share PDF</strong>, choose WhatsApp and the same student.'
+              ? 'Tap <strong>Share PDF + message</strong>, choose WhatsApp and the student. The message is also copied, so if WhatsApp shows only the file, paste it as the caption.'
               : 'Download the PDF, then drag it into the WhatsApp chat that opens.'}</div>
           </div>
           <div style="display:flex;gap:6px;">
-            ${canShareFiles ? '<button type="button" class="btn btn-secondary btn-sm" id="wa-btn-share-pdf">Share PDF</button>' : ''}
+            ${canShareFiles ? '<button type="button" class="btn btn-primary btn-sm" id="wa-btn-share-pdf" style="background:#25d366;border-color:#25d366;color:#fff;">📎 Share PDF + message</button>' : ''}
             <button type="button" class="btn btn-secondary btn-sm" id="wa-btn-download-pdf">Download PDF</button>
           </div>
         </div>` : ''}
@@ -349,9 +349,18 @@
     // PDF of the bill (share sheet on phones, download elsewhere)
     document.getElementById('wa-btn-share-pdf')?.addEventListener('click', async (e) => {
       const btn = e.currentTarget; btn.disabled = true;
-      const result = await invoiceGenerator.sharePdf(attachment, { text: textarea?.value || '' });
+      const text = textarea?.value || '';
+      // The file and the text go to the share sheet together. WhatsApp sometimes keeps only
+      // the file, so the text is also put on the clipboard for a one-tap paste as the caption.
+      try { await navigator.clipboard.writeText(text); } catch (_) { /* clipboard may be unavailable */ }
+      const result = await invoiceGenerator.sharePdf(attachment, { text });
       btn.disabled = false;
-      if (result === 'downloaded' && typeof toast !== 'undefined') toast.show('Sharing is not available here, so the PDF was downloaded. Attach it in the chat.', 'info', 6000);
+      if (result === 'shared') {
+        if (typeof onSent === 'function') onSent();
+        if (typeof toast !== 'undefined') toast.show('Shared. If only the PDF arrived, long-press the caption box and paste the message.', 'info', 7000);
+      } else if (result === 'downloaded' && typeof toast !== 'undefined') {
+        toast.show('Sharing is not available here, so the PDF was downloaded. Attach it in the chat.', 'info', 6000);
+      }
     });
     document.getElementById('wa-btn-download-pdf')?.addEventListener('click', async (e) => {
       const btn = e.currentTarget; btn.disabled = true;
