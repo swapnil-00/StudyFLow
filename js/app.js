@@ -9,6 +9,10 @@ const routes = {
   '/billing': () => import('./pages/billing.js').then(m => m.renderBillingPage),
   '/verify': () => import('./pages/verify.js').then(m => m.renderVerifyPage),
   '/admin': () => import('./pages/admin.js').then(m => m.renderAdminPage),
+  '/terms': () => import('./pages/legal.js').then(m => m.renderTermsPage),
+  '/privacy': () => import('./pages/legal.js').then(m => m.renderPrivacyPage),
+  '/refund': () => import('./pages/legal.js').then(m => m.renderRefundPage),
+  '/contact': () => import('./pages/legal.js').then(m => m.renderContactPage),
   '/onboarding': () => import('./pages/auth.js').then(m => m.renderOnboardingPage),
   '/invite': () => import('./pages/auth.js').then(m => m.renderInvitePage),
   '/forgot-password': () => import('./pages/auth.js').then(m => m.renderForgotPasswordPage),
@@ -261,10 +265,13 @@ class App {
 
     // ── Server Auth State Router Guard (AUTH-05, Plan §3.1) ──────────────
     const authState = store.authState; // 'anonymous' | 'no_library' | 'needs_library' | 'needs_onboarding' | 'ready'
-    const isAnonymousPath = ['/landing', '/login', '/signup', '/forgot-password', '/verify'].includes(path) || path.startsWith('/invite');
+    // Public pages: reachable in every auth state, never redirected
+    const PUBLIC_PATHS = ['/verify', '/terms', '/privacy', '/refund', '/contact'];
+    const isPublicPath = PUBLIC_PATHS.includes(path);
+    const isAnonymousPath = ['/landing', '/login', '/signup', '/forgot-password', ...PUBLIC_PATHS].includes(path) || path.startsWith('/invite');
 
-    if (path === '/verify') {
-      // The public verify page is reachable in every auth state: no redirects
+    if (isPublicPath) {
+      // no redirects
     } else if (authState === 'anonymous') {
       if (!isAnonymousPath) {
         window.location.hash = '#/login';
@@ -292,7 +299,7 @@ class App {
     this._updateActiveNav(path);
     this.closeMobileSidebar();
 
-    const isAuthRoute = ['/landing', '/login', '/signup', '/forgot-password', '/setup-library', '/no-library', '/onboarding', '/verify'].includes(path) || path.startsWith('/invite');
+    const isAuthRoute = ['/landing', '/login', '/signup', '/forgot-password', '/setup-library', '/no-library', '/onboarding', ...PUBLIC_PATHS].includes(path) || path.startsWith('/invite');
     const appEl = document.getElementById('app');
     if (appEl) {
       if (isAuthRoute) {

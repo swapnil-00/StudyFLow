@@ -88,7 +88,7 @@ export function renderSignupPage() {
       <div class="form-group terms-checkbox-group" style="margin-top:4px;">
         <label class="checkbox-label" style="display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--color-text-secondary);cursor:pointer;">
           <input type="checkbox" id="reg-terms-check" style="margin-top:2px;" />
-          <span>I agree to the <a href="javascript:void(0)" style="color:var(--color-primary);text-decoration:underline;">Terms of Service</a> and <a href="javascript:void(0)" style="color:var(--color-primary);text-decoration:underline;">Privacy Policy</a>.</span>
+          <span>I agree to the <a href="#/terms" target="_blank" rel="noopener" style="color:var(--color-primary);text-decoration:underline;">Terms of Service</a> and <a href="#/privacy" target="_blank" rel="noopener" style="color:var(--color-primary);text-decoration:underline;">Privacy Policy</a>.</span>
         </label>
       </div>
 

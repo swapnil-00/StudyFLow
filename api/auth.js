@@ -191,6 +191,9 @@ module.exports = withHandler(async function handler(req, res) {
       contact: {
         email: process.env.CONTACT_EMAIL || 'studyflowbusiness0@gmail.com',
         whatsapp: process.env.CONTACT_WHATSAPP || null,
+        address: process.env.CONTACT_ADDRESS || null,
+        businessName: process.env.BUSINESS_NAME || 'StudyFlow',
+        owner: process.env.BUSINESS_OWNER || 'Swapnil Chaudhari',
       },
       // Anyone can create a library on the Free plan (lib/plans.js decides the limits).
       signup: { enabled: true, freeSeats: PRICING.FREE_SEAT_LIMIT },

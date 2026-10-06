@@ -534,8 +534,15 @@ export function renderLanding(container) {
               <div class="sf-footer-col">
                 <div class="sf-footer-col-title">Account</div>
                 <a href="javascript:void(0)" onclick="app.openLoginModal()">Sign In</a>
-                <a href="javascript:void(0)" onclick="app.openContactModal()">Contact Sales</a>
-                <a href="javascript:void(0)" onclick="app.openUpgradeModal()">Upgrade Subscription</a>
+                <a href="#/signup">Create a free library</a>
+                <a href="#/contact">Contact Us</a>
+              </div>
+              <div class="sf-footer-col">
+                <div class="sf-footer-col-title">Legal</div>
+                <a href="#/terms">Terms of Service</a>
+                <a href="#/privacy">Privacy Policy</a>
+                <a href="#/refund">Refund & Cancellation Policy</a>
+                <a href="#/verify">Verify an invoice</a>
               </div>
             </div>
           </div>
