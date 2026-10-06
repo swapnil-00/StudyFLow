@@ -103,6 +103,15 @@ notifications add-on** (₹10 per seat per month, prepaid) are bought from **Bil
 app through Cashfree. All prices and limits live in `lib/plans.js`; limits are enforced server-side
 in `api/write.js`. The scripts below cover manual payments (UPI / bank transfer) and the demo library.
 
+**Developer Lab (in the app):** when the platform owner (`lib/platform-admin.js`, override with
+`PLATFORM_ADMIN_EMAILS`) signs in, a **Developer Lab** entry appears in the sidebar: every library
+with plan/seats/owner/status, plan changes and suspension, coupon codes (e.g. `SWAP100` = 100% off,
+applied on the customer's Billing page) and all orders. The scripts below do the same from a terminal.
+
+**Verifiable invoices:** every invoice/receipt is issued by the server with a sequential number and a
+signed verification code (`lib/invoices.js`); the public page `#/verify?n=…&c=…` (and the QR on the
+document) shows the library's original record. Only the ~1 KB record is stored, never a PDF.
+
 ### 1. Provision a Library by Hand (optional: customers can also self-sign-up)
 ```bash
 # Dry run preview (default)

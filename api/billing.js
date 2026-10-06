@@ -14,7 +14,16 @@ const subscription = require('../lib/subscription');
 const billing = require('../lib/billing');
 const cashfree = require('../lib/cashfree');
 const whatsapp = require('../lib/whatsapp-cloud');
+const coupons = require('../lib/coupons');
 const { runRemindersJobForOrg, lastReminderRun } = require('../lib/jobs');
+
+/** Apply a coupon to a quote, or throw a 400 the client can show. */
+async function withCoupon(quote, couponInput, kind) {
+  if (!couponInput) return quote;
+  const v = await coupons.validateCoupon(couponInput, kind);
+  if (!v.ok) throw new HttpError(400, v.code, v.error);
+  return coupons.applyCoupon(quote, v.coupon);
+}
 
 function requireOwner(session) {
   if (session.role !== 'owner') {
@@ -80,7 +89,7 @@ module.exports = withHandler(async function handler(req, res) {
 
   // ── Price without buying ───────────────────────────────────────────────────
   if (action === 'quote') {
-    const { kind, plan, seats, months } = req.body || {};
+    const { kind, plan, seats, months, coupon } = req.body || {};
     let quote;
     if (kind === 'auto_notify') {
       if (!plans.isAutoNotifyEnabled()) {
@@ -92,6 +101,7 @@ module.exports = withHandler(async function handler(req, res) {
       quote = plans.quotePlan({ plan, seats });
     }
     if (!quote.ok) throw new HttpError(400, 'INVALID_QUOTE', quote.error);
+    quote = await withCoupon(quote, coupon, kind === 'auto_notify' ? 'auto_notify' : 'plan');
     return res.json({ ok: true, quote });
   }
 
@@ -104,7 +114,7 @@ module.exports = withHandler(async function handler(req, res) {
     const sub = subscription.deriveSubscription(org);
     if (sub.isDemo) throw new HttpError(403, 'DEMO_LOCKED', 'The demo library has no billing.');
 
-    const { kind, plan, seats, months, phone } = req.body || {};
+    const { kind, plan, seats, months, phone, coupon } = req.body || {};
     let quote;
     let record;
     if (kind === 'auto_notify') {
@@ -129,6 +139,23 @@ module.exports = withHandler(async function handler(req, res) {
       record = { kind: billing.ORDER_KIND.PLAN, plan: quote.plan, seats: quote.seats };
     } else {
       throw new HttpError(400, 'INVALID_KIND', 'kind must be "plan" or "auto_notify".');
+    }
+
+    quote = await withCoupon(quote, coupon, record.kind === billing.ORDER_KIND.PLAN ? 'plan' : 'auto_notify');
+
+    // A 100% coupon needs no payment provider: apply immediately, exactly like a paid order.
+    if (quote.couponCode && quote.total === 0) {
+      const result = await withTransaction(async (client) => {
+        const exec = clientExec(client);
+        const order = await billing.createOrderRecord({
+          orgId, userId: session.userId, ...record, quote, provider: 'coupon', metadata: { coupon: quote.couponCode },
+        }, exec);
+        return billing.finalizeOrder(order.id, { source: 'coupon' }, exec);
+      });
+      return res.json({
+        ok: true, free: true, applied: result.applied, orderId: result.order.id, amount: 0,
+        description: quote.description, subscription: result.subscription || await subscription.loadSubscription(orgId),
+      });
     }
 
     if (!cashfree.isConfigured()) {

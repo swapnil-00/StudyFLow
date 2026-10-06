@@ -2,7 +2,7 @@
 
 const invoiceGenerator = {
   // ── 1. Generate Invoice ──────────────────────────────────────────
-  generateInvoice({ membershipId, studentId, seatId, paymentId = null }) {
+  async generateInvoice({ membershipId, studentId, seatId, paymentId = null }) {
     const student = store.getStudent(studentId);
     const membership = store.getMembership(membershipId);
     const seat = seatId ? store.getSeat(seatId) : (membership?.seatId ? store.getSeat(membership.seatId) : null);
@@ -12,7 +12,8 @@ const invoiceGenerator = {
     const branch = store.getBranch(branchId);
     const settings = store.getSettings();
 
-    const invoiceNumber = `INV-${new Date().getFullYear()}-${Math.floor(10000 + Math.random() * 90000)}`;
+    // Placeholder only: the server issues the real sequential number and the verification code
+    const invoiceNumber = 'PENDING';
     const payment = paymentId
       ? (store.getPayment ? store.getPayment(paymentId) : (store.getPayments ? store.getPayments().find(p => p.id === paymentId) : null))
       : (membership ? (store.getPaymentsForMembership ? store.getPaymentsForMembership(membership.id)[0] : (store.getPayments ? store.getPayments(membership.id)[0] : null)) : null);
@@ -57,14 +58,12 @@ const invoiceGenerator = {
       currency: settings?.currency || 'INR'
     };
 
-    // Store in documents table
-    store.saveDocument(documentData);
-
-    return documentData;
+    // Issued by the server: number, issue time, verification code (lib/invoices.js)
+    return store.saveDocument(documentData);
   },
 
   // ── 2. Generate Payment Receipt ──────────────────────────────────
-  generateReceipt({ paymentId, studentId = null, membershipId = null }) {
+  async generateReceipt({ paymentId, studentId = null, membershipId = null }) {
     const payment = (store.getPayment ? store.getPayment(paymentId) : (store.getPayments ? store.getPayments().find(p => p.id === paymentId) : null)) || null;
     const mId = membershipId || payment?.membershipId;
     const membership = mId ? store.getMembership(mId) : null;
@@ -76,7 +75,8 @@ const invoiceGenerator = {
     const branch = store.getBranch(branchId);
     const settings = store.getSettings();
 
-    const receiptNumber = payment?.receiptNumber || `REC-${new Date().getFullYear()}-${Math.floor(10000 + Math.random() * 90000)}`;
+    // The payment's server-issued REC- number is kept; otherwise the server sequences one
+    const receiptNumber = payment?.receiptNumber || 'PENDING';
     const docId = `DOC-${utils.uid()}`;
 
     const documentData = {
@@ -105,8 +105,35 @@ const invoiceGenerator = {
       currency: settings?.currency || 'INR'
     };
 
-    store.saveDocument(documentData);
-    return documentData;
+    return store.saveDocument(documentData);
+  },
+
+  // ── 2b. Verification block (code + QR) printed on every issued document ──
+  verificationBlockHTML(doc, esc) {
+    if (!doc.verificationCode) {
+      return `<div style="margin-top:16px;font-size:11px;color:#717680;">Verification pending: this copy was generated before the server issued the document. Reopen it from the student's profile for the verified version.</div>`;
+    }
+    let qrSvg = '';
+    try {
+      if (typeof window !== 'undefined' && window.qrcode && doc.verifyUrl) {
+        const qr = window.qrcode(0, 'M');
+        qr.addData(doc.verifyUrl);
+        qr.make();
+        qrSvg = typeof qr.createSvgTag === 'function' ? qr.createSvgTag({ cellSize: 3, margin: 2 }) : '';
+      }
+    } catch (_) { qrSvg = ''; }
+    const period = doc.startDate && doc.endDate ? `Valid ${esc(doc.startDate)} to ${esc(doc.endDate)}.` : '';
+    return `
+      <div style="display:flex;gap:16px;align-items:center;border:1px dashed #cfd4dc;border-radius:8px;padding:12px 14px;margin-top:18px;background:#fafafa;">
+        ${qrSvg ? `<div style="flex-shrink:0;line-height:0;">${qrSvg}</div>` : ''}
+        <div style="font-size:12px;color:#535862;line-height:1.5;">
+          <div style="font-weight:700;color:#181d27;">Verification code
+            <span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;letter-spacing:1px;margin-left:6px;">${esc(doc.verificationCode)}</span>
+          </div>
+          <div>Scan the QR code or open <span style="word-break:break-all;">${esc(doc.verifyUrl || '')}</span> to confirm this ${doc.documentType === 'receipt' ? 'receipt' : 'invoice'} against ${esc(doc.branchName || 'the library')}'s records. ${period}</div>
+          <div style="color:#717680;">Issued ${esc(doc.issuedAt ? new Date(doc.issuedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : doc.date || '')}. An edited copy will not match the record.</div>
+        </div>
+      </div>`;
   },
 
   // ── 3. Render Branded Document HTML (SEC-007: XSS Sanitization) ──
@@ -250,6 +277,8 @@ const invoiceGenerator = {
           </div>
         </div>
 
+        ${this.verificationBlockHTML(doc, esc)}
+
         <!-- Footer -->
         <div style="display:flex;justify-content:space-between;align-items:center;padding-top:20px;font-size:12px;color:#717680;">
           <div>
@@ -310,8 +339,22 @@ const invoiceGenerator = {
   printDocument(docId) {
     const doc = store.getDocument(docId);
     if (!doc) return;
+    this.printDoc(doc);
+  },
+
+  // Opens the print dialog ("Save as PDF"). The window title becomes the PDF's Title metadata,
+  // so the number, validity and verification code travel with the file.
+  printDoc(doc) {
     const esc = typeof escapeHtml === 'function' ? escapeHtml : (s) => (s == null ? '' : String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])));
     const html = this.renderDocumentHTML(doc);
+    const total = Number(doc.finalAmount != null ? doc.finalAmount : (doc.amount || 0));
+    const titleParts = [
+      doc.documentNumber,
+      doc.branchName,
+      doc.startDate && doc.endDate ? `${doc.startDate} to ${doc.endDate}` : null,
+      `INR ${total.toLocaleString('en-IN')}`,
+      doc.verificationCode ? `Verify ${doc.verificationCode}` : null,
+    ].filter(Boolean).join(' · ');
     const win = window.open('', '_blank');
     if (!win) {
       toast.show('Popups blocked. Please allow popups to print.', 'warning');
@@ -321,7 +364,9 @@ const invoiceGenerator = {
       <!DOCTYPE html>
       <html>
       <head>
-        <title>${esc(doc.documentNumber)}</title>
+        <title>${esc(titleParts)}</title>
+        <meta name="author" content="StudyFlow for ${esc(doc.branchName || 'library')}">
+        <meta name="description" content="${esc(doc.documentType === 'receipt' ? 'Payment receipt' : 'Tax invoice')} ${esc(doc.documentNumber)}${doc.verificationCode ? `, verification code ${esc(doc.verificationCode)}` : ''}${doc.verifyUrl ? `, verify at ${esc(doc.verifyUrl)}` : ''}">
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
         <style>
           @media print {

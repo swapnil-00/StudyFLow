@@ -11,6 +11,8 @@ export function renderBillingPage(container, params = {}) {
 
   let state = null;   // last /api/billing status payload
   let busy = false;
+  let coupon = '';    // coupon code typed by the owner (validated by the server at quote/checkout)
+  let couponNote = '';
 
   const fmtINR = (n) => {
     const v = Math.round(Number(n) || 0);
@@ -147,6 +149,12 @@ export function renderBillingPage(container, params = {}) {
               ${sub.plan === 'custom' ? `<div style="font-size:12px;color:var(--color-text-tertiary);">You have ${esc(sub.seatLimit)} seats. Buying more replaces your limit with the new total.</div>` : ''}
             </div>
           </div>
+          ${isOwner ? `
+          <div style="margin-top:var(--space-4);display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <input class="input" id="coupon-code" placeholder="Coupon code" value="${esc(coupon)}" style="width:180px;text-transform:uppercase;" autocapitalize="characters" spellcheck="false" />
+            <button class="btn btn-secondary btn-sm" id="coupon-apply">Apply coupon</button>
+            <span id="coupon-note" style="font-size:12px;color:${couponNote.startsWith('✓') ? 'var(--sf-success-600)' : 'var(--sf-error-600)'};">${esc(couponNote)}</span>
+          </div>` : ''}
           ${!state.payments.configured && isOwner ? `<div style="margin-top:var(--space-4);font-size:13px;color:var(--color-text-secondary);">Online payment is being set up. You can pay by UPI or bank transfer: contact StudyFlow and the plan is activated as soon as the payment is confirmed.</div>` : ''}
         </div>
       </div>`;
@@ -295,7 +303,10 @@ export function renderBillingPage(container, params = {}) {
 
   async function startCheckout(body, quoteText) {
     if (busy) return;
-    if (!state.payments.configured) { showManualPaymentInfo(quoteText); return; }
+    const couponCode = coupon.trim().toUpperCase();
+    // Without a coupon there is nothing the server can do until payments are configured;
+    // with one, the server decides (a 100% coupon needs no payment at all).
+    if (!state.payments.configured && !couponCode) { showManualPaymentInfo(quoteText); return; }
     let phone = (state.phone || '').replace(/\D/g, '');
     if (!/^\d{10}$/.test(phone.slice(-10))) {
       phone = await promptPhone();
@@ -303,7 +314,14 @@ export function renderBillingPage(container, params = {}) {
     }
     setBusy(true);
     try {
-      const r = await store.billingCheckout({ ...body, phone });
+      const r = await store.billingCheckout({ ...body, phone, ...(couponCode ? { coupon: couponCode } : {}) });
+      if (r.free) {
+        toast.show(`Coupon applied: ${r.description || 'plan activated'}. No payment needed.`, 'success', 7000);
+        await store.refreshOrganization();
+        if (window.app) { window.app._render(); window.app._navigate(); return; }
+        await load();
+        return;
+      }
       await loadScript(r.sdkUrl);
       const cashfree = window.Cashfree({ mode: r.mode });
       toast.show(`Opening secure payment for ${fmtINR(r.amount)}…`, 'info');
@@ -311,8 +329,30 @@ export function renderBillingPage(container, params = {}) {
     } catch (err) {
       setBusy(false);
       if (err.code === 'PAYMENTS_NOT_CONFIGURED') showManualPaymentInfo(quoteText);
+      else if (String(err.code || '').startsWith('COUPON_')) { couponNote = err.message; render(); toast.show(err.message, 'warning', 6000); }
       else toast.show(err.message || 'Could not start the payment.', 'error', 7000);
     }
+  }
+
+  // Preview what the coupon does to the plan the owner would buy next
+  async function applyCouponPreview() {
+    const input = root().querySelector('#coupon-code');
+    coupon = (input?.value || '').trim().toUpperCase();
+    if (!coupon) { couponNote = ''; render(); return; }
+    const sub = state.subscription;
+    const customSel = root().querySelector('#custom-seats');
+    const body = sub.plan === 'free'
+      ? { kind: 'plan', plan: 'basic', coupon }
+      : { kind: 'plan', plan: 'custom', seats: Number(customSel?.value || state.pricing.custom.minSeats), coupon };
+    try {
+      const res = await store.billingQuote(body);
+      const q = res.quote;
+      couponNote = `✓ ${q.couponCode}: ${q.percentOff}% off → ${q.total === 0 ? 'free, no payment needed' : `you pay ${fmtINR(q.total)} instead of ${fmtINR(q.subtotalBeforeDiscount)}`}`;
+    } catch (err) {
+      couponNote = err.message || 'Coupon not valid.';
+      if (!String(err.code || '').startsWith('COUPON_')) coupon = '';
+    }
+    render();
   }
 
   async function syncOrder(orderId) {
@@ -338,6 +378,9 @@ export function renderBillingPage(container, params = {}) {
     const r = root();
     const sub = state.subscription;
     const p = state.pricing;
+
+    r.querySelector('#coupon-apply')?.addEventListener('click', applyCouponPreview);
+    r.querySelector('#coupon-code')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); applyCouponPreview(); } });
 
     r.querySelector('[data-buy-plan="basic"]')?.addEventListener('click', () =>
       startCheckout({ kind: 'plan', plan: 'basic' }, `Basic plan — ${p.basic.seats} seats — ${fmtINR(p.basic.price)}`));

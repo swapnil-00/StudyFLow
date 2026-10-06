@@ -12,6 +12,7 @@ const { encrypt } = require('../lib/crypto');
 const { HttpError } = require('../lib/errors');
 const { getTodayIST, addDaysIST, daysBetweenIST } = require('../lib/dates');
 const { seatLimitFor, normalizePlanKey, seatLimitMessage } = require('../lib/plans');
+const { nextDocumentNumber, verificationCode, verifyUrl } = require('../lib/invoices');
 
 function uid(prefix) {
   return `${prefix}-${crypto.randomUUID().replace(/-/g, '').substring(0, 9).toUpperCase()}`;
@@ -1555,25 +1556,46 @@ module.exports = withHandler(async function handler(req, res) {
   }
 
   // ── Documents (Invoices & Receipts, SEC-009 Tenant Scoped) ────────────────
+  // The server issues the number (sequential per library), the issue time and a signed
+  // verification code (lib/invoices.js). Only the ~1 KB record is stored, never a PDF; the
+  // PDF is rendered from this record on demand, including on the public verify page.
   if (table === 'documents') {
     if (action === 'insert' || action === 'save') {
       const d = data;
       const newId = uid('DOC');
+      const documentType = d.documentType === 'receipt' ? 'receipt' : 'invoice';
 
       const result = await withTransaction(async client => {
         if (d.studentId) await assertForeignEntity(client, 'students', d.studentId, orgId);
         if (d.branchId) await assertForeignEntity(client, 'branches', d.branchId, orgId);
         if (d.membershipId) await assertForeignEntity(client, 'memberships', d.membershipId, orgId);
 
+        const exec = (sql, params) => client.query(sql, params);
+        // A receipt keeps the payment's own server-issued REC- number; everything else is sequenced here.
+        let documentNumber = null;
+        if (documentType === 'receipt' && /^REC-\d{4}-\d{6}$/.test(String(d.documentNumber || ''))) {
+          const owned = await client.query('SELECT 1 FROM payments WHERE receipt_number = $1 AND organization_id = $2', [d.documentNumber, orgId]);
+          if (owned.rows.length > 0) documentNumber = d.documentNumber;
+        }
+        if (!documentNumber) documentNumber = await nextDocumentNumber(exec, orgId, documentType);
+
+        const issuedAt = new Date().toISOString();
+        const record = { ...d, id: newId, documentType, documentNumber, issuedAt, organizationId: orgId };
+        delete record.verificationCode;
+        delete record.verifyUrl;
+        const code = verificationCode(record);
+        const origin = process.env.APP_URL || process.env.APP_ORIGIN || `https://${req.headers.host}`;
+        const url = verifyUrl(origin, documentNumber, code);
+        const stored = { ...record, verificationCode: code, verifyUrl: url };
+        delete stored.organizationId;
+
         await client.query(
-          `INSERT INTO documents (id, organization_id, document_type, document_number, student_id, branch_id, membership_id, document_data)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-           ON CONFLICT (id) DO UPDATE SET document_data = EXCLUDED.document_data
-             WHERE documents.organization_id = $2`,
-          [newId, orgId, d.documentType || 'invoice', d.documentNumber || newId, d.studentId || null, d.branchId || null, d.membershipId || null, JSON.stringify(d)]
+          `INSERT INTO documents (id, organization_id, document_type, document_number, student_id, branch_id, membership_id, document_data, verification_code, issued_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          [newId, orgId, documentType, documentNumber, d.studentId || null, d.branchId || null, d.membershipId || null, JSON.stringify(stored), code, issuedAt]
         );
-        await audit(client, session, 'document.create', 'documents', newId, { documentNumber: d.documentNumber });
-        return { ok: true, id: newId };
+        await audit(client, session, 'document.create', 'documents', newId, { documentNumber, documentType });
+        return { ok: true, id: newId, documentNumber, documentType, verificationCode: code, verifyUrl: url, issuedAt };
       });
       return res.json(result);
     }

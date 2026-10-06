@@ -1294,15 +1294,60 @@ class Store {
   getDocument(id) { return (this._db?.documents || []).find(d => d.id === id); }
   getDocumentByNumber(docNum) { return (this._db?.documents || []).find(d => d.documentNumber === docNum); }
 
-  saveDocument(doc) {
+  // The server issues the document number, issue time and verification code; the local copy
+  // is replaced with the issued version as soon as it comes back.
+  async saveDocument(doc) {
     this._db.documents = this._db.documents || [];
-    const idx = this._db.documents.findIndex(d => d.id === doc.id);
-    if (idx !== -1) this._db.documents[idx] = { ...this._db.documents[idx], ...doc };
-    else this._db.documents.unshift(doc);
-    // Persist document to Neon DB asynchronously
-    apiWrite('documents', 'save', doc).catch(e => console.warn('Document DB persistence failed:', e.message));
+    this._db.documents.unshift(doc);
     this._notify();
-    return doc;
+    try {
+      const res = await apiWrite('documents', 'save', doc);
+      const issued = {
+        ...doc,
+        id: res.id || doc.id,
+        documentNumber: res.documentNumber || doc.documentNumber,
+        verificationCode: res.verificationCode || null,
+        verifyUrl: res.verifyUrl || null,
+        issuedAt: res.issuedAt || doc.issuedAt || null,
+      };
+      const idx = this._db.documents.findIndex(d => d === doc || d.id === doc.id);
+      if (idx !== -1) this._db.documents[idx] = issued; else this._db.documents.unshift(issued);
+      this._notify();
+      return issued;
+    } catch (e) {
+      console.warn('Document DB persistence failed:', e.message);
+      return doc;
+    }
+  }
+
+  // ── Public document verification (no login) ────────────────────
+  async verifyDocument(number, code) {
+    const res = await fetch(`${API_BASE}/api/verify?n=${encodeURIComponent(number)}&c=${encodeURIComponent(code)}`, { credentials: 'omit' });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || !json.ok) {
+      const err = new Error(json.error || 'Verification is unavailable right now.');
+      err.code = json.code;
+      throw err;
+    }
+    return json;
+  }
+
+  // ── Developer Lab (api/admin.js, platform owner only) ───────────
+  async adminCall(action, body = {}) {
+    const res = await fetch(`${API_BASE}/api/admin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ action, ...body }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || !json.ok) {
+      const err = new Error(json.error || 'Request failed. Please try again.');
+      err.code = json.code;
+      err.status = res.status;
+      throw err;
+    }
+    return json;
   }
 
   getDocumentsForStudent(studentId) { return (this._db?.documents || []).filter(d => d.studentId === studentId); }

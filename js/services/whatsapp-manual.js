@@ -6,8 +6,8 @@
   'use strict';
 
   const DEFAULT_TEMPLATES = {
-    seat_assigned: `Hello {{student_name}}, your seat {{seat_number}} ({{room_name}}, {{branch_name}}) is booked for {{plan_name}} from {{start_date}} to {{end_date}}. Amount: ₹{{amount}}. Payment: {{payment_status}}.`,
-    payment_received: `Hello {{student_name}}, we have received your payment of ₹{{amount}} via {{payment_mode}} on {{date}} (Receipt: {{receipt_number}}). Balance due: ₹{{balance}}.`,
+    seat_assigned: `Hello {{student_name}}, your seat {{seat_number}} ({{room_name}}, {{branch_name}}) is booked for {{plan_name}} from {{start_date}} to {{end_date}}. Amount: ₹{{amount}}. Payment: {{payment_status}}.\n{{invoice_line}}`,
+    payment_received: `Hello {{student_name}}, we have received your payment of ₹{{amount}} via {{payment_mode}} on {{date}} (Receipt: {{receipt_number}}). Balance due: ₹{{balance}}.\n{{invoice_line}}`,
     payment_due: `Hello {{student_name}}, this is a friendly reminder that your library fee of ₹{{amount_due}} for seat {{seat_number}} is due by {{due_date}}.`,
     payment_overdue: `Hello {{student_name}}, your library payment of ₹{{amount_due}} for seat {{seat_number}} is overdue since {{due_date}}. Please clear your dues at your earliest convenience.`,
     membership_expiring: `Hello {{student_name}}, your {{plan_name}} membership for seat {{seat_number}} ends on {{end_date}} ({{days_left}} days left). Please renew to retain your seat.`,
@@ -194,6 +194,12 @@
       }
       return '';
     });
+
+    // The invoice/receipt line (number + verify link) is always included when available,
+    // even if the library's custom template predates it.
+    if (vars.invoice_line && !templateText.includes('invoice_line')) {
+      rendered = `${rendered.trim()}\n${String(vars.invoice_line)}`;
+    }
 
     let signature = settings.whatsappSignature;
     if (!signature && settings.orgName) {

@@ -7,6 +7,8 @@ const routes = {
   '/setup-library': () => import('./pages/auth.js').then(m => m.renderSetupLibraryPage),
   '/no-library': () => import('./pages/auth.js').then(m => m.renderSetupLibraryPage),
   '/billing': () => import('./pages/billing.js').then(m => m.renderBillingPage),
+  '/verify': () => import('./pages/verify.js').then(m => m.renderVerifyPage),
+  '/admin': () => import('./pages/admin.js').then(m => m.renderAdminPage),
   '/onboarding': () => import('./pages/auth.js').then(m => m.renderOnboardingPage),
   '/invite': () => import('./pages/auth.js').then(m => m.renderInvitePage),
   '/forgot-password': () => import('./pages/auth.js').then(m => m.renderForgotPasswordPage),
@@ -223,15 +225,17 @@ class App {
         { route: '/billing', label: 'Billing & Plan', icon: 'credit-card', ownerOnly: true },
         { route: '/activity', label: 'Activity Log', icon: 'activity' },
         { route: '/settings', label: 'Settings', icon: 'settings' },
+        { route: '/admin', label: 'Developer Lab', icon: 'tool', adminOnly: true },
       ]},
     ];
 
     const role = (store.currentUser && store.currentUser.role) || 'owner';
+    const isPlatformAdmin = Boolean(store.currentUser && store.currentUser.isPlatformAdmin);
     return navSections.map(section => `
       <div class="sidebar-section">
         <div class="sidebar-section-label">${section.label}</div>
         <div class="sidebar-nav-items">
-          ${section.items.filter(item => !item.ownerOnly || role === 'owner').map(item => `
+          ${section.items.filter(item => (!item.ownerOnly || role === 'owner') && (!item.adminOnly || isPlatformAdmin)).map(item => `
             <div class="nav-item" data-route="${item.route}" onclick="app.navigate('${item.route}')">
               <div class="nav-icon">${icons[item.icon] || ''}</div>
               <span class="nav-label">${item.label}</span>
@@ -257,9 +261,11 @@ class App {
 
     // ── Server Auth State Router Guard (AUTH-05, Plan §3.1) ──────────────
     const authState = store.authState; // 'anonymous' | 'no_library' | 'needs_library' | 'needs_onboarding' | 'ready'
-    const isAnonymousPath = ['/landing', '/login', '/signup', '/forgot-password'].includes(path) || path.startsWith('/invite');
+    const isAnonymousPath = ['/landing', '/login', '/signup', '/forgot-password', '/verify'].includes(path) || path.startsWith('/invite');
 
-    if (authState === 'anonymous') {
+    if (path === '/verify') {
+      // The public verify page is reachable in every auth state: no redirects
+    } else if (authState === 'anonymous') {
       if (!isAnonymousPath) {
         window.location.hash = '#/login';
         return;
@@ -286,7 +292,7 @@ class App {
     this._updateActiveNav(path);
     this.closeMobileSidebar();
 
-    const isAuthRoute = ['/landing', '/login', '/signup', '/forgot-password', '/setup-library', '/no-library', '/onboarding'].includes(path) || path.startsWith('/invite');
+    const isAuthRoute = ['/landing', '/login', '/signup', '/forgot-password', '/setup-library', '/no-library', '/onboarding', '/verify'].includes(path) || path.startsWith('/invite');
     const appEl = document.getElementById('app');
     if (appEl) {
       if (isAuthRoute) {

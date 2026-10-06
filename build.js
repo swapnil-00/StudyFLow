@@ -71,6 +71,15 @@ if (fs.existsSync(storeJsPath)) {
   bundleContent += `// ─── STORE & UTILS ───\n${storeContent}\n\n`;
 }
 
+// ─── 2b. VENDOR: QR codes for verifiable invoices (qrcode-generator, MIT) ───
+const qrLibPath = path.join(rootDir, 'node_modules', 'qrcode-generator', 'qrcode.js');
+if (fs.existsSync(qrLibPath)) {
+  const qrContent = fs.readFileSync(qrLibPath, 'utf8');
+  bundleContent += `// ─── VENDOR: qrcode-generator ───\n(function() {\n${qrContent}\nwindow.qrcode = qrcode;\n})();\n\n`;
+} else {
+  console.warn('qrcode-generator not installed; invoice QR codes will be skipped. Run npm install.');
+}
+
 // ─── 3. SERVICES ───
 for (const file of serviceFiles) {
   const filePath = path.join(servicesDir, file);

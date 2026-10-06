@@ -785,20 +785,22 @@ window.confirmAssignSeat = async function() {
     let receipt = null;
 
     if (window.invoiceGenerator && membership) {
-      invoice = invoiceGenerator.generateInvoice({
+      invoice = await invoiceGenerator.generateInvoice({
         membershipId: membership.id,
         studentId,
         seatId,
         paymentId: paymentRecord?.id
       });
       if (paymentRecord) {
-        receipt = invoiceGenerator.generateReceipt({
+        receipt = await invoiceGenerator.generateReceipt({
           paymentId: paymentRecord.id,
           studentId,
           membershipId: membership.id
         });
       }
     }
+    // Invoice number + verify link for the WhatsApp message (server-issued, tamper-evident)
+    const invoiceLine = invoice?.verifyUrl ? `Invoice ${invoice.documentNumber} · Verify: ${invoice.verifyUrl}` : '';
 
     modal.close();
     drawer.close();
@@ -890,7 +892,8 @@ window.confirmAssignSeat = async function() {
               start_date: formattedStartDate,
               end_date: formattedEndDate,
               amount: finalAmount.toLocaleString('en-IN'),
-              payment_status: payStatusDisplay
+              payment_status: payStatusDisplay,
+              invoice_line: invoiceLine
             }
           });
         }
@@ -1217,7 +1220,7 @@ window.confirmPayment = async function(membershipId, studentId) {
     // Generate receipt document
     let receiptDoc = null;
     if (window.invoiceGenerator) {
-      receiptDoc = window.invoiceGenerator.generateReceipt({
+      receiptDoc = await window.invoiceGenerator.generateReceipt({
         paymentId: payment.id,
         membershipId,
         studentId,
@@ -1227,6 +1230,7 @@ window.confirmPayment = async function(membershipId, studentId) {
         notes
       });
     }
+    const receiptLine = receiptDoc?.verifyUrl ? `Receipt ${receiptDoc.documentNumber} · Verify: ${receiptDoc.verifyUrl}` : '';
 
     const pendingAfter = store.getPendingAmount(membershipId);
     const receiptNum = receiptDoc?.documentNumber || payment.receiptNumber || 'REC';
@@ -1300,7 +1304,8 @@ window.confirmPayment = async function(membershipId, studentId) {
               payment_mode: method,
               date: formattedDate,
               receipt_number: receiptNum,
-              balance: pendingAfter.toLocaleString('en-IN')
+              balance: pendingAfter.toLocaleString('en-IN'),
+              invoice_line: receiptLine
             }
           });
         }
@@ -1451,7 +1456,7 @@ window.confirmRenew = async function(studentId, seatId) {
     let renewInvoiceDoc = null;
     let renewReceiptDoc = null;
     if (window.invoiceGenerator && newMem) {
-      renewInvoiceDoc = window.invoiceGenerator.generateInvoice({
+      renewInvoiceDoc = await window.invoiceGenerator.generateInvoice({
         membershipId: newMem.id,
         studentId,
         seatId: assignment?.seatId || seatId,
@@ -1460,7 +1465,7 @@ window.confirmRenew = async function(studentId, seatId) {
         discount
       });
       if (renewPayment) {
-        renewReceiptDoc = window.invoiceGenerator.generateReceipt({
+        renewReceiptDoc = await window.invoiceGenerator.generateReceipt({
           paymentId: renewPayment.id,
           membershipId: newMem.id,
           studentId,

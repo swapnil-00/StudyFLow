@@ -558,7 +558,7 @@ export function renderPayments(container) {
         // Generate receipt document
         let receiptDoc = null;
         if (window.invoiceGenerator) {
-          receiptDoc = window.invoiceGenerator.generateReceipt({
+          receiptDoc = await window.invoiceGenerator.generateReceipt({
             paymentId: payment.id,
             membershipId,
             studentId,
@@ -568,6 +568,7 @@ export function renderPayments(container) {
             notes
           });
         }
+        const receiptLine = receiptDoc?.verifyUrl ? `Receipt ${receiptDoc.documentNumber} · Verify: ${receiptDoc.verifyUrl}` : '';
 
         const pendingAfter = membershipId ? store.getPendingAmount(membershipId) : 0;
         const formattedDate = utils.formatDate(date, { day: '2-digit', month: 'short', year: 'numeric' });
@@ -635,7 +636,8 @@ export function renderPayments(container) {
                 payment_mode: mode.toUpperCase(),
                 date: formattedDate,
                 receipt_number: receiptNum,
-                balance: pendingAfter.toLocaleString('en-IN')
+                balance: pendingAfter.toLocaleString('en-IN'),
+                invoice_line: receiptLine
               }
             });
           }
@@ -694,14 +696,14 @@ export function renderPayments(container) {
     });
   }
 
-  function previewReceipt(paymentId, receiptNumber, studentId) {
+  async function previewReceipt(paymentId, receiptNumber, studentId) {
     const docs = (store.getDocuments ? store.getDocuments() : []);
     let doc = docs.find(d => d.entityId === paymentId || d.documentNumber === receiptNumber || d.paymentId === paymentId);
 
     if (!doc && window.invoiceGenerator) {
       const payment = store.getAllPayments().find(p => p.id === paymentId || p.receiptNumber === receiptNumber);
       if (payment) {
-        doc = window.invoiceGenerator.generateReceipt({
+        doc = await window.invoiceGenerator.generateReceipt({
           paymentId: payment.id,
           membershipId: payment.membershipId,
           studentId: payment.studentId,

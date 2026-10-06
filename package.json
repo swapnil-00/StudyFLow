@@ -15,7 +15,8 @@
   "dependencies": {
     "dotenv": "^16.4.7",
     "jose": "^5.9.0",
-    "pg": "^8.13.3"
+    "pg": "^8.13.3",
+    "qrcode-generator": "^1.5.2"
   },
   "keywords": [
     "library-management",

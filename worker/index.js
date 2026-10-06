@@ -19,6 +19,8 @@ const writeHandler = require('../api/write');
 const reportsHandler = require('../api/reports');
 const billingHandler = require('../api/billing');
 const webhooksHandler = require('../api/webhooks');
+const verifyHandler = require('../api/verify');
+const adminHandler = require('../api/admin');
 const { runScheduledJobs } = require('../lib/jobs');
 
 // ── Security headers (shared module with build.js) ─────────────────────────
@@ -151,6 +153,8 @@ const API_HANDLERS = {
   reports: reportsHandler,
   billing: billingHandler,
   webhooks: webhooksHandler,
+  verify: verifyHandler,
+  admin: adminHandler,
 };
 
 /**
