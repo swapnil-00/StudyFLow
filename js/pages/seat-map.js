@@ -1542,6 +1542,8 @@ window.confirmRenew = async function(studentId, seatId) {
             variables: {
               student_name: student?.name || 'Student',
               seat_number: seatLabel,
+              plan_name: plan?.name || 'Membership',
+              start_date: utils.formatDate(startDate, { day: '2-digit', month: 'short', year: 'numeric' }),
               end_date: formattedEndDate,
               amount: finalAmount.toLocaleString('en-IN'),
               invoice_line: renewInvoiceDoc?.verifyUrl ? `Invoice ${renewInvoiceDoc.documentNumber} · Verify: ${renewInvoiceDoc.verifyUrl}` : ''

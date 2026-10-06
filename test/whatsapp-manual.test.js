@@ -75,9 +75,60 @@ describe('whatsappManual.renderMessage', () => {
     });
 
     assert.ok(rendered.includes('Hello Amit Patel'));
-    assert.ok(rendered.includes('seat B-07 (Quiet Hall, StudyFlow Apex)'));
-    assert.ok(rendered.includes('Amount: ₹1,800'));
+    assert.ok(rendered.includes('Seat: B-07 (Quiet Hall, StudyFlow Apex)'));
+    assert.ok(rendered.includes('Validity: 01 Oct 2026 to 31 Oct 2026'));
+    assert.ok(rendered.includes('Amount: ₹1,800 (Paid)'));
     assert.ok(rendered.includes('— Apex Reading Lounge, 9876543210'));
+  });
+
+  test('every default template renders without leftover placeholders, blank gaps or "undefined"', () => {
+    const vars = {
+      student_name: 'Amit Patel', seat_number: 'B-07', room_name: 'Quiet Hall', branch_name: 'Main Branch', plan_name: 'Monthly',
+      start_date: '01 Oct 2026', end_date: '31 Oct 2026', amount: '1,800', amount_due: '1,800', due_date: '03 Oct 2026', days_left: 3,
+      payment_status: 'Paid', payment_mode: 'upi', date: '01 Oct 2026', receipt_number: 'REC-2026-000004', balance: '0',
+      from_seat: 'A1', to_seat: 'B2', message: 'Library closed on Sunday.',
+    };
+    for (const key of Object.keys(whatsappManual.DEFAULT_TEMPLATES)) {
+      const out = whatsappManual.renderMessage(key, vars, { orgName: 'Sharma Library', phone: '9876543210' });
+      assert.ok(!/\{\{/.test(out), `${key}: unfilled placeholder in\n${out}`);
+      assert.ok(!/undefined|null/.test(out), `${key}: undefined/null in output`);
+      assert.ok(!/\n{3,}/.test(out), `${key}: triple blank line`);
+      assert.ok(out.endsWith('— Sharma Library, 9876543210'), `${key}: signature missing`);
+      if (key !== 'custom') assert.ok(out.startsWith('Hello Amit Patel,'), `${key}: greeting`);
+    }
+  });
+
+  test('derives the library name, payment mode label, balance note and days-left wording', () => {
+    const paid = whatsappManual.renderMessage('payment_received', {
+      student_name: 'Priya', amount: 1200, payment_mode: 'bank_transfer', date: '06 Oct 2026', receipt_number: 'REC-2026-000009', balance: 0,
+    }, { orgName: 'TN Library' });
+    assert.ok(paid.includes('at TN Library'));
+    assert.ok(paid.includes('Amount: ₹1,200'));
+    assert.ok(paid.includes('Mode: Bank transfer'));
+    assert.ok(paid.includes('No balance due. Your account is fully paid.'));
+    assert.ok(!paid.includes('Balance due: ₹0'));
+
+    const partial = whatsappManual.renderMessage('payment_received', { student_name: 'Priya', amount: '500', payment_mode: 'UPI', date: 'x', receipt_number: 'y', balance: '700' }, { orgName: 'TN Library' });
+    assert.ok(partial.includes('Balance due: ₹700'));
+
+    const today = whatsappManual.renderMessage('membership_expiring', { student_name: 'Priya', plan_name: 'Monthly', seat_number: '3', end_date: '06 Oct 2026', days_left: 0 }, { orgName: 'TN Library' });
+    assert.ok(today.includes('ends today (06 Oct 2026)'));
+    const soon = whatsappManual.renderMessage('membership_expiring', { student_name: 'Priya', plan_name: 'Monthly', seat_number: '3', end_date: '09 Oct 2026', days_left: '3' }, { orgName: 'TN Library' });
+    assert.ok(soon.includes('ends in 3 days (09 Oct 2026)'));
+  });
+
+  test('the invoice line sits inside the message and an empty one leaves no gap', () => {
+    const withLine = whatsappManual.renderMessage('seat_assigned', {
+      student_name: 'Amit', seat_number: '1', room_name: 'Main Hall', branch_name: 'Main Branch', plan_name: 'Monthly',
+      start_date: '06 Oct 2026', end_date: '05 Nov 2026', amount: '500', payment_status: 'Paid',
+      invoice_line: 'Invoice INV-2026-000001 · Verify: https://example.test/#/verify?n=INV-2026-000001&c=AAAA-BBBB-CCCC',
+    }, { orgName: 'TN Library' });
+    assert.ok(withLine.includes('Amount: ₹500 (Paid)\nInvoice INV-2026-000001 · Verify: https://example.test/#/verify?n=INV-2026-000001&c=AAAA-BBBB-CCCC\n\nPlease keep this message'), withLine);
+    const without = whatsappManual.renderMessage('seat_assigned', {
+      student_name: 'Amit', seat_number: '1', room_name: 'Main Hall', branch_name: 'Main Branch', plan_name: 'Monthly',
+      start_date: '06 Oct 2026', end_date: '05 Nov 2026', amount: '500', payment_status: 'Paid',
+    }, { orgName: 'TN Library' });
+    assert.ok(without.includes('Amount: ₹500 (Paid)\n\nPlease keep this message'), without);
   });
 
   test('handles missing variables gracefully without undefined', () => {

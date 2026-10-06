@@ -736,7 +736,8 @@ export function renderPayments(container) {
           student_name: student.name,
           amount_due: dueAmount.toLocaleString('en-IN'),
           seat_number: seat?.label || seat?.number || 'your seat',
-          due_date: utils.formatDate(membership?.endDate || utils.today(), { day: '2-digit', month: 'short', year: 'numeric' })
+          // the fee is due on the membership's due date, not when the membership ends
+          due_date: utils.formatDate(membership?.dueDate || membership?.due_date || membership?.startDate || utils.today(), { day: '2-digit', month: 'short', year: 'numeric' })
         }
       });
     } else {

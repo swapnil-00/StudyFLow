@@ -5,17 +5,119 @@
 (function() {
   'use strict';
 
+  // Multi-line, one fact per line, so the student can read it at a glance on a phone.
+  // {{library_name}} is the library's name from Settings; {{branch_name}} the branch.
+  // {{invoice_line}}, {{balance_note}} and {{days_left_text}} are filled in by renderMessage().
   const DEFAULT_TEMPLATES = {
-    seat_assigned: `Hello {{student_name}}, your seat {{seat_number}} ({{room_name}}, {{branch_name}}) is booked for {{plan_name}} from {{start_date}} to {{end_date}}. Amount: ₹{{amount}}. Payment: {{payment_status}}.\n{{invoice_line}}`,
-    payment_received: `Hello {{student_name}}, we have received your payment of ₹{{amount}} via {{payment_mode}} on {{date}} (Receipt: {{receipt_number}}). Balance due: ₹{{balance}}.\n{{invoice_line}}`,
-    payment_due: `Hello {{student_name}}, this is a friendly reminder that your library fee of ₹{{amount_due}} for seat {{seat_number}} is due by {{due_date}}.`,
-    payment_overdue: `Hello {{student_name}}, your library payment of ₹{{amount_due}} for seat {{seat_number}} is overdue since {{due_date}}. Please clear your dues at your earliest convenience.`,
-    membership_expiring: `Hello {{student_name}}, your {{plan_name}} membership for seat {{seat_number}} ends on {{end_date}} ({{days_left}} days left). Please renew to retain your seat.`,
-    membership_renewed: `Hello {{student_name}}, your membership for seat {{seat_number}} has been renewed until {{end_date}}. Amount: ₹{{amount}}.`,
-    seat_transferred: `Hello {{student_name}}, your seat has been transferred from seat {{from_seat}} to {{to_seat}} ({{room_name}}, {{branch_name}}).`,
-    welcome: `Hello {{student_name}}, welcome to {{branch_name}}! Your registration is complete.`,
+    seat_assigned: `Hello {{student_name}},
+
+Your seat at {{library_name}} is confirmed.
+
+Seat: {{seat_number}} ({{room_name}}, {{branch_name}})
+Plan: {{plan_name}}
+Validity: {{start_date}} to {{end_date}}
+Amount: ₹{{amount}} ({{payment_status}})
+{{invoice_line}}
+
+Please keep this message for your records. We look forward to seeing you!`,
+
+    payment_received: `Hello {{student_name}},
+
+Thank you! We have received your payment at {{library_name}}.
+
+Amount: ₹{{amount}}
+Mode: {{payment_mode}}
+Date: {{date}}
+Receipt: {{receipt_number}}
+{{balance_note}}
+{{invoice_line}}`,
+
+    payment_due: `Hello {{student_name}},
+
+A friendly reminder from {{library_name}}: your library fee of ₹{{amount_due}} for seat {{seat_number}} is due by {{due_date}}.
+
+You can pay at the front desk or by UPI. If you have already paid, please ignore this message.`,
+
+    payment_overdue: `Hello {{student_name}},
+
+Your library fee of ₹{{amount_due}} for seat {{seat_number}} at {{library_name}} was due on {{due_date}} and is still pending.
+
+Please clear it at the earliest to keep your seat. If you have already paid, kindly share the payment details with us.`,
+
+    membership_expiring: `Hello {{student_name}},
+
+Your {{plan_name}} membership for seat {{seat_number}} at {{library_name}} ends {{days_left_text}} ({{end_date}}).
+
+Please renew before then to keep your seat. Visit the front desk or reply to this message to renew.`,
+
+    membership_renewed: `Hello {{student_name}},
+
+Your membership at {{library_name}} has been renewed. Thank you for continuing with us!
+
+Seat: {{seat_number}}
+Plan: {{plan_name}}
+Validity: {{start_date}} to {{end_date}}
+Amount: ₹{{amount}}
+{{invoice_line}}`,
+
+    seat_transferred: `Hello {{student_name}},
+
+Your seat at {{library_name}} has been changed.
+
+Previous seat: {{from_seat}}
+New seat: {{to_seat}} ({{room_name}}, {{branch_name}})
+
+Everything else about your membership stays the same.`,
+
+    welcome: `Hello {{student_name}},
+
+Welcome to {{library_name}}! Your registration is complete.
+
+Please save this number: fee reminders, receipts and important updates will come from here. For any help, reply to this message or visit the front desk.`,
+
     custom: `{{message}}`
   };
+
+  const PAYMENT_MODE_LABELS = {
+    upi: 'UPI', cash: 'Cash', card: 'Card', bank_transfer: 'Bank transfer', bank: 'Bank transfer',
+    netbanking: 'Net banking', cheque: 'Cheque', wallet: 'Wallet', other: 'Other'
+  };
+
+  function formatAmountValue(v) {
+    if (v === undefined || v === null || v === '') return v;
+    if (typeof v === 'number') return Number.isFinite(v) ? v.toLocaleString('en-IN') : '';
+    const s = String(v).trim();
+    return /^\d+(\.\d+)?$/.test(s) ? Number(s).toLocaleString('en-IN') : s;
+  }
+
+  function daysLeftText(daysLeft) {
+    const n = Number(daysLeft);
+    if (!Number.isFinite(n)) return '';
+    if (n === 0) return 'today';
+    if (n === 1) return 'tomorrow';
+    if (n > 1) return `in ${n} days`;
+    return n === -1 ? 'yesterday' : `${-n} days ago`;
+  }
+
+  /** Values every template may use, derived from what the page passed and from Settings. */
+  function deriveVariables(variables, settings) {
+    const vars = { ...variables };
+    const activeBranch = (typeof store !== 'undefined' && store.getBranch && store.getActiveBranchId) ? store.getBranch(store.getActiveBranchId()) : null;
+    vars.library_name = vars.library_name || settings.orgName || vars.branch_name || activeBranch?.name || 'our library';
+    vars.branch_name = vars.branch_name || activeBranch?.name || vars.library_name;
+    for (const k of ['amount', 'amount_due', 'balance']) vars[k] = formatAmountValue(vars[k]);
+    if (vars.payment_mode !== undefined && vars.payment_mode !== null) {
+      const key = String(vars.payment_mode).toLowerCase().replace(/\s+/g, '_');
+      vars.payment_mode = PAYMENT_MODE_LABELS[key] || String(vars.payment_mode);
+    }
+    if (vars.balance_note === undefined && vars.balance !== undefined) {
+      const due = Number(String(vars.balance).replace(/[^0-9.]/g, ''));
+      vars.balance_note = due > 0 ? `Balance due: ₹${vars.balance}` : 'No balance due. Your account is fully paid.';
+    }
+    if (vars.days_left_text === undefined && vars.days_left !== undefined) vars.days_left_text = daysLeftText(vars.days_left);
+    if (vars.invoice_line === undefined) vars.invoice_line = '';
+    return vars;
+  }
 
   const TEMPLATE_NAMES = {
     seat_assigned: 'Seat Assignment Confirmation',
@@ -187,19 +289,28 @@
     const customTemplates = settings.whatsappTemplates || {};
     let templateText = customTemplates[templateKey] || DEFAULT_TEMPLATES[templateKey] || DEFAULT_TEMPLATES.custom;
 
-    const vars = { ...variables };
+    const vars = deriveVariables(variables, settings);
+    // An empty value leaves a marker so a line that held only that placeholder can be dropped
+    const EMPTY = '\u0000';
     let rendered = templateText.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, key) => {
-      if (vars[key] !== undefined && vars[key] !== null) {
+      if (vars[key] !== undefined && vars[key] !== null && String(vars[key]) !== '') {
         return String(vars[key]);
       }
-      return '';
+      return EMPTY;
     });
+    rendered = rendered.split('\n')
+      .filter(line => line.replace(/\u0000/g, '').trim() !== '' || !line.includes(EMPTY))
+      .map(line => line.replace(/\u0000/g, ''))
+      .join('\n');
 
     // The invoice/receipt line (number + verify link) is always included when available,
     // even if the library's custom template predates it.
     if (vars.invoice_line && !templateText.includes('invoice_line')) {
       rendered = `${rendered.trim()}\n${String(vars.invoice_line)}`;
     }
+
+    // Tidy up: no trailing spaces, no blank lines left by empty placeholders
+    rendered = rendered.split('\n').map(l => l.replace(/[ \t]+$/g, '')).join('\n').replace(/\n{3,}/g, '\n\n');
 
     let signature = settings.whatsappSignature;
     if (!signature && settings.orgName) {
