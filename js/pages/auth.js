@@ -4,6 +4,9 @@
 export function renderLoginPage() {
   const container = document.createElement('div');
   container.className = 'auth-page-container';
+  // Google-only is the default, so the password form never flashes on screen. It is shown
+  // only when the server reports email + password sign-in as enabled.
+  const pwdEnabled = Boolean(typeof store !== 'undefined' && store.authMethods && store.authMethods.password === true);
   container.innerHTML = `
     <div class="auth-card">
       <div class="auth-header">
@@ -27,12 +30,16 @@ export function renderLoginPage() {
         </button>
       </div>
 
-      <div class="auth-divider">
+      <p class="auth-google-only-note" style="text-align:center;font-size:13px;color:var(--color-text-secondary);margin-top:16px;line-height:1.5;${pwdEnabled ? 'display:none;' : ''}">
+        StudyFlow uses your Google account to sign in securely.
+      </p>
+
+      <div class="auth-divider" style="${pwdEnabled ? '' : 'display:none;'}">
         <span>or use email</span>
       </div>
 
-      <!-- Email + password sign in -->
-      <form id="email-login-form" class="auth-form" novalidate onsubmit="event.preventDefault();">
+      <!-- Email + password sign in (only when enabled on the server) -->
+      <form id="email-login-form" class="auth-form" novalidate onsubmit="event.preventDefault();" style="${pwdEnabled ? '' : 'display:none;'}">
         <div class="form-group">
           <label class="form-label" for="login-email">Email address</label>
           <input type="email" id="login-email" class="input" required placeholder="name@yourlibrary.com" autocomplete="username email" autocapitalize="off" spellcheck="false" />
@@ -335,12 +342,16 @@ export function renderOnboardingPage() {
 }
 
 export function renderForgotPasswordPage(_container, params = {}) {
-  // If passwords are disabled, redirect to login page immediately
-  getClientConfig().then((config) => {
-    if (config?.authMethods?.password === false) {
-      window.location.hash = '#/login';
-    }
-  }).catch(() => {});
+  // Passwords off (the default): go straight to sign-in, without drawing the reset form first
+  if (!(typeof store !== 'undefined' && store.authMethods && store.authMethods.password === true)) {
+    window.location.hash = '#/login';
+    const placeholder = document.createElement('div');
+    placeholder.className = 'auth-page-container';
+    getClientConfig().then((config) => {
+      if (config?.authMethods?.password === true) window.location.hash = '#/forgot-password';
+    }).catch(() => {});
+    return placeholder;
+  }
 
   const isSetMode = params.mode === 'set';
   const prefillEmail = String(params.email || '');
@@ -883,21 +894,13 @@ function setupLoginEvents(container) {
   const divider = container.querySelector('.auth-divider');
   const submitBtn = container.querySelector('#btn-email-submit');
 
-  // Adapt UI if password authentication is switched off
+  // The page starts Google-only; reveal email + password only if the server enables it
   getClientConfig().then((config) => {
-    if (config?.authMethods?.password === false) {
-      if (form) form.style.display = 'none';
-      if (divider) divider.style.display = 'none';
-      let note = container.querySelector('.auth-google-only-note');
-      if (!note) {
-        note = document.createElement('p');
-        note.className = 'auth-google-only-note';
-        note.style.cssText = 'text-align:center;font-size:13px;color:var(--color-text-secondary);margin-top:16px;line-height:1.5;';
-        note.textContent = 'StudyFlow uses your Google account to sign in securely.';
-        const identityBtns = container.querySelector('.auth-identity-buttons');
-        if (identityBtns) identityBtns.insertAdjacentElement('afterend', note);
-      }
-    }
+    const enabled = config?.authMethods?.password === true;
+    if (form) form.style.display = enabled ? '' : 'none';
+    if (divider) divider.style.display = enabled ? '' : 'none';
+    const note = container.querySelector('.auth-google-only-note');
+    if (note) note.style.display = enabled ? 'none' : '';
   }).catch(() => {});
 
   // Password visibility toggle
