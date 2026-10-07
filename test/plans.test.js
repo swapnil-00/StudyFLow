@@ -21,8 +21,19 @@ describe('Plan pricing (lib/plans.js)', () => {
     }
   });
 
-  test('Custom seats must be whole blocks of 100 within range; 100 is the Basic plan', () => {
-    for (const bad of [100, 150, 250, 0, -100, 6000, 'abc', 1.5, undefined]) {
+  test('Custom accepts any whole number of seats above Basic, at the same per-seat rate', () => {
+    const expected = { 101: 5050, 150: 7500, 250: 12500, 333: 16650, 5000: 250000 };
+    for (const [seats, price] of Object.entries(expected)) {
+      const q = plans.quotePlan({ plan: 'custom', seats: Number(seats) });
+      assert.equal(q.ok, true, `seats ${seats}: ${q.error}`);
+      assert.equal(q.total, price, `seats ${seats}`);
+    }
+    assert.equal(plans.quotePlan({ plan: 'custom', seats: '150' }).total, 7500, 'numeric strings from an input box work');
+    assert.equal(plans.publicPricing().custom.pricePerSeat, 50);
+  });
+
+  test('Custom rejects 100 or fewer (that is Basic), more than 5,000, and non-whole numbers', () => {
+    for (const bad of [100, 50, 0, -100, 6000, 'abc', 1.5, undefined, '', null]) {
       const q = plans.quotePlan({ plan: 'custom', seats: bad });
       assert.equal(q.ok, false, `seats ${bad} must be rejected`);
       assert.ok(q.error, 'has an error message');

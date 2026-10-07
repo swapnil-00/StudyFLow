@@ -551,28 +551,26 @@ function renderSeatActions(status, seat, student, membership) {
 
 // ── Seat Actions ──────────────────────────────────────────────────
 window.setSeatMaintenance = function(seatId) {
-  confirmDialog('Mark as Maintenance', 'Are you sure you want to mark this seat as under maintenance? It will be unavailable for assignment.', () => {
+  confirmDialog('Mark as Maintenance', 'Are you sure you want to mark this seat as under maintenance? It will be unavailable for assignment.', async () => {
     try {
-      store.updateSeat(seatId, { status: 'maintenance' });
-      store.addActivity({ action: 'seat_maintenance', entity: 'seat', entityId: seatId, description: `Seat marked for maintenance` });
+      await store.setSeatStatus(seatId, 'maintenance');
       drawer.close();
       toast.show('Seat marked as maintenance', 'success');
       app._navigate();
     } catch (e) {
-      toast.show(e.message, 'error');
+      toast.show(e.message || 'Could not update the seat.', 'error', 6000);
     }
   });
 };
 
-window.releaseMaintenance = function(seatId) {
+window.releaseMaintenance = async function(seatId) {
   try {
-    store.updateSeat(seatId, { status: 'available' });
-    store.addActivity({ action: 'seat_available', entity: 'seat', entityId: seatId, description: `Seat marked available` });
+    await store.setSeatStatus(seatId, 'available');
     drawer.close();
     toast.show('Seat is now available', 'success');
     app._navigate();
   } catch (e) {
-    toast.show(e.message, 'error');
+    toast.show(e.message || 'Could not update the seat.', 'error', 6000);
   }
 };
 

@@ -131,7 +131,7 @@ describe('Transitions (SQL shape and guards)', () => {
     assert.equal(s.seatLimit, 300);
     assert.match(calls[0].sql, /is_demo IS NOT TRUE/);
     assert.deepEqual(calls[0].params, ['ORG-1', 'custom', 300]);
-    await assert.rejects(() => sub.applyPlanPurchase('ORG-1', { plan: 'custom', seats: 150 }, exec), (e) => e.code === 'INVALID_SEATS');
+    await assert.rejects(() => sub.applyPlanPurchase('ORG-1', { plan: 'custom', seats: 50 }, exec), (e) => e.code === 'INVALID_SEATS');
     await assert.rejects(() => sub.applyPlanPurchase('ORG-1', { plan: 'free' }, exec), (e) => e.code === 'INVALID_PLAN');
   });
 

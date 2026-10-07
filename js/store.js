@@ -530,6 +530,16 @@ class Store {
     return seat;
   }
 
+  /** Maintenance / blocked / available, saved on the server (refused for an occupied seat). */
+  async setSeatStatus(id, status) {
+    const idx = this._db.seats.findIndex(s => s.id === id);
+    if (idx === -1) throw new Error('Seat not found');
+    await apiWrite('seats', 'set_status', { status }, id);
+    this._db.seats[idx] = { ...this._db.seats[idx], status, currentStudentId: null, updatedAt: now() };
+    this._notify();
+    return this._db.seats[idx];
+  }
+
   async updateSeat(id, updates) {
     const idx = this._db.seats.findIndex(s => s.id === id);
     if (idx === -1) throw new Error('Seat not found');
@@ -655,6 +665,11 @@ class Store {
       else updates.whatsapp_opt_out_at = now();
     }
 
+    // Optimistic update, rolled back if the server refuses, so the screen never shows a
+    // change that was not saved.
+    const before = { ...this._db.students[idx] };
+    const beforeAssignments = Array.isArray(this._db.seatAssignments) ? this._db.seatAssignments.map(a => ({ ...a })) : null;
+    const beforeSeats = Array.isArray(this._db.seats) ? this._db.seats.map(s => ({ ...s })) : null;
     this._db.students[idx] = { ...this._db.students[idx], ...updates, updatedAt: now() };
     if (updates.status === 'inactive' && Array.isArray(this._db.seatAssignments)) {
       this._db.seatAssignments.forEach(a => {
@@ -668,7 +683,15 @@ class Store {
         }
       });
     }
-    await apiWrite('students', 'update', updates, id);
+    try {
+      await apiWrite('students', 'update', updates, id);
+    } catch (err) {
+      this._db.students[idx] = before;
+      if (beforeAssignments) this._db.seatAssignments = beforeAssignments;
+      if (beforeSeats) this._db.seats = beforeSeats;
+      this._notify();
+      throw err;
+    }
     this._notify();
     return this._db.students[idx];
   }

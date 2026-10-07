@@ -239,21 +239,23 @@ export function renderLayoutEditor(container, params = {}) {
           await store.batchUpdateSeatPositions(updates);
         }
 
-        // 3. Add any newly drawn seats
-        for (const newS of addedSeats) {
+        // 3. Add any newly drawn seats in ONE request: the plan's seat limit is checked once,
+        //    so a refusal shows a single upgrade prompt instead of one per seat.
+        if (addedSeats.length > 0) {
           try {
-            await store.addSeat({
+            await store.batchInsertSeats(addedSeats.map(newS => ({
               roomId: room.id,
               branchId: store.getActiveBranchId(),
               label: newS.label,
               number: newS.label,
+              seatNumber: newS.label,
               status: 'available',
               position: { x: newS.x, y: newS.y },
-              position_x: newS.x,
-              position_y: newS.y
-            });
+              x: newS.x,
+              y: newS.y
+            })));
           } catch (err) {
-            console.error('Add seat from draw.io error:', err);
+            if (err.code !== 'SEAT_LIMIT_REACHED') toast.show(err.message || 'Could not add the new seats.', 'error');
           }
         }
 
@@ -369,7 +371,8 @@ export function renderLayoutEditor(container, params = {}) {
       if (countEl) countEl.textContent = `${updatedSeats.length} seats`;
       toast.show(`Seat "${label}" added to sheet!`, 'success');
     } catch (e) {
-      toast.show('Failed to add seat: ' + e.message, 'error');
+      // A seat-limit refusal already showed the upgrade prompt
+      if (e.code !== 'SEAT_LIMIT_REACHED') toast.show('Failed to add seat: ' + e.message, 'error');
     }
   };
 
@@ -391,21 +394,47 @@ export function renderLayoutEditor(container, params = {}) {
     if (!startNumInput) return;
     const startNum = parseInt(startNumInput.trim(), 10) || 1;
 
+    const newSeats = [];
     for (let i = 0; i < count; i++) {
       const label = String(startNum + i);
       if (currentSeats.some(s => s.label === label || s.number === label)) continue;
-      try {
-        await store.addSeat({
-          roomId: rId,
-          branchId: store.getActiveBranchId(),
-          label,
-          number: label,
-          status: 'available',
-          position: { x: 80 + i * 76, y: 120 },
-          position_x: 80 + i * 76,
-          position_y: 120
-        });
-      } catch (_) {}
+      newSeats.push({
+        roomId: rId,
+        branchId: store.getActiveBranchId(),
+        label,
+        number: label,
+        seatNumber: label,
+        status: 'available',
+        position: { x: 80 + i * 76, y: 120 },
+        x: 80 + i * 76,
+        y: 120
+      });
+    }
+    if (newSeats.length === 0) { toast.show('Those seat numbers already exist in this room.', 'info'); return; }
+
+    // One request for the whole row: the plan's seat limit is checked once, one prompt at most
+    const org = store.organization || {};
+    const seatLimit = Number(org.seatLimit || org.seat_limit) || 0;
+    const room = seatLimit > 0 ? seatLimit - store.getSeats().length : newSeats.length;
+    if (seatLimit > 0 && room <= 0) {
+      app.showSeatLimitPrompt(null, { seatLimit, seatsUsed: store.getSeats().length, requested: newSeats.length });
+      return;
+    }
+    let toAdd = newSeats;
+    if (seatLimit > 0 && newSeats.length > room) {
+      const ok = await modal.confirm({
+        title: 'Not enough seats in your plan',
+        message: `Your plan allows ${seatLimit} seats and ${store.getSeats().length} are in use, so only ${room} more can be added. Add ${room} seat${room === 1 ? '' : 's'} now?`,
+        confirmText: `Add ${room}`, cancelText: 'Cancel', type: 'warning'
+      });
+      if (!ok) return;
+      toAdd = newSeats.slice(0, room);
+    }
+    try {
+      await store.batchInsertSeats(toAdd);
+    } catch (err) {
+      if (err.code !== 'SEAT_LIMIT_REACHED') toast.show(err.message || 'Could not add the row.', 'error');
+      return;
     }
 
     const updatedSeats = store.getSeats(rId);
@@ -415,6 +444,6 @@ export function renderLayoutEditor(container, params = {}) {
     }
     const countEl = document.getElementById('full-editor-seat-count');
     if (countEl) countEl.textContent = `${updatedSeats.length} seats`;
-    toast.show(`Added row of seats to sheet!`, 'success');
+    toast.show(`Added ${toAdd.length} seat${toAdd.length === 1 ? '' : 's'} to the room.`, 'success');
   };
 }

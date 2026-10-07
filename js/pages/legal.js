@@ -186,7 +186,7 @@ export function renderContactPage(container) {
       '<span>Address: <span data-legal="address"></span></span>',
     ])}
     ${h2('Support hours')}
-    ${p('Monday to Saturday, 10:00 to 19:00 IST. For a product demo, write to us with your library\'s name and city.')}
+    ${p('Monday to Saturday, 10:00 to 19:00 IST.')}
     ${h2('Policies')}
     ${p('<a href="#/terms">Terms of Service</a> · <a href="#/privacy">Privacy Policy</a> · <a href="#/refund">Refund & Cancellation Policy</a>')}
   `;

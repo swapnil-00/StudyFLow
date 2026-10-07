@@ -386,6 +386,33 @@ module.exports = withHandler(async function handler(req, res) {
       return res.json(result);
     }
 
+    // Maintenance / blocked / available. The only way to change a seat's status by hand;
+    // an occupied seat cannot be taken out of service or marked free here (SEC-016).
+    if (action === 'set_status') {
+      const status = String(data?.status || '').toLowerCase();
+      if (!['available', 'maintenance', 'blocked'].includes(status)) {
+        throw new HttpError(400, 'VALIDATION_ERROR', 'Status must be available, maintenance or blocked.');
+      }
+      const result = await withTransaction(async client => {
+        const seatRes = await client.query('SELECT id, status, seat_number FROM seats WHERE id = $1 AND organization_id = $2 FOR UPDATE', [id, orgId]);
+        if (seatRes.rows.length === 0) throw new HttpError(404, 'SEAT_NOT_FOUND', 'Seat not found.');
+        const occupied = await client.query(
+          `SELECT 1 FROM seat_assignments WHERE seat_id = $1 AND organization_id = $2 AND status = 'active' LIMIT 1`,
+          [id, orgId]
+        );
+        if (occupied.rows.length > 0) {
+          throw new HttpError(409, 'SEAT_OCCUPIED', `Seat ${seatRes.rows[0].seat_number} has a student. Release or move the student first.`);
+        }
+        await client.query(
+          `UPDATE seats SET status = $1, current_student_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND organization_id = $3`,
+          [status, id, orgId]
+        );
+        await audit(client, session, `seat.${status}`, 'seats', id, { from: seatRes.rows[0].status, to: status });
+        return { ok: true, id, status };
+      });
+      return res.json(result);
+    }
+
     if (action === 'update') {
       const s = data;
       const result = await withTransaction(async client => {
@@ -435,11 +462,11 @@ module.exports = withHandler(async function handler(req, res) {
         const avatarColor = avatarColors[Math.floor(Math.random() * avatarColors.length)];
 
         await client.query(
-          `INSERT INTO students (id,organization_id,name,email,phone,emergency_contact,avatar_color,id_proof,address,notes,status,join_date,branch_id,country_code,normalized_phone,whatsapp_opt_in)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,CURRENT_DATE,$12,$13,$14,$15)`,
+          `INSERT INTO students (id,organization_id,name,email,phone,emergency_contact,avatar_color,id_proof,address,notes,status,join_date,branch_id,country_code,normalized_phone,whatsapp_opt_in,course)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,CURRENT_DATE,$12,$13,$14,$15,$16)`,
           [newId, orgId, s.name, s.email || '', s.phone || '', s.emergencyContact || '',
            avatarColor, s.idProofNumber || s.idProof || s.aadhaar || s.aadhar || '', s.address || '', s.notes || '',
-           s.status || 'active', s.branchId || null, '+91', s.phone || '', s.whatsappOptIn !== false]
+           s.status || 'active', s.branchId || null, '+91', s.phone || '', s.whatsappOptIn !== false, s.course || null]
         );
 
         await audit(client, session, 'student.create', 'students', newId, { name: s.name });
@@ -454,16 +481,25 @@ module.exports = withHandler(async function handler(req, res) {
         await assertForeignEntity(client, 'students', id, orgId);
         if (s.branchId) await assertForeignEntity(client, 'branches', s.branchId, orgId);
 
+        // Several request keys can name the same column (idProof / idProofNumber / aadhaar → id_proof);
+        // each column is assigned once, or Postgres rejects the UPDATE.
         const map = {
           name: 'name', email: 'email', phone: 'phone', emergencyContact: 'emergency_contact',
           idProofNumber: 'id_proof', idProof: 'id_proof', aadhaar: 'id_proof', aadhar: 'id_proof', idProofType: 'id_proof_type',
           address: 'address', notes: 'notes', status: 'status', branchId: 'branch_id',
           country_code: 'country_code', avatarColor: 'avatar_color', avatar: 'avatar_color',
-          whatsappOptIn: 'whatsapp_opt_in'
+          whatsappOptIn: 'whatsapp_opt_in', course: 'course', preferredLanguage: 'preferred_language',
+          normalizedPhone: 'normalized_phone'
         };
-        const fields = [], vals = [];
+        // A masked ID ("***1234", what staff see) must never overwrite the real number
+        const maskedId = (v) => typeof v === 'string' && v.startsWith('***');
+        const fields = [], vals = [], assigned = new Set();
         for (const [k, col] of Object.entries(map)) {
-          if (s[k] !== undefined) { fields.push(`${col}=$${fields.length + 1}`); vals.push(s[k]); }
+          if (s[k] === undefined || assigned.has(col)) continue;
+          if (col === 'id_proof' && maskedId(s[k])) continue;
+          assigned.add(col);
+          fields.push(`${col}=$${fields.length + 1}`);
+          vals.push(s[k]);
         }
         if (fields.length === 0) return { ok: true };
         vals.push(id);

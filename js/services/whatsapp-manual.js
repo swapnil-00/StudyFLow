@@ -290,6 +290,12 @@ Please save this number: fee reminders, receipts and important updates will come
     let templateText = customTemplates[templateKey] || DEFAULT_TEMPLATES[templateKey] || DEFAULT_TEMPLATES.custom;
 
     const vars = deriveVariables(variables, settings);
+    // A free-text message (announcements) may itself contain {{student_name}} etc.:
+    // fill those in too, so the student never sees raw placeholders.
+    if (typeof vars.message === 'string' && vars.message.includes('{{')) {
+      vars.message = vars.message.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, key) =>
+        (key !== 'message' && vars[key] !== undefined && vars[key] !== null) ? String(vars[key]) : '');
+    }
     // An empty value leaves a marker so a line that held only that placeholder can be dropped
     const EMPTY = '\u0000';
     let rendered = templateText.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, key) => {

@@ -66,7 +66,7 @@ describe('api/billing: status & quotes', () => {
     assert.equal(q1.body.quote.total, 15000);
     const q2 = await post(billingDb(), { action: 'quote', kind: 'auto_notify', months: 3 });
     assert.equal(q2.body.quote.total, 3000);
-    const bad = await post(billingDb(), { action: 'quote', kind: 'plan', plan: 'custom', seats: 150 });
+    const bad = await post(billingDb(), { action: 'quote', kind: 'plan', plan: 'custom', seats: 50 });
     assert.equal(bad.statusCode, 400);
     assert.equal(bad.body.code, 'INVALID_QUOTE');
   });

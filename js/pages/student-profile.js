@@ -470,45 +470,55 @@ export function renderStudentProfile(container, params) {
     `);
   };
 
-  window.confirmEditStudent = function(studentId) {
+  window.confirmEditStudent = async function(studentId) {
+    const original = store.getStudent(studentId) || {};
     const name = document.getElementById('edit-name')?.value?.trim();
     const phone = document.getElementById('edit-phone')?.value?.trim();
     const lang = document.getElementById('edit-lang')?.value || 'en';
     const aadhaar = document.getElementById('edit-aadhaar')?.value?.trim() || '';
     if (!name || !phone) { toast.show('Name and phone are required', 'error'); return; }
-    
-    const countryCode = '+91';
-    const normalized = (window.whatsappManual && window.whatsappManual.normalizePhone) 
-      ? window.whatsappManual.normalizePhone(phone) 
-      : ((window.utils && window.utils.normalizePhone) ? window.utils.normalizePhone(phone, countryCode) : (countryCode + phone.replace(/\D/g, '')));
-    
-    store.updateStudent(studentId, {
+
+    const updates = {
       name,
       phone,
-      normalized_phone: normalized,
-      preferred_language: lang,
-      email: document.getElementById('edit-email')?.value?.trim(),
-      idProof: aadhaar,
-      idProofNumber: aadhaar,
-      idProofType: aadhaar ? 'Aadhaar' : '',
-      aadhaar,
-      course: document.getElementById('edit-course')?.value?.trim(),
-      address: document.getElementById('edit-address')?.value?.trim(),
-    });
-    modal.close();
-    toast.show('Student updated!', 'success');
-    render();
+      preferredLanguage: lang,
+      email: document.getElementById('edit-email')?.value?.trim() || '',
+      course: document.getElementById('edit-course')?.value?.trim() || '',
+      address: document.getElementById('edit-address')?.value?.trim() || '',
+    };
+    // Only send the ID number when it was actually changed (staff see it masked as ***1234)
+    const shownId = original.idProof || original.idProofNumber || '';
+    if (aadhaar !== shownId) {
+      updates.idProof = aadhaar;
+      updates.idProofType = aadhaar ? 'Aadhaar' : '';
+    }
+
+    const saveBtn = document.querySelector('.modal-footer .btn-primary');
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving...'; }
+    try {
+      await store.updateStudent(studentId, updates);
+      // keep the field names the profile reads in sync locally
+      const s = store.getStudent(studentId);
+      if (s) { s.preferred_language = lang; s.course = updates.course; }
+      modal.close();
+      toast.show('Student updated', 'success');
+      render();
+    } catch (err) {
+      toast.show(err.message || 'Could not save the changes. Please try again.', 'error', 6000);
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Changes'; }
+    }
   };
 
-  window.toggleWhatsAppOptIn = function(studentId) {
+  window.toggleWhatsAppOptIn = async function(studentId) {
     const s = store.getStudent(studentId);
     if (!s) return;
     const current = s.whatsapp_opt_in !== false;
-    store.updateStudent(studentId, {
-      whatsapp_opt_in: !current,
-      whatsapp_opt_in_at: !current ? new Date().toISOString() : null
-    });
-    toast.show(`WhatsApp status updated: ${!current ? 'Opted In' : 'Opted Out'}`, 'info');
+    try {
+      await store.updateStudent(studentId, { whatsapp_opt_in: !current });
+      toast.show(`WhatsApp status updated: ${!current ? 'Opted In' : 'Opted Out'}`, 'info');
+    } catch (err) {
+      toast.show(err.message || 'Could not update WhatsApp consent.', 'error', 6000);
+    }
     render();
   };
 

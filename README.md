@@ -120,7 +120,7 @@ node scripts/create-library.js --name "Apex Study Lounge" --owner-email owner@ex
 # Apply changes to database
 node scripts/create-library.js --name "Apex Study Lounge" --owner-email owner@example.com --owner-name "Rahul Sharma" --plan basic --city "Pune" --apply
 ```
-Plans: `free` (default, 5 seats) · `basic` (100 seats) · `custom --seats 300` (blocks of 100) · `demo`.
+Plans: `free` (default, 5 seats) · `basic` (100 seats) · `custom --seats 150` (any number from 101 to 5,000, ₹50 a seat) · `demo`.
 *Next step:* The owner signs in via Google OAuth on the web app and completes the initial setup wizard (branch, study hall, seating layout).
 
 ### 2. Record a Manual Payment / Change Plans or Seats

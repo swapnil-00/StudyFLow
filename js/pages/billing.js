@@ -13,6 +13,8 @@ export function renderBillingPage(container, params = {}) {
   let busy = false;
   let coupon = '';    // coupon code typed by the owner (validated by the server at quote/checkout)
   let couponNote = '';
+  let appliedCoupon = null;   // { code, percentOff } once the server accepted it, for display
+  let customSeatsInput = null; // what the owner typed in the Custom seats box
 
   const fmtINR = (n) => {
     const v = Math.round(Number(n) || 0);
@@ -110,14 +112,48 @@ export function renderBillingPage(container, params = {}) {
       </div>`;
   }
 
+  // What a price looks like with the applied coupon: original struck through, new price next to it.
+  // Display only; the server re-checks the coupon and computes the real amount at checkout.
+  function discounted(amount) {
+    if (!appliedCoupon) return amount;
+    const discount = Math.min(amount, Math.round((amount * appliedCoupon.percentOff) / 100));
+    const after = amount - discount;
+    const tax = Math.round((after * (Number(state.pricing.taxPercent) || 0)) / 100);
+    return after + tax;
+  }
+  function priceHtml(amount, size = 22) {
+    const now = discounted(amount);
+    if (!appliedCoupon || now === amount) {
+      return `<span style="font-size:${size}px;font-weight:800;">${fmtINR(amount)}</span>`;
+    }
+    return `<span style="font-size:${Math.round(size * 0.7)}px;font-weight:600;color:var(--color-text-tertiary);text-decoration:line-through;margin-right:6px;">${fmtINR(amount)}</span>`
+      + `<span style="font-size:${size}px;font-weight:800;color:var(--sf-success-600);">${now === 0 ? 'Free' : fmtINR(now)}</span>`;
+  }
+  function buttonPrice(amount) {
+    const now = discounted(amount);
+    return now === amount ? fmtINR(amount) : `${now === 0 ? 'Free' : fmtINR(now)} (was ${fmtINR(amount)})`;
+  }
+  function customPrice(seats) {
+    const p = state.pricing;
+    return Math.round((seats / p.custom.blockSeats) * p.custom.pricePerBlock);
+  }
+  function checkCustomSeats(value) {
+    const p = state.pricing;
+    const seats = Number(String(value).trim());
+    if (!Number.isInteger(seats)) return { ok: false, error: 'Enter a whole number of seats.' };
+    if (seats < p.custom.minSeats) return { ok: false, error: `Custom plans start at ${p.custom.minSeats} seats.` };
+    if (seats > p.custom.maxSeats) return { ok: false, error: `The maximum is ${p.custom.maxSeats} seats. Contact StudyFlow for more.` };
+    if (seats <= state.subscription.seatLimit) return { ok: false, error: `You already have ${state.subscription.seatLimit} seats. Enter a larger number.` };
+    return { ok: true, seats };
+  }
+
   function plansCard() {
     const sub = state.subscription;
     const p = state.pricing;
     if (sub.isDemo) return '';
-    const customOptions = [];
-    for (let s = p.custom.minSeats; s <= p.custom.maxSeats; s += p.custom.step) customOptions.push(s);
-    const defaultCustom = customOptions.find(s => s > sub.seatLimit) || customOptions[0];
-    const customPrice = (seats) => (seats / p.custom.blockSeats) * p.custom.pricePerBlock;
+    const defaultCustom = Math.min(p.custom.maxSeats, Math.max(p.custom.minSeats, sub.seatLimit + 1));
+    if (customSeatsInput === null) customSeatsInput = String(defaultCustom);
+    const customCheck = checkCustomSeats(customSeatsInput);
     const isFree = sub.plan === 'free';
     const isBasic = sub.plan === 'basic';
     return `
@@ -132,20 +168,19 @@ export function renderBillingPage(container, params = {}) {
             </div>
             <div style="border:2px solid var(--color-primary);border-radius:var(--radius-lg);padding:var(--space-4);display:flex;flex-direction:column;gap:8px;${isBasic ? 'background:var(--color-bg-secondary);' : ''}">
               <div style="font-weight:700;">Basic ${isBasic ? '<span class="badge badge-neutral" style="margin-left:6px;">Current</span>' : ''}</div>
-              <div style="font-size:22px;font-weight:800;">${fmtINR(p.basic.price)} <span style="font-size:12px;font-weight:500;color:var(--color-text-tertiary);">one-time</span></div>
-              <div style="font-size:13px;color:var(--color-text-secondary);">${esc(p.basic.seats)} seats · Manual WhatsApp · Automatic add-on available</div>
+              <div>${priceHtml(p.basic.price)} <span style="font-size:12px;font-weight:500;color:var(--color-text-tertiary);">one-time</span></div>
+              <div style="font-size:13px;color:var(--color-text-secondary);">${esc(p.basic.seats)} seats · WhatsApp reminders & receipts</div>
               <div style="flex:1;"></div>
-              ${isOwner && isFree ? `<button class="btn btn-primary w-full" data-buy-plan="basic">Upgrade to Basic — ${fmtINR(p.basic.price)}</button>` : (sub.paid ? `<div style="font-size:12px;color:var(--color-text-tertiary);">Included in your plan</div>` : '')}
+              ${isOwner && isFree ? `<button class="btn btn-primary w-full" data-buy-plan="basic">Upgrade to Basic — ${buttonPrice(p.basic.price)}</button>` : (sub.paid ? `<div style="font-size:12px;color:var(--color-text-tertiary);">Included in your plan</div>` : '')}
             </div>
             <div style="border:1px solid var(--color-border-secondary);border-radius:var(--radius-lg);padding:var(--space-4);display:flex;flex-direction:column;gap:8px;${sub.plan === 'custom' ? 'background:var(--color-bg-secondary);' : ''}">
               <div style="font-weight:700;">Custom ${sub.plan === 'custom' ? '<span class="badge badge-neutral" style="margin-left:6px;">Current</span>' : ''}</div>
-              <div style="font-size:13px;color:var(--color-text-secondary);">${fmtINR(p.custom.pricePerBlock)} per ${esc(p.custom.blockSeats)} seats, one-time. Blocks of ${esc(p.custom.step)}.</div>
-              <label class="form-label" for="custom-seats" style="margin-top:4px;">Seats</label>
-              <select class="input" id="custom-seats" ${isOwner ? '' : 'disabled'}>
-                ${customOptions.map(s => `<option value="${s}" ${s === defaultCustom ? 'selected' : ''}>${s} seats — ${fmtINR(customPrice(s))}</option>`).join('')}
-              </select>
+              <div style="font-size:13px;color:var(--color-text-secondary);">For more than ${esc(p.basic.seats)} seats: ${fmtINR(p.custom.pricePerSeat || (p.custom.pricePerBlock / p.custom.blockSeats))} per seat, one-time.</div>
+              <label class="form-label" for="custom-seats" style="margin-top:4px;">Number of seats</label>
+              <input class="input" id="custom-seats" type="number" inputmode="numeric" min="${p.custom.minSeats}" max="${p.custom.maxSeats}" step="${p.custom.step || 1}" value="${esc(customSeatsInput)}" placeholder="${defaultCustom}" ${isOwner ? '' : 'disabled'} />
+              <div id="custom-price-box">${customCheck.ok ? priceHtml(customPrice(customCheck.seats), 20) : `<span style="font-size:12px;color:var(--sf-error-600);">${esc(customCheck.error)}</span>`}</div>
               <div style="flex:1;"></div>
-              ${isOwner ? `<button class="btn btn-secondary w-full" data-buy-plan="custom">Buy <span id="custom-seats-label">${esc(defaultCustom)}</span> seats — <span id="custom-price-label">${fmtINR(customPrice(defaultCustom))}</span></button>` : ''}
+              ${isOwner ? `<button class="btn btn-secondary w-full" data-buy-plan="custom" ${customCheck.ok ? '' : 'disabled'}><span id="custom-btn-label">${customCheck.ok ? `Buy ${customCheck.seats} seats — ${buttonPrice(customPrice(customCheck.seats))}` : 'Enter the number of seats'}</span></button>` : ''}
               ${sub.plan === 'custom' ? `<div style="font-size:12px;color:var(--color-text-tertiary);">You have ${esc(sub.seatLimit)} seats. Buying more replaces your limit with the new total.</div>` : ''}
             </div>
           </div>
@@ -153,6 +188,7 @@ export function renderBillingPage(container, params = {}) {
           <div style="margin-top:var(--space-4);display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
             <input class="input" id="coupon-code" placeholder="Coupon code" value="${esc(coupon)}" style="width:180px;text-transform:uppercase;" autocapitalize="characters" spellcheck="false" />
             <button class="btn btn-secondary btn-sm" id="coupon-apply">Apply coupon</button>
+            ${appliedCoupon ? `<button class="btn btn-ghost btn-sm" id="coupon-remove">Remove</button>` : ''}
             <span id="coupon-note" style="font-size:12px;color:${couponNote.startsWith('✓') ? 'var(--sf-success-600)' : 'var(--sf-error-600)'};">${esc(couponNote)}</span>
           </div>` : ''}
           ${!state.payments.configured && isOwner ? `<div style="margin-top:var(--space-4);font-size:13px;color:var(--color-text-secondary);">Online payment is being set up. You can pay by UPI or bank transfer: contact StudyFlow and the plan is activated as soon as the payment is confirmed.</div>` : ''}
@@ -308,7 +344,8 @@ export function renderBillingPage(container, params = {}) {
     // with one, the server decides (a 100% coupon needs no payment at all).
     if (!state.payments.configured && !couponCode) { showManualPaymentInfo(quoteText); return; }
     let phone = (state.phone || '').replace(/\D/g, '');
-    if (!/^\d{10}$/.test(phone.slice(-10))) {
+    const freeWithCoupon = Boolean(appliedCoupon && appliedCoupon.percentOff >= 100);
+    if (!freeWithCoupon && !/^\d{10}$/.test(phone.slice(-10))) {
       phone = await promptPhone();
       if (!/^\d{10}$/.test(phone)) { if (phone) toast.show('Enter a valid 10-digit mobile number.', 'warning'); return; }
     }
@@ -335,20 +372,23 @@ export function renderBillingPage(container, params = {}) {
   }
 
   // Preview what the coupon does to the plan the owner would buy next
+  // Ask the server whether the coupon is valid for plans, then show every plan price with it
   async function applyCouponPreview() {
     const input = root().querySelector('#coupon-code');
     coupon = (input?.value || '').trim().toUpperCase();
-    if (!coupon) { couponNote = ''; render(); return; }
+    if (!coupon) { couponNote = ''; appliedCoupon = null; render(); return; }
     const sub = state.subscription;
-    const customSel = root().querySelector('#custom-seats');
+    const check = checkCustomSeats(customSeatsInput ?? '');
     const body = sub.plan === 'free'
       ? { kind: 'plan', plan: 'basic', coupon }
-      : { kind: 'plan', plan: 'custom', seats: Number(customSel?.value || state.pricing.custom.minSeats), coupon };
+      : { kind: 'plan', plan: 'custom', seats: check.ok ? check.seats : state.pricing.custom.minSeats, coupon };
     try {
       const res = await store.billingQuote(body);
       const q = res.quote;
-      couponNote = `✓ ${q.couponCode}: ${q.percentOff}% off → ${q.total === 0 ? 'free, no payment needed' : `you pay ${fmtINR(q.total)} instead of ${fmtINR(q.subtotalBeforeDiscount)}`}`;
+      appliedCoupon = { code: q.couponCode, percentOff: Number(q.percentOff) || 0 };
+      couponNote = `✓ ${q.couponCode} applied: ${q.percentOff}% off${q.percentOff >= 100 ? ', no payment needed' : ''}`;
     } catch (err) {
+      appliedCoupon = null;
       couponNote = err.message || 'Coupon not valid.';
       if (!String(err.code || '').startsWith('COUPON_')) coupon = '';
     }
@@ -385,19 +425,27 @@ export function renderBillingPage(container, params = {}) {
     r.querySelector('[data-buy-plan="basic"]')?.addEventListener('click', () =>
       startCheckout({ kind: 'plan', plan: 'basic' }, `Basic plan — ${p.basic.seats} seats — ${fmtINR(p.basic.price)}`));
 
-    const customSel = r.querySelector('#custom-seats');
+    const customInput = r.querySelector('#custom-seats');
     const customBtn = r.querySelector('[data-buy-plan="custom"]');
-    const updateCustom = () => {
-      const seats = Number(customSel.value);
-      const price = (seats / p.custom.blockSeats) * p.custom.pricePerBlock;
-      const l = r.querySelector('#custom-seats-label'); if (l) l.textContent = String(seats);
-      const pl = r.querySelector('#custom-price-label'); if (pl) pl.textContent = fmtINR(price);
-    };
-    customSel?.addEventListener('change', updateCustom);
+    // Live price as the owner types (no re-render, so the box keeps focus)
+    customInput?.addEventListener('input', () => {
+      customSeatsInput = customInput.value;
+      const check = checkCustomSeats(customSeatsInput);
+      const box = r.querySelector('#custom-price-box');
+      if (box) box.innerHTML = check.ok ? priceHtml(customPrice(check.seats), 20) : `<span style="font-size:12px;color:var(--sf-error-600);">${esc(check.error)}</span>`;
+      if (customBtn) {
+        customBtn.disabled = !check.ok;
+        const label = r.querySelector('#custom-btn-label');
+        if (label) label.textContent = check.ok ? `Buy ${check.seats} seats — ${buttonPrice(customPrice(check.seats))}` : 'Enter the number of seats';
+      }
+    });
     customBtn?.addEventListener('click', () => {
-      const seats = Number(customSel.value);
-      if (seats <= sub.seatLimit) { toast.show(`Choose more than your current ${sub.seatLimit} seats.`, 'warning'); return; }
-      startCheckout({ kind: 'plan', plan: 'custom', seats }, `Custom plan — ${seats} seats — ${fmtINR((seats / p.custom.blockSeats) * p.custom.pricePerBlock)}`);
+      const check = checkCustomSeats(customInput?.value ?? '');
+      if (!check.ok) { toast.show(check.error, 'warning'); customInput?.focus(); return; }
+      startCheckout({ kind: 'plan', plan: 'custom', seats: check.seats }, `Custom plan — ${check.seats} seats — ${fmtINR(customPrice(check.seats))}`);
+    });
+    r.querySelector('#coupon-remove')?.addEventListener('click', () => {
+      coupon = ''; couponNote = ''; appliedCoupon = null; render();
     });
 
     const monthsRadios = r.querySelectorAll('input[name="auto-months"]');

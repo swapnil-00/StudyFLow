@@ -26,7 +26,7 @@ function usage() {
 Usage: node scripts/set-plan.js <orgId_or_slug> [options]
 
 Plan & seats
-  --plan <free|basic|custom|demo>   Set the plan (custom needs --seats; blocks of ${PRICING.CUSTOM_SEAT_STEP}, ${PRICING.CUSTOM_MIN_SEATS}-${PRICING.CUSTOM_MAX_SEATS})
+  --plan <free|basic|custom|demo>   Set the plan (custom needs --seats: ${PRICING.CUSTOM_MIN_SEATS}-${PRICING.CUSTOM_MAX_SEATS})
   --seats <number>                  Seat capacity for custom / demo plans
   --status <active|suspended>       Suspended libraries can read but not change data
 

@@ -6,7 +6,6 @@ export function renderDashboard(container) {
   const expiring = store.getExpiringMemberships(branchId, 14);
   const pendingDues = store.getPendingDues(branchId).slice(0, 5);
   const recentActivity = store.getActivityLogs(8);
-  const revenueChart = store.getRevenueChart(branchId, 7);
   const occupancyData = store.getOccupancyData(branchId);
 
   const hour = new Date().getHours();
@@ -14,24 +13,11 @@ export function renderDashboard(container) {
   const user = store.currentUser || {};
   const firstName = (user.name || '').trim().split(/\s+/)[0] || 'there';
 
-  // One-time suggestion for accounts created with Google: add a password for email sign-in.
-  const nudgeKey = `sf_pwd_nudge_dismissed_${user.id || ''}`;
-  let nudgeDismissed = false;
-  try { nudgeDismissed = localStorage.getItem(nudgeKey) === '1'; } catch (_) { }
-  const showPasswordNudge = user.hasPassword === false && user.email && !nudgeDismissed;
+  // Revenue chart range, remembered per browser (7, 30 or 90 days)
+  let revenueDays = 7;
+  try { const saved = Number(localStorage.getItem('sf_revenue_days')); if ([7, 30, 90].includes(saved)) revenueDays = saved; } catch (_) { }
 
   container.innerHTML = `
-    ${showPasswordNudge ? `
-    <div id="pwd-nudge" role="status" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 16px;margin-bottom:var(--space-4);border:1px solid var(--color-border);border-radius:var(--radius-lg);background:var(--color-bg-secondary);font-size:13px;">
-      <div>
-        <strong>Add a password to your account.</strong>
-        <span style="color:var(--color-text-secondary);">You signed up with Google. Add a password so you can also sign in with ${utils.escapeHtml(user.email)}.</span>
-      </div>
-      <div style="display:flex;gap:8px;">
-        <a class="btn btn-primary btn-sm" href="#/forgot-password?mode=set&autosend=1&email=${encodeURIComponent(user.email)}">Set password</a>
-        <button type="button" class="btn btn-ghost btn-sm" id="pwd-nudge-dismiss">Not now</button>
-      </div>
-    </div>` : ''}
     <div class="page-header">
       <div class="page-header-row">
         <div>
@@ -46,9 +32,6 @@ export function renderDashboard(container) {
           </p>
         </div>
         <div style="display:flex;gap:var(--space-2);">
-          <button class="btn btn-secondary btn-sm" onclick="openEditLibraryNameModal()">
-            ${icons.edit || '✎'} Edit Library Name
-          </button>
           <button class="btn btn-secondary" onclick="app.navigate('/notifications')">
             <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--sf-success-500);margin-right:6px;"></span>
             WhatsApp
@@ -107,20 +90,18 @@ export function renderDashboard(container) {
     <!-- Charts + Lists Row -->
     <div class="grid-3" style="gap:var(--space-5);margin-bottom:var(--space-6);">
       <!-- Revenue Chart -->
-      <div class="card" style="grid-column: span 2;">
+      <div class="card" style="grid-column: span 2;" id="revenue-card">
         <div class="card-header">
           <div>
-            <div class="card-title">Revenue — Last 7 Days</div>
-            <div class="card-subtitle">Daily collection at ${branch?.name}</div>
+            <div class="card-title" id="revenue-title">Revenue — Last ${revenueDays} Days</div>
+            <div class="card-subtitle">${revenueDays === 90 ? 'Weekly' : 'Daily'} collection at ${utils.escapeHtml(branch?.name || '')}</div>
           </div>
-          <div class="filter-tabs">
-            <button class="filter-tab active">7D</button>
-            <button class="filter-tab">30D</button>
-            <button class="filter-tab">90D</button>
+          <div class="filter-tabs" id="revenue-range">
+            ${[7, 30, 90].map(d => `<button type="button" class="filter-tab ${d === revenueDays ? 'active' : ''}" data-days="${d}">${d}D</button>`).join('')}
           </div>
         </div>
-        <div class="card-body">
-          ${renderRevenueChart(revenueChart)}
+        <div class="card-body" id="revenue-body">
+          ${renderRevenueChart(store.getRevenueChart(branchId, revenueDays), revenueDays)}
         </div>
       </div>
 
@@ -196,9 +177,19 @@ export function renderDashboard(container) {
     </div>
   `;
 
-  container.querySelector('#pwd-nudge-dismiss')?.addEventListener('click', () => {
-    try { localStorage.setItem(nudgeKey, '1'); } catch (_) { }
-    container.querySelector('#pwd-nudge')?.remove();
+  // Revenue range: 7D / 30D / 90D redraw only the chart
+  container.querySelectorAll('#revenue-range [data-days]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      revenueDays = Number(btn.getAttribute('data-days'));
+      try { localStorage.setItem('sf_revenue_days', String(revenueDays)); } catch (_) { }
+      container.querySelectorAll('#revenue-range [data-days]').forEach(b => b.classList.toggle('active', b === btn));
+      const title = container.querySelector('#revenue-title');
+      if (title) title.textContent = `Revenue — Last ${revenueDays} Days`;
+      const sub = title?.parentElement?.querySelector('.card-subtitle');
+      if (sub) sub.textContent = `${revenueDays === 90 ? 'Weekly' : 'Daily'} collection at ${branch?.name || ''}`;
+      const body = container.querySelector('#revenue-body');
+      if (body) body.innerHTML = renderRevenueChart(store.getRevenueChart(branchId, revenueDays), revenueDays);
+    });
   });
 
   // Animate cards
@@ -241,28 +232,53 @@ function renderStatCard(label, value, sub, id, iconBg, iconColor, iconSvg) {
   `;
 }
 
-function renderRevenueChart(data) {
-  const max = Math.max(...data.map(d => d.amount), 1);
+// Daily bars for 7 and 30 days; 90 days is grouped into weeks so the bars stay readable.
+// Colours use theme tokens so the chart is legible in both light and dark mode.
+function renderRevenueChart(daily, days = daily.length) {
+  let bars = daily;
+  if (days >= 60) {
+    bars = [];
+    for (let i = 0; i < daily.length; i += 7) {
+      const week = daily.slice(i, i + 7);
+      const first = week[0], lastDay = week[week.length - 1];
+      bars.push({
+        amount: week.reduce((s, d) => s + d.amount, 0),
+        label: first.label,
+        title: `${first.label} – ${lastDay.label}`,
+      });
+    }
+  }
+  const total = daily.reduce((s, d) => s + d.amount, 0);
+  const activeDays = daily.filter(d => d.amount > 0).length;
+  const best = daily.reduce((b, d) => (d.amount > (b ? b.amount : 0) ? d : b), null);
+  const max = Math.max(...bars.map(d => d.amount), 1);
+  const showValues = bars.length <= 14;
+  const labelEvery = bars.length > 14 ? Math.ceil(bars.length / 8) : 1;
+
   return `
     <div style="display:flex;flex-direction:column;gap:var(--space-3);">
-      <div style="display:flex;align-items:flex-end;gap:var(--space-2);height:120px;">
-        ${data.map((d, i) => {
-    const height = max > 0 ? Math.round((d.amount / max) * 100) : 5;
-    const isToday = i === data.length - 1;
+      <div style="display:flex;gap:var(--space-5);flex-wrap:wrap;font-size:var(--text-xs);color:var(--color-text-secondary);">
+        <div>Collected <strong style="font-size:var(--text-base);color:var(--color-text-primary);">${utils.formatINR(total)}</strong></div>
+        <div>Avg / day <strong style="color:var(--color-text-primary);">${utils.formatINR(Math.round(total / Math.max(daily.length, 1)))}</strong></div>
+        <div>Days with collections <strong style="color:var(--color-text-primary);">${activeDays} / ${daily.length}</strong></div>
+        ${best && best.amount > 0 ? `<div>Best day <strong style="color:var(--color-text-primary);">${utils.escapeHtml(best.label)} · ${utils.formatINR(best.amount)}</strong></div>` : ''}
+      </div>
+      <div style="display:flex;align-items:flex-end;gap:${bars.length > 14 ? '2px' : 'var(--space-2)'};height:140px;">
+        ${bars.map((d, i) => {
+    const height = Math.round((d.amount / max) * 100);
+    const isLast = i === bars.length - 1;
+    const tip = `${d.title || d.label}: ${utils.formatINR(d.amount)}`;
     return `
-            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:var(--space-1);height:100%;">
-              <div class="tooltip-wrap" style="flex:1;width:100%;display:flex;align-items:flex-end;">
-                <div style="width:100%;height:${Math.max(height, 4)}%;background:${isToday ? 'var(--sf-indigo-600)' : 'var(--sf-indigo-200)'};border-radius:var(--radius-xs) var(--radius-xs) 0 0;transition:height 0.5s;cursor:pointer;"
-                  onmouseenter="this.style.background='var(--sf-indigo-500)'" onmouseleave="this.style.background='${isToday ? 'var(--sf-indigo-600)' : 'var(--sf-indigo-200)'}'">
-                </div>
-                <div class="tooltip">${utils.formatINR(d.amount)}</div>
-              </div>
+            <div style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;" title="${utils.escapeHtml(tip)}">
+              ${showValues && d.amount > 0 ? `<div style="font-size:0.625rem;font-weight:600;color:var(--color-text-secondary);margin-bottom:2px;white-space:nowrap;">${utils.formatINR(d.amount)}</div>` : ''}
+              <div style="width:100%;height:${d.amount > 0 ? Math.max(height, 4) : 2}%;background:var(--color-primary);opacity:${d.amount > 0 ? (isLast ? 1 : 0.6) : 0.18};border-radius:var(--radius-xs) var(--radius-xs) 0 0;transition:height 0.4s, opacity 0.15s;cursor:default;"
+                onmouseenter="this.style.opacity=1" onmouseleave="this.style.opacity=${d.amount > 0 ? (isLast ? 1 : 0.6) : 0.18}"></div>
             </div>
           `;
   }).join('')}
       </div>
-      <div style="display:flex;gap:var(--space-2);">
-        ${data.map(d => `<div style="flex:1;text-align:center;font-size:0.625rem;color:var(--color-text-quaternary);">${d.label}</div>`).join('')}
+      <div style="display:flex;gap:${bars.length > 14 ? '2px' : 'var(--space-2)'};">
+        ${bars.map((d, i) => `<div style="flex:1;min-width:0;text-align:center;font-size:0.625rem;color:var(--color-text-secondary);white-space:nowrap;overflow:visible;">${(i % labelEvery === 0 || i === bars.length - 1) ? utils.escapeHtml(d.label) : ''}</div>`).join('')}
       </div>
     </div>
   `;

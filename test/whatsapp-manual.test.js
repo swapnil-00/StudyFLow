@@ -157,6 +157,15 @@ describe('whatsappManual.renderMessage', () => {
     assert.ok(rendered.includes('— My Library'));
   });
 
+  test('placeholders typed into an announcement are filled in, never sent raw', () => {
+    const out = whatsappManual.renderMessage('custom', {
+      student_name: 'Priya Patel', branch_name: 'Main Branch',
+      message: 'Hello {{student_name}}, {{library_name}} is closed on Sunday. {{unknown_thing}}',
+    }, { orgName: 'TN Library' });
+    assert.ok(out.startsWith('Hello Priya Patel, TN Library is closed on Sunday.'), out);
+    assert.ok(!/\{\{/.test(out), out);
+  });
+
   test('caps rendered message at 1,500 characters', () => {
     const longText = 'A'.repeat(2000);
     const rendered = whatsappManual.renderMessage('custom', {

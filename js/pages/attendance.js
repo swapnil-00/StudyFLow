@@ -48,7 +48,7 @@ export function renderAttendance(container) {
           <div class="table-title">Today's Attendance</div>
           <div class="input-group" style="width:240px;">
             <div class="input-group-prefix">${icons.search}</div>
-            <input class="input" type="text" placeholder="Search student..." oninput="handleAttSearch(this.value)">
+            <input class="input" type="text" placeholder="Search student..." id="att-search" value="${(window.escapeAttr ? window.escapeAttr(searchQ || '') : (searchQ || ''))}" oninput="handleAttSearch(this.value)">
           </div>
         </div>
         <div class="table-scroll">

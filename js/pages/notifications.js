@@ -547,7 +547,7 @@ export function renderNotifications(container) {
     modal.open('Compose Announcement', `
       <div style="display:flex;flex-direction:column;gap:var(--space-4);">
         <div style="padding:var(--space-3);background:var(--color-bg-secondary);border-radius:var(--radius-lg);font-size:var(--text-xs);line-height:1.5;color:var(--color-text-secondary);">
-          💡 <strong>Manual Delivery:</strong> Each announcement opens directly in WhatsApp Web for 1-click delivery from your computer.
+          💡 <strong>How it works:</strong> each student's message opens in WhatsApp, ready to send. After you send one, the next student's opens.
         </div>
 
         <div class="form-group">
@@ -562,14 +562,26 @@ export function renderNotifications(container) {
 
         <div class="form-group">
           <label class="form-label">Message Content <span class="required">*</span></label>
-          <textarea class="textarea" id="modal-ann-text" rows="5" placeholder="Dear Students, please note that..."></textarea>
-          <div class="form-hint">Placeholders: <code>{{student_name}}</code>, <code>{{branch_name}}</code></div>
+          <textarea class="textarea" id="modal-ann-text" rows="5" placeholder="Hello {{student_name}}, the library will be closed on Sunday for maintenance."></textarea>
+          <div class="form-hint">Write <code>{{student_name}}</code> to insert each student's name, or <code>{{library_name}}</code> for your library's name. They are filled in automatically before sending.</div>
+          <div id="modal-ann-preview" style="display:none;margin-top:8px;padding:10px 12px;border:1px solid var(--color-border-secondary);border-radius:var(--radius-md);background:var(--color-bg-secondary);font-size:12px;white-space:pre-wrap;line-height:1.5;"></div>
         </div>
       </div>
     `, `
       <button class="btn btn-secondary" onclick="modal.close()">Cancel</button>
       <button class="btn btn-primary" id="btn-start-modal-ann">Start Sending</button>
     `);
+
+    // Live preview with the first recipient's name, so placeholders are seen filled in
+    const annText = document.getElementById('modal-ann-text');
+    const annPreview = document.getElementById('modal-ann-preview');
+    annText?.addEventListener('input', () => {
+      const raw = annText.value.trim();
+      if (!raw || typeof whatsappManual === 'undefined') { annPreview.style.display = 'none'; return; }
+      const sample = students[0];
+      annPreview.textContent = 'Preview: ' + whatsappManual.renderMessage('custom', { student_name: sample ? sample.name : 'Student', branch_name: branchName, message: raw });
+      annPreview.style.display = 'block';
+    });
 
     document.getElementById('btn-start-modal-ann')?.addEventListener('click', () => {
       const aud = document.getElementById('modal-ann-audience')?.value || 'all';

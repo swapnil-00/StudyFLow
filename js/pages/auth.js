@@ -56,8 +56,6 @@ export function renderLoginPage() {
 
       <div class="auth-footer">
         New to StudyFlow? <a href="#/signup" class="auth-switch-link">Create a free library</a>
-        <span style="color:var(--color-text-tertiary);"> · </span>
-        <a href="javascript:void(0)" id="auth-book-demo-link" class="auth-switch-link">Book a demo</a>
       </div>
     </div>
   `;
@@ -884,13 +882,6 @@ function setupLoginEvents(container) {
   const form = container.querySelector('#email-login-form');
   const divider = container.querySelector('.auth-divider');
   const submitBtn = container.querySelector('#btn-email-submit');
-
-  const bookDemoLink = container.querySelector('#auth-book-demo-link');
-  if (bookDemoLink) {
-    bookDemoLink.addEventListener('click', () => {
-      window.app?.openContactModal?.();
-    });
-  }
 
   // Adapt UI if password authentication is switched off
   getClientConfig().then((config) => {

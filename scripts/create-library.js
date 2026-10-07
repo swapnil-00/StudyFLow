@@ -8,7 +8,7 @@ const { query, withTransaction } = require('../lib/db');
 
 const { PRICING, validateCustomSeats } = require('../lib/plans');
 
-// Seat capacity per plan (lib/plans.js). Custom needs --seats in blocks of CUSTOM_SEAT_STEP.
+// Seat capacity per plan (lib/plans.js). Custom needs --seats (any whole number in the allowed range).
 const PLAN_SEAT_DEFAULTS = {
   free: PRICING.FREE_SEAT_LIMIT,
   basic: PRICING.BASE_SEATS,

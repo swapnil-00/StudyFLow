@@ -44,6 +44,7 @@ class App {
     // Load all data from Neon DB before rendering
     await store.load();
 
+    this._installFocusKeeper();
     this._render();
     this._setupRouter();
     this._navigate();
@@ -587,8 +588,8 @@ class App {
         <button class="dropdown-item" onclick="app.openLoginModal(); document.getElementById('user-menu')?.remove()">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg> Sign In
         </button>
-        <button class="dropdown-item" style="color:var(--color-primary);font-weight:600;" onclick="app.openContactModal(); document.getElementById('user-menu')?.remove()">
-          ✨ Book a Demo / Contact Us
+        <button class="dropdown-item" style="color:var(--color-primary);font-weight:600;" onclick="app.navigate('/signup'); document.getElementById('user-menu')?.remove()">
+          ✨ Create a free library
         </button>
       `}
     `;
@@ -620,7 +621,7 @@ class App {
     const bodyHTML = `
       <div style="display:flex;flex-direction:column;gap:16px;padding:8px 0;">
         <p style="font-size:14px;color:var(--color-text-secondary);line-height:1.5;margin:0;">
-          Get in touch with the StudyFlow team to set up your library, upgrade your plan, or book a live walkthrough.
+          Get in touch with the StudyFlow team for help with your library, your plan or payments.
         </p>
         <div style="display:flex;flex-direction:column;gap:10px;">
           <a href="mailto:${encodeURIComponent(email)}?subject=StudyFlow%20Demo%20%26%20Setup" class="btn btn-primary" style="display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;">
@@ -766,16 +767,62 @@ class App {
   }
 
   /**
+   * Pages re-render their HTML while the user types in a search box, which replaces the
+   * focused <input>. This puts focus, caret and the exact typed text back on the new input
+   * with the same id, for every search box on every page. It only acts when the focused
+   * element was removed from the page; a deliberate click elsewhere is left alone.
+   */
+  _installFocusKeeper() {
+    if (this._focusKeeperInstalled || typeof MutationObserver === 'undefined') return;
+    this._focusKeeperInstalled = true;
+    let last = null;
+    const isTextField = (el) => el && el.id && (el.tagName === 'TEXTAREA' ||
+      (el.tagName === 'INPUT' && /^(text|search|email|tel|url|number|)$/i.test(el.type || '')));
+    const remember = (e) => {
+      const el = e.target;
+      if (!isTextField(el)) {
+        // The user moved on to a button, tab or link: never pull focus back to the box
+        if (e.type === 'focusin' || e.type === 'click') last = null;
+        return;
+      }
+      let start = null, end = null;
+      try { start = el.selectionStart; end = el.selectionEnd; } catch (_) { /* number inputs */ }
+      last = { el, id: el.id, value: el.value, start, end };
+    };
+    // Capture phase: recorded before the page's own handler re-renders
+    document.addEventListener('input', remember, true);
+    document.addEventListener('keyup', remember, true);
+    document.addEventListener('focusin', remember, true);
+    document.addEventListener('click', remember, true);
+
+    const restore = () => {
+      if (!last || last.el.isConnected) return;
+      const active = document.activeElement;
+      if (active && active !== document.body && active !== document.documentElement) return;
+      const next = document.getElementById(last.id);
+      if (!next || !isTextField(next)) { last = null; return; }
+      // Keep exactly what was typed (pages often trim, which would eat a typed space)
+      if (next.value !== last.value && next.value.trim() === String(last.value).trim()) next.value = last.value;
+      next.focus({ preventScroll: true });
+      try { if (last.start != null) next.setSelectionRange(last.start, last.end); } catch (_) { /* not selectable */ }
+      last = { ...last, el: next };
+    };
+    new MutationObserver(restore).observe(document.body, { childList: true, subtree: true });
+  }
+
+  /**
    * Shown whenever the server refuses a seat beyond the plan (SEAT_LIMIT_REACHED).
    * The numbers come from the server's response, never from the client.
    */
   showSeatLimitPrompt(message, details = {}) {
+    // One prompt at a time, however many refused requests arrive together
+    if (document.getElementById('seat-limit-prompt')) return;
     const esc = (s) => utils.escapeHtml(String(s == null ? '' : s));
     const role = (store.currentUser && store.currentUser.role) || 'owner';
     const used = details.seatsUsed != null ? details.seatsUsed : store.getSeats().length;
     const limit = details.seatLimit != null ? details.seatLimit : (store.organization && store.organization.seatLimit) || 0;
     const bodyHTML = `
-      <div style="display:flex;flex-direction:column;gap:14px;padding:6px 0;">
+      <div id="seat-limit-prompt" style="display:flex;flex-direction:column;gap:14px;padding:6px 0;">
         <div style="padding:14px 16px;background:var(--color-bg-secondary);border-radius:var(--radius-md);border:1px solid var(--color-border-secondary);">
           <div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:4px;">Seats used</div>
           <div style="font-size:22px;font-weight:800;color:var(--sf-error-600);">${esc(used)} / ${esc(limit)}</div>

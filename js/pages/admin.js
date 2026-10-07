@@ -171,8 +171,7 @@ export function renderAdminPage(container) {
 
   function openPlanEditor(lib) {
     const p = overview.pricing;
-    const customOptions = [];
-    for (let s = p.custom.minSeats; s <= p.custom.maxSeats; s += p.custom.step) customOptions.push(s);
+    const perSeat = p.custom.pricePerSeat || (p.custom.pricePerBlock / p.custom.blockSeats);
     const id = `sf_admin_plan_${Date.now()}`;
     window[id] = async (save) => {
       if (!save) { delete window[id]; modal.close(); return; }
@@ -197,8 +196,10 @@ export function renderAdminPage(container) {
           <select class="input" id="ap-plan" onchange="document.getElementById('ap-custom').style.display=this.value==='custom'?'block':'none';document.getElementById('ap-demo').style.display=this.value==='demo'?'block':'none';">
             ${['free', 'basic', 'custom', 'demo'].map(k => `<option value="${k}" ${lib.plan === k ? 'selected' : ''}>${k}</option>`).join('')}
           </select></div>
-        <div class="form-group" id="ap-custom" style="margin:0;display:${lib.plan === 'custom' ? 'block' : 'none'};"><label class="form-label">Custom seats</label>
-          <select class="input" id="ap-seats">${customOptions.map(s => `<option value="${s}" ${lib.seatLimit === s ? 'selected' : ''}>${s} seats — ${inr((s / p.custom.blockSeats) * p.custom.pricePerBlock)}</option>`).join('')}</select></div>
+        <div class="form-group" id="ap-custom" style="margin:0;display:${lib.plan === 'custom' ? 'block' : 'none'};"><label class="form-label">Custom seats (${p.custom.minSeats}–${p.custom.maxSeats})</label>
+          <input class="input" id="ap-seats" type="number" min="${p.custom.minSeats}" max="${p.custom.maxSeats}" value="${lib.plan === 'custom' ? lib.seatLimit : p.custom.minSeats}"
+            oninput="const n=parseInt(this.value,10); document.getElementById('ap-seats-price').textContent = n>0 ? '₹' + Math.round(n*${perSeat}).toLocaleString('en-IN') : '';" />
+          <div style="font-size:12px;color:var(--color-text-tertiary);margin-top:4px;">List price: <strong id="ap-seats-price">${inr((lib.plan === 'custom' ? lib.seatLimit : p.custom.minSeats) * perSeat)}</strong></div></div>
         <div class="form-group" id="ap-demo" style="margin:0;display:${lib.plan === 'demo' ? 'block' : 'none'};"><label class="form-label">Demo seats</label>
           <input class="input" id="ap-demo-seats" type="number" min="1" max="5000" value="${lib.plan === 'demo' ? lib.seatLimit : p.basic.seats}" /></div>
         <div class="form-group" style="margin:0;"><label class="form-label">Status</label>

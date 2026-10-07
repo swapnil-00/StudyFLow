@@ -114,6 +114,13 @@ export function renderFloors(container) {
       return;
     }
     const defaultFloorId = floorId || floors_[0].id;
+    // Next free seat number in this branch, and how many seats the plan still allows
+    const branchSeats = store.getSeatsForBranch ? store.getSeatsForBranch(branchId) : store.getSeats();
+    const nextSeatNumber = branchSeats.reduce((m, s) => Math.max(m, parseInt(s.label || s.number, 10) || 0), 0) + 1;
+    const org = store.organization || {};
+    const planLimit = Number(org.seatLimit || org.seat_limit) || 0;
+    const seatsLeft = planLimit > 0 ? Math.max(0, planLimit - store.getSeats().length) : null;
+    const seatsLeftNote = seatsLeft === null ? '' : ` (your plan has ${seatsLeft} seat${seatsLeft === 1 ? '' : 's'} left)`;
 
     modal.open('Add Room & Populate Seats', `
       <div style="display:flex;flex-direction:column;gap:var(--space-4);">
@@ -131,16 +138,16 @@ export function renderFloors(container) {
         <div class="grid-2">
           <div class="form-group">
             <label class="form-label">Total Seats in Room <span class="required">*</span></label>
-            <input type="number" class="input" id="room-seat-count" value="68" min="1" max="500">
+            <input type="number" class="input" id="room-seat-count" placeholder="e.g. 40" min="1" max="500" oninput="const s=document.getElementById('room-seat-range'); const n=parseInt(this.value,10), st=parseInt(document.getElementById('room-seat-start').value,10)||1; if(s) s.textContent = n>0 ? 'Seats ' + st + ' to ' + (st+n-1) : 'Seats are numbered from here';">
             <span style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-top:2px;display:block;">
-              Direct seat capacity (no formula needed)
+              Number of seats to create in this room${seatsLeftNote}
             </span>
           </div>
           <div class="form-group">
             <label class="form-label">Starting Seat Number</label>
-            <input type="number" class="input" id="room-seat-start" value="1" min="1">
-            <span style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-top:2px;display:block;">
-              Default: 1 (seats 1 to 68)
+            <input type="number" class="input" id="room-seat-start" value="${nextSeatNumber}" min="1">
+            <span id="room-seat-range" style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-top:2px;display:block;">
+              Seats are numbered from here
             </span>
           </div>
         </div>
@@ -167,12 +174,18 @@ export function renderFloors(container) {
   window.confirmAddRoom = async function() {
     const floorId = document.getElementById('room-floor')?.value;
     const name = document.getElementById('room-name')?.value?.trim();
-    const seatCount = parseInt(document.getElementById('room-seat-count')?.value || 68);
-    const startNum = parseInt(document.getElementById('room-seat-start')?.value || 1);
+    const seatCount = parseInt(document.getElementById('room-seat-count')?.value, 10);
+    const startNum = parseInt(document.getElementById('room-seat-start')?.value, 10) || 1;
     const preset = document.getElementById('room-layout-preset')?.value || 'blueprint';
 
     if (!name) { toast.show('Room name is required', 'error'); return; }
-    if (!seatCount || seatCount <= 0) { toast.show('Please enter a valid seat count', 'error'); return; }
+    if (!seatCount || seatCount <= 0) { toast.show('Enter how many seats this room has', 'error'); document.getElementById('room-seat-count')?.focus(); return; }
+    const org = store.organization || {};
+    const planLimit = Number(org.seatLimit || org.seat_limit) || 0;
+    if (planLimit > 0 && store.getSeats().length + seatCount > planLimit) {
+      app.showSeatLimitPrompt(null, { seatLimit: planLimit, seatsUsed: store.getSeats().length, requested: seatCount });
+      return;
+    }
 
     try {
       const room = await store.addRoom({

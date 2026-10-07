@@ -41,7 +41,7 @@ export function renderLanding(container) {
                 ${icons.sun}
               </button>
               <button class="btn btn-ghost btn-sm" onclick="app.openLoginModal()">Sign In</button>
-              <button class="btn btn-primary btn-sm" onclick="app.openContactModal()">⚡ Book a Demo</button>
+              <a class="btn btn-primary btn-sm" href="#/signup">Start free</a>
             </div>
           </div>
         </header>
@@ -63,9 +63,9 @@ export function renderLanding(container) {
             </p>
 
             <div class="sf-hero-cta-group">
-              <button class="btn btn-primary btn-lg" onclick="app.openContactModal()" style="padding:14px 28px;font-size:15px;font-weight:700;box-shadow:0 8px 24px rgba(97,114,243,0.35);">
-                ✨ Book a Demo / Contact Sales
-              </button>
+              <a class="btn btn-primary btn-lg" href="#/signup" style="padding:14px 28px;font-size:15px;font-weight:700;box-shadow:0 8px 24px rgba(97,114,243,0.35);">
+                ✨ Start free with 5 seats
+              </a>
               <button class="btn btn-secondary btn-lg" onclick="app.navigate('/dashboard')" style="padding:14px 24px;font-size:15px;">
                 🚀 Explore Live Interactive App
               </button>
@@ -268,9 +268,9 @@ export function renderLanding(container) {
                 <h3 style="font-size:22px;font-weight:800;color:var(--color-text-primary);margin-bottom:8px;">Ready to modernize your study hall?</h3>
                 <p style="font-size:14px;color:var(--color-text-secondary);margin-bottom:24px;">Manage students, create visual interactive seat layouts, collect payments, and send instant WhatsApp receipts in seconds.</p>
                 <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
-                  <button class="btn btn-primary btn-lg" onclick="app.openContactModal()">
-                    🚀 Book a Live Demo / Contact Us
-                  </button>
+                  <a class="btn btn-primary btn-lg" href="#/signup">
+                    🚀 Create a free library
+                  </a>
                   <button class="btn btn-secondary btn-lg" onclick="app.openLoginModal()">
                     🔐 Sign In to Existing Library
                   </button>
@@ -340,14 +340,14 @@ export function renderLanding(container) {
               <div class="sf-price-card">
                 <div class="sf-price-header">
                   <div class="sf-plan-name">Custom</div>
-                  <p class="sf-plan-desc">More than <span data-pricing="basic-seats">100</span> seats? Pay the same rate for every block of <span data-pricing="block-seats">100</span>.</p>
+                  <p class="sf-plan-desc">More than <span data-pricing="basic-seats">100</span> seats? Choose exactly how many you need, at the same rate as Basic.</p>
                   <div class="sf-price-amount">
-                    <span class="sf-price-val" data-pricing="basic-price">₹5,000</span>
-                    <span class="sf-price-period">per <span data-pricing="block-seats">100</span> seats, one-time</span>
+                    <span class="sf-price-val" data-pricing="per-seat">₹50</span>
+                    <span class="sf-price-period">per seat, one-time</span>
                   </div>
                 </div>
                 <div class="sf-plan-limits">
-                  <strong><span data-pricing="custom-min">200</span> – <span data-pricing="custom-max">5,000</span> Seats</strong> · Multiple branches
+                  <strong><span data-pricing="custom-min">101</span> – <span data-pricing="custom-max">5,000</span> Seats</strong> · Multiple branches
                 </div>
                 <ul class="sf-plan-features">
                   <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Everything in Basic</li>
@@ -500,9 +500,9 @@ export function renderLanding(container) {
               Join 250+ reading rooms and libraries boosting their seat occupancy and fee collections with StudyFlow.
             </p>
             <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
-              <button class="btn btn-lg" onclick="app.openContactModal()" style="background:white;color:var(--color-primary);font-weight:700;padding:14px 28px;">
-                ✨ Book a Live Demo
-              </button>
+              <a class="btn btn-lg" href="#/signup" style="background:white;color:var(--color-primary);font-weight:700;padding:14px 28px;">
+                ✨ Start free
+              </a>
               <button class="btn btn-lg" onclick="app.openLoginModal()" style="background:rgba(255,255,255,0.15);color:white;border:1px solid rgba(255,255,255,0.3);padding:14px 24px;">
                 🔐 Existing Library Sign In
               </button>
@@ -529,7 +529,6 @@ export function renderLanding(container) {
                 <a href="#features" onclick="scrollToSection(event, 'features')">Seat Map</a>
                 <a href="#features" onclick="scrollToSection(event, 'features')">WhatsApp Invoicing</a>
                 <a href="#pricing" onclick="scrollToSection(event, 'pricing')">Pricing Plans</a>
-                <a href="javascript:void(0)" onclick="app.openContactModal()">Book a Demo</a>
               </div>
               <div class="sf-footer-col">
                 <div class="sf-footer-col-title">Account</div>
@@ -592,6 +591,7 @@ export function renderLanding(container) {
           'basic-seats': num(p.basic.seats),
           'basic-price': inr(p.basic.price),
           'block-seats': num(p.custom.blockSeats),
+          'per-seat': inr(p.custom.pricePerSeat || (p.custom.pricePerBlock / p.custom.blockSeats)),
           'custom-min': num(p.custom.minSeats),
           'custom-max': num(p.custom.maxSeats),
           'price-200': inr((200 / p.custom.blockSeats) * p.custom.pricePerBlock),

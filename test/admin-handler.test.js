@@ -96,7 +96,7 @@ describe('Developer Lab actions', () => {
 
   test('set_plan validates custom seats and status', async () => {
     const db = fakeDb([...baseAnswers(adminSession()), [/FROM organizations WHERE id = \$1$/, { rows: [libRow()] }]]);
-    const bad = await call(adminHandler, db, { body: { action: 'set_plan', orgId: 'ORG-9', plan: 'custom', seats: 150 }, headers: COOKIE });
+    const bad = await call(adminHandler, db, { body: { action: 'set_plan', orgId: 'ORG-9', plan: 'custom', seats: 50 }, headers: COOKIE });
     assert.equal(bad.statusCode, 400);
     const badStatus = await call(adminHandler, db, { body: { action: 'set_plan', orgId: 'ORG-9', status: 'deleted' }, headers: COOKIE });
     assert.equal(badStatus.statusCode, 400);
