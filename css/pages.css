@@ -2620,3 +2620,13 @@ tbody td {
 .auth-switch-link:hover {
   text-decoration: underline;
 }
+
+/* ─── Line height for large text ──────────────────────────────────────
+   body sets a fixed line-height (var(--lh-md) = 1.35rem), which large text inherits as a
+   pixel value: a 34px heading that wraps would draw its two lines on top of each other.
+   Titles get a proportional line-height instead. :where() keeps the landing rule at zero
+   specificity, so titles that set their own (e.g. .sf-hero-title) keep it. */
+.sf-section-title { line-height: 1.2; }
+:where(.sf-landing-wrapper) :where(h1, h2, h3, h4, h5) { line-height: 1.25; }
+.page-title,
+.auth-title { line-height: 1.25; }
