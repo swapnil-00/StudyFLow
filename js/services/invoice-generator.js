@@ -350,7 +350,7 @@ const invoiceGenerator = {
       <div class="sf-invoice-sheet" id="invoice-sheet-${esc(doc.id)}" style="
         background: #ffffff;
         color: #181d27;
-        font-family: 'Inter', -apple-system, sans-serif;
+        font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
         padding: 36px 40px;
         border-radius: 12px;
         box-shadow: 0 4px 20px rgba(0,0,0,0.06);
@@ -580,7 +580,7 @@ const invoiceGenerator = {
         <title>${esc(titleParts)}</title>
         <meta name="author" content="StudyFlow for ${esc(doc.branchName || 'library')}">
         <meta name="description" content="${esc(doc.documentType === 'receipt' ? 'Payment receipt' : 'Tax invoice')} ${esc(doc.documentNumber)}${doc.verificationCode ? `, verification code ${esc(doc.verificationCode)}` : ''}${doc.verifyUrl ? `, verify at ${esc(doc.verifyUrl)}` : ''}">
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
         <style>
           @media print {
             body { margin: 0; padding: 20px; background: #fff !important; }

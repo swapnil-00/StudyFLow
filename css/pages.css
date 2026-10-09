@@ -223,7 +223,7 @@
   z-index: 2; 
 }
 .seat.selected { 
-  box-shadow: 0 0 0 2px var(--sf-indigo-400), 0 0 12px rgba(94, 106, 210, 0.4); 
+  box-shadow: 0 0 0 2px var(--sf-indigo-400), 0 0 12px rgba(15, 118, 110, 0.4); 
   z-index: 3; 
 }
 .seat.highlighted { 
@@ -408,6 +408,9 @@ tbody td {
   color: var(--color-text-primary);
   vertical-align: middle;
 }
+/* Scrollable tables keep each cell on one line; the container scrolls sideways instead */
+.table-scroll th,
+.table-scroll td { white-space: nowrap; }
 .student-cell {
   display: flex;
   align-items: center;
@@ -912,7 +915,7 @@ tbody td {
 .input:focus, .select:focus, .textarea:focus {
   outline: none;
   border-color: var(--sf-indigo-500);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.1);
 }
 .select { background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e"); background-repeat: no-repeat; background-position: right 0.5rem center; background-size: 1.2em 1.2em; padding-right: 2.5rem; }
 
@@ -1176,12 +1179,12 @@ tbody td {
 
 /* Occupancy Status Color Variations */
 .floor-plan-seat.occupied {
-  background: #1e1b4b;
-  border-color: #6366f1;
+  background: #06332f;
+  border-color: #0f766e;
 }
 .floor-plan-seat.occupied .seat-led {
-  background: #818cf8;
-  box-shadow: 0 0 6px #6366f1;
+  background: #5fb8a8;
+  box-shadow: 0 0 6px #0f766e;
 }
 
 .floor-plan-seat.reserved {
@@ -1586,11 +1589,11 @@ tbody td {
   padding: 96px 0 64px 0;
   text-align: center;
   position: relative;
-  background: radial-gradient(circle at 50% -10%, rgba(94, 106, 210, 0.16) 0%, transparent 60%);
+  background: radial-gradient(circle at 50% -10%, rgba(15, 118, 110, 0.16) 0%, transparent 60%);
 }
 
 [data-theme="dark"] .sf-hero-section {
-  background: radial-gradient(circle at 50% -10%, rgba(94, 106, 210, 0.22) 0%, rgba(8, 9, 10, 0) 70%);
+  background: radial-gradient(circle at 50% -10%, rgba(15, 118, 110, 0.22) 0%, rgba(8, 9, 10, 0) 70%);
 }
 
 .sf-hero-inner {
@@ -1649,7 +1652,7 @@ tbody td {
 }
 
 .sf-gradient-text {
-  background: linear-gradient(135deg, #ffffff 30%, #a5b4fc 70%, #5e6ad2 100%);
+  background: linear-gradient(135deg, #ffffff 30%, #5fb8a8 70%, #0f766e 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -1657,7 +1660,7 @@ tbody td {
 }
 
 [data-theme="light"] .sf-gradient-text {
-  background: linear-gradient(135deg, #121417 30%, #4338ca 70%, #5e6ad2 100%);
+  background: linear-gradient(135deg, #121417 30%, #0b5a54 70%, #0f766e 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -2022,7 +2025,7 @@ tbody td {
 
 .sf-price-card.featured {
   border-color: var(--sf-indigo-500);
-  box-shadow: 0 0 0 1px var(--sf-indigo-500), 0 12px 32px -8px rgba(94, 106, 210, 0.25), inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
+  box-shadow: 0 0 0 1px var(--sf-indigo-500), 0 12px 32px -8px rgba(15, 118, 110, 0.25), inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
 }
 
 .sf-popular-ribbon {
@@ -2038,7 +2041,7 @@ tbody td {
   text-transform: uppercase;
   padding: 2px 10px;
   border-radius: var(--radius-full);
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.2), 0 2px 6px rgba(94, 106, 210, 0.35);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.2), 0 2px 6px rgba(15, 118, 110, 0.35);
 }
 
 .sf-plan-name {
@@ -2210,7 +2213,7 @@ tbody td {
 /* Bottom CTA */
 .sf-bottom-cta {
   padding: 72px 0;
-  background: radial-gradient(circle at 50% 0%, rgba(94, 106, 210, 0.2) 0%, rgba(8, 9, 10, 0.95) 100%);
+  background: radial-gradient(circle at 50% 0%, rgba(15, 118, 110, 0.2) 0%, rgba(8, 9, 10, 0.95) 100%);
   border-top: 1px solid var(--color-border-primary);
   color: #ffffff;
 }
@@ -2383,7 +2386,7 @@ tbody td {
 .auth-logo {
   width: 52px;
   height: 52px;
-  background: linear-gradient(135deg, #6172f3 0%, #4338ca 100%);
+  background: linear-gradient(135deg, #0f766e 0%, #0b5a54 100%);
   border-radius: 14px;
   display: inline-flex;
   align-items: center;
@@ -2392,7 +2395,7 @@ tbody td {
   font-weight: 800;
   color: #ffffff;
   margin-bottom: 16px;
-  box-shadow: 0 8px 20px rgba(97, 114, 243, 0.35);
+  box-shadow: 0 8px 20px rgba(15, 118, 110, 0.35);
 }
 
 .auth-title {

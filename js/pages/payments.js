@@ -218,7 +218,7 @@ export function renderPayments(container) {
                   <tr style="${isVoided ? 'opacity:0.55;background:var(--color-bg-secondary);' : ''}">
                     <td>
                       <div class="student-cell" style="cursor:pointer;" onclick="app.navigate('/student', {id:'${escAttr(student?.id || p.studentId)}'})">
-                        <div class="avatar avatar-sm" style="background:${escAttr(student?.avatarColor || student?.avatar || '#6172f3')};">${utils.initials(student?.name || 'Student')}</div>
+                        <div class="avatar avatar-sm" style="background:${escAttr(student?.avatarColor || student?.avatar || '#0f766e')};">${utils.initials(student?.name || 'Student')}</div>
                         <div>
                           <div class="student-name">${esc(student?.name || 'Student ' + (p.studentId || '').slice(-4))}</div>
                           <div class="student-id">${esc(student?.phone || p.studentId || '')}</div>
@@ -300,7 +300,7 @@ export function renderPayments(container) {
                 <tr style="cursor:pointer;" onclick="app.navigate('/student', {id:'${escAttr(d.student?.id)}'})">
                   <td>
                     <div class="student-cell">
-                      <div class="avatar avatar-sm" style="background:${escAttr(d.student?.avatarColor || d.student?.avatar || '#6172f3')};">${utils.initials(d.student?.name || 'Student')}</div>
+                      <div class="avatar avatar-sm" style="background:${escAttr(d.student?.avatarColor || d.student?.avatar || '#0f766e')};">${utils.initials(d.student?.name || 'Student')}</div>
                       <div>
                         <div class="student-name">${esc(d.student?.name || '—')}</div>
                         <div style="font-size:var(--text-xs);color:var(--color-text-tertiary);">${esc(d.student?.phone || '')}</div>

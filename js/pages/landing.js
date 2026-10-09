@@ -63,7 +63,7 @@ export function renderLanding(container) {
             </p>
 
             <div class="sf-hero-cta-group">
-              <a class="btn btn-primary btn-lg" href="#/signup" style="padding:14px 28px;font-size:15px;font-weight:700;box-shadow:0 8px 24px rgba(97,114,243,0.35);">
+              <a class="btn btn-primary btn-lg" href="#/signup" style="padding:14px 28px;font-size:15px;font-weight:700;box-shadow:0 8px 24px rgba(15, 118, 110,0.35);">
                 ✨ Start free with 5 seats
               </a>
               <button class="btn btn-secondary btn-lg" onclick="app.navigate('/dashboard')" style="padding:14px 24px;font-size:15px;">
@@ -135,7 +135,7 @@ export function renderLanding(container) {
                     </div>
                     <div style="display:flex;gap:12px;margin-top:10px;font-size:11px;color:var(--color-text-tertiary);">
                       <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;border-radius:2px;background:#10b981;"></span> Available</span>
-                      <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;border-radius:2px;background:#6366f1;"></span> Occupied</span>
+                      <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;border-radius:2px;background:#0f766e;"></span> Occupied</span>
                       <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;border-radius:2px;background:#f59e0b;"></span> Reserved</span>
                     </div>
                   </div>
@@ -210,7 +210,7 @@ export function renderLanding(container) {
             <div class="grid-3" style="gap:20px;">
               <!-- Feature 1 -->
               <div class="sf-feature-card">
-                <div class="sf-feat-icon" style="background:rgba(99,102,241,0.12);color:var(--color-primary);">🪑</div>
+                <div class="sf-feat-icon" style="background:rgba(15, 118, 110,0.12);color:var(--color-primary);">🪑</div>
                 <h3 class="sf-feat-title">Visual Seat Map & Grid Visualizer</h3>
                 <p class="sf-feat-desc">View all floors and rooms in an interactive color-coded grid. Filter by available, occupied, reserved, or expiring seats in 1 click.</p>
               </div>
@@ -333,7 +333,7 @@ export function renderLanding(container) {
                   <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> 1-click WhatsApp reminders & receipts</li>
                   <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Priority WhatsApp support</li>
                 </ul>
-                <a class="btn btn-primary w-full" href="#/signup" style="box-shadow:0 4px 16px rgba(97,114,243,0.4);">Start free, upgrade in the app</a>
+                <a class="btn btn-primary w-full" href="#/signup" style="box-shadow:0 4px 16px rgba(15, 118, 110,0.4);">Start free, upgrade in the app</a>
               </div>
 
               <!-- Custom -->
@@ -392,7 +392,7 @@ export function renderLanding(container) {
                 <div class="sf-stars">★★★★★</div>
                 <p class="sf-quote">"We used to manage 180 seats across 2 floors using paper registers. With StudyFlow, our overdue dues dropped by 90% in just one month thanks to 1-click WhatsApp receipts and reminders."</p>
                 <div class="sf-author">
-                  <div class="avatar avatar-md" style="background:#6366f1;">AM</div>
+                  <div class="avatar avatar-md" style="background:#0f766e;">AM</div>
                   <div>
                     <div class="sf-author-name">Anand Mishra</div>
                     <div class="sf-author-role">Owner, Prerna Study Library (Pune)</div>

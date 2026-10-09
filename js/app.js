@@ -84,7 +84,7 @@ class App {
   }
 
   _render() {
-    const user = store.currentUser || { name: 'Admin', email: 'admin@studyflow.in', role: 'owner', avatarColor: '#6172f3' };
+    const user = store.currentUser || { name: 'Admin', email: 'admin@studyflow.in', role: 'owner', avatarColor: '#0f766e' };
     const org = store.organization || { name: 'StudyFlow Library', plan: 'starter' };
     const isAuth = store.isAuthenticated();
     const initials = utils.initials(user.name || 'User');
@@ -187,6 +187,18 @@ class App {
             </div>
           </div>
         </main>
+
+        <nav class="mobile-tabs" aria-label="Primary">
+          ${[
+            { route: '/dashboard', label: 'Home', icon: 'grid' },
+            { route: '/seat-map', label: 'Seats', icon: 'map' },
+            { route: '/students', label: 'Students', icon: 'users' },
+            { route: '/payments', label: 'Payments', icon: 'dollar-sign' },
+          ].map(t => `
+            <button type="button" class="mobile-tab" data-route="${t.route}" onclick="app.navigate('${t.route}')">${icons[t.icon] || ''}<span>${t.label}</span></button>
+          `).join('')}
+          <button type="button" class="mobile-tab" onclick="app.openMobileSidebar()">${icons.menu}<span>More</span></button>
+        </nav>
       </div>
 
       <div id="toast-container" class="toast-container"></div>
@@ -399,7 +411,7 @@ class App {
   }
 
   _updateActiveNav(path) {
-    document.querySelectorAll('.nav-item').forEach(el => {
+    document.querySelectorAll('.nav-item, .mobile-tab[data-route]').forEach(el => {
       el.classList.toggle('active', el.dataset.route === path);
     });
   }
@@ -646,7 +658,7 @@ class App {
     const org = store.organization || { name: 'My Library' };
     const bodyHTML = `
       <div style="display:flex;flex-direction:column;gap:var(--space-5);">
-        <div style="padding:var(--space-3) var(--space-4);background:rgba(97, 114, 243, 0.08);border:1px solid rgba(97, 114, 243, 0.2);border-radius:var(--radius-lg);display:flex;align-items:center;gap:12px;">
+        <div style="padding:var(--space-3) var(--space-4);background:rgba(15, 118, 110, 0.08);border:1px solid rgba(15, 118, 110, 0.2);border-radius:var(--radius-lg);display:flex;align-items:center;gap:12px;">
           <div style="font-size:24px;">🚀</div>
           <div>
             <div style="font-weight:var(--fw-bold);color:var(--color-primary);font-size:var(--text-sm);">Welcome to StudyFlow SaaS!</div>

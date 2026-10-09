@@ -1637,7 +1637,7 @@ function formatINR(amount) {
 
 function getAvatarColor(name) {
   const colors = [
-    '#6172f3', '#444ce7', '#3538cd',
+    '#0f766e', '#444ce7', '#3538cd',
     '#17b26a', '#079455', '#067647',
     '#f79009', '#dc6803', '#b54708',
     '#f04438', '#d92d20', '#b42318',

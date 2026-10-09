@@ -1,37 +1,38 @@
-/* ─── StudyFlow Design Tokens (Linear-Inspired Design System) ─── */
+/* ─── StudyFlow Design Tokens · Ledger theme ───
+   Brand scale keeps its historical --sf-indigo-* names but now holds the Ledger teal. */
 :root {
   /* ── Brand Colors (Linear Violet / Indigo Palette) ───────────────────── */
-  --sf-indigo-25: #f9faff;
-  --sf-indigo-50: #f0f3ff;
-  --sf-indigo-100: #e0e6fe;
-  --sf-indigo-200: #c7d2fe;
-  --sf-indigo-300: #a5b4fc;
-  --sf-indigo-400: #818cf8;
-  --sf-indigo-500: #5e6ad2;  /* Linear Signature Indigo */
-  --sf-indigo-600: #4f52b2;
-  --sf-indigo-700: #4338ca;
-  --sf-indigo-800: #3730a3;
-  --sf-indigo-900: #312e81;
-  --sf-indigo-950: #1e1b4b;
+  --sf-indigo-25: #f3faf8;
+  --sf-indigo-50: #e6f4f1;
+  --sf-indigo-100: #ccebe4;
+  --sf-indigo-200: #99d5c9;
+  --sf-indigo-300: #5fb8a8;
+  --sf-indigo-400: #2a9d8f;
+  --sf-indigo-500: #0f766e;  /* Linear Signature Indigo */
+  --sf-indigo-600: #0b5a54;
+  --sf-indigo-700: #0a4d48;
+  --sf-indigo-800: #083f3b;
+  --sf-indigo-900: #06332f;
+  --sf-indigo-950: #032220;
 
-  --color-primary: #5e6ad2;
-  --color-primary-hover: #6f7be2;
-  --color-primary-light: rgba(94, 106, 210, 0.1);
-  --color-primary-glow: rgba(94, 106, 210, 0.25);
+  --color-primary: #0f766e;
+  --color-primary-hover: #0b5a54;
+  --color-primary-light: rgba(15, 118, 110, 0.1);
+  --color-primary-glow: rgba(15, 118, 110, 0.22);
 
   /* ── Grays & Neutrals ─────────────────────────────────────────────── */
   --color-gray-25: #fcfcfd;
-  --color-gray-50: #f8f9fa;
-  --color-gray-100: #f1f3f5;
-  --color-gray-200: #e9ecef;
-  --color-gray-300: #dee2e6;
-  --color-gray-400: #adb5bd;
-  --color-gray-500: #868e96;
-  --color-gray-600: #495057;
-  --color-gray-700: #343a40;
-  --color-gray-800: #212529;
-  --color-gray-900: #121417;
-  --color-gray-950: #08090a;
+  --color-gray-50: #f9fafb;
+  --color-gray-100: #f2f4f7;
+  --color-gray-200: #e4e7ec;
+  --color-gray-300: #d0d5dd;
+  --color-gray-400: #98a2b3;
+  --color-gray-500: #667085;
+  --color-gray-600: #475467;
+  --color-gray-700: #344054;
+  --color-gray-800: #1d2939;
+  --color-gray-900: #101828;
+  --color-gray-950: #0c111d;
 
   --sf-gray-25: var(--color-gray-25);
   --sf-gray-50: var(--color-gray-50);
@@ -91,89 +92,90 @@
   --sf-orange-700: #c2410c;
 
   /* ── Seat Status Colors (Light Theme) ─────────────────────────────── */
-  --seat-available-bg: #f0fdf4;
-  --seat-available-border: #bbf7d0;
-  --seat-available-text: #15803d;
-  --seat-available-dot: #22c55e;
+  --seat-available-bg: #ffffff;
+  --seat-available-border: #86c9bd;
+  --seat-available-text: #0f766e;
+  --seat-available-dot: #2a9d8f;
 
-  --seat-occupied-bg: #eef2ff;
-  --seat-occupied-border: #c7d2fe;
-  --seat-occupied-text: #4338ca;
-  --seat-occupied-dot: #6366f1;
+  --seat-occupied-bg: #e6f4f1;
+  --seat-occupied-border: #0f766e;
+  --seat-occupied-text: #0b5a54;
+  --seat-occupied-dot: #0f766e;
 
-  --seat-reserved-bg: #fff7ed;
-  --seat-reserved-border: #fed7aa;
-  --seat-reserved-text: #c2410c;
-  --seat-reserved-dot: #f97316;
+  --seat-reserved-bg: #eaf2ff;
+  --seat-reserved-border: #9db8e8;
+  --seat-reserved-text: #1e4fa8;
+  --seat-reserved-dot: #2e6bd6;
 
-  --seat-payment-pending-bg: #fffbeb;
-  --seat-payment-pending-border: #fde68a;
-  --seat-payment-pending-text: #b45309;
+  --seat-payment-pending-bg: #fef7e0;
+  --seat-payment-pending-border: #fcd58a;
+  --seat-payment-pending-text: #92400e;
   --seat-payment-pending-dot: #f59e0b;
 
-  --seat-payment-due-bg: #fef2f2;
-  --seat-payment-due-border: #fecaca;
-  --seat-payment-due-text: #b91c1c;
-  --seat-payment-due-dot: #ef4444;
+  --seat-payment-due-bg: #fef0e7;
+  --seat-payment-due-border: #f4b48f;
+  --seat-payment-due-text: #9a3412;
+  --seat-payment-due-dot: #c2410c;
 
-  --seat-expiring-bg: #fefce8;
-  --seat-expiring-border: #fef08a;
-  --seat-expiring-text: #a16207;
+  --seat-expiring-bg: #fffbeb;
+  --seat-expiring-border: #fbbf24;
+  --seat-expiring-text: #854d0e;
   --seat-expiring-dot: #eab308;
 
-  --seat-maintenance-bg: #f8fafc;
-  --seat-maintenance-border: #e2e8f0;
-  --seat-maintenance-text: #475569;
-  --seat-maintenance-dot: #94a3b8;
+  --seat-maintenance-bg: #f2f4f7;
+  --seat-maintenance-border: #d0d5dd;
+  --seat-maintenance-text: #667085;
+  --seat-maintenance-dot: #98a2b3;
 
-  --seat-blocked-bg: #0f172a;
-  --seat-blocked-border: #334155;
-  --seat-blocked-text: #94a3b8;
-  --seat-blocked-dot: #64748b;
+  --seat-blocked-bg: #e4e7ec;
+  --seat-blocked-border: #d0d5dd;
+  --seat-blocked-text: #475467;
+  --seat-blocked-dot: #475467;
 
   /* ── Semantic Tokens (Light Mode) ─────────────────────────────────── */
-  --color-bg-app: #f7f8f9;
+  --color-bg-app: #f6f7f9;
   --color-bg-primary: #ffffff;
-  --color-bg-secondary: #f4f5f6;
-  --color-bg-tertiary: #e9ecef;
-  --color-bg-hover: #f0f2f4;
-  --color-bg-active: #e4e7eb;
-  --color-bg-sidebar: #0e0f12;
-  --color-bg-sidebar-hover: rgba(255, 255, 255, 0.05);
-  --color-bg-sidebar-active: rgba(255, 255, 255, 0.09);
+  --color-bg-secondary: #f9fafb;
+  --color-bg-tertiary: #f2f4f7;
+  --color-bg-hover: #f2f4f7;
+  --color-bg-active: #e4e7ec;
+  --color-bg-sidebar: #ffffff;
+  --color-bg-sidebar-hover: #f2f4f7;
+  --color-bg-sidebar-active: #e6f4f1;
   --color-bg-brand: var(--sf-indigo-500);
   --color-bg-brand-hover: var(--sf-indigo-600);
-  --color-bg-overlay: rgba(8, 9, 10, 0.65);
+  --color-bg-overlay: rgba(16, 24, 40, 0.55);
+  --color-bg-topbar: rgba(255, 255, 255, 0.92);
 
-  --color-text-primary: #121316;
-  --color-text-secondary: #5f6368;
-  --color-text-tertiary: #80868b;
-  --color-text-quaternary: #a0a6ac;
-  --color-text-disabled: #b0b6bc;
-  --color-text-placeholder: #9aa0a6;
+  --color-text-primary: #101828;
+  --color-text-secondary: #475467;
+  --color-text-tertiary: #667085;
+  --color-text-quaternary: #98a2b3;
+  --color-text-disabled: #98a2b3;
+  --color-text-placeholder: #98a2b3;
   --color-text-on-brand: #ffffff;
-  --color-text-sidebar: rgba(255, 255, 255, 0.65);
-  --color-text-sidebar-active: #ffffff;
+  --color-text-sidebar: #344054;
+  --color-text-sidebar-active: #0f766e;
   --color-text-brand: var(--sf-indigo-500);
-  --color-text-success: #10b981;
-  --color-text-warning: #f59e0b;
-  --color-text-error: #ef4444;
+  --color-text-success: #067647;
+  --color-text-warning: #b54708;
+  --color-text-error: #b42318;
 
-  --color-border-primary: rgba(0, 0, 0, 0.08);
-  --color-border-secondary: rgba(0, 0, 0, 0.05);
-  --color-border-strong: rgba(0, 0, 0, 0.16);
+  --color-border-primary: #e4e7ec;
+  --color-border-secondary: #eaecf0;
+  --color-border-strong: #d0d5dd;
   --color-border-brand: var(--sf-indigo-500);
-  --color-border-error: #ef4444;
-  --color-border-sidebar: rgba(255, 255, 255, 0.07);
+  --color-border-error: #b42318;
+  --color-border-sidebar: #e4e7ec;
 
-  --color-icon-primary: #202124;
-  --color-icon-secondary: #5f6368;
-  --color-icon-tertiary: #9aa0a6;
+  --color-icon-primary: #101828;
+  --color-icon-secondary: #475467;
+  --color-icon-tertiary: #98a2b3;
   --color-icon-on-brand: #ffffff;
   --color-icon-brand: var(--sf-indigo-500);
 
   /* ── Typography & Tracking ────────────────────────────────────────── */
-  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
 
   --text-2xs: 0.6875rem; /* 11px */
@@ -224,27 +226,27 @@
 
   /* ── Linear Micro-Radii ───────────────────────────────────────────── */
   --radius-xs: 3px;
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
-  --radius-xl: 10px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
   --radius-2xl: 14px;
   --radius-3xl: 20px;
   --radius-full: 9999px;
 
   /* ── Linear Subtle Shadows & Highlights ────────────────────────────── */
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px -1px rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
-  --shadow-lg: 0 12px 24px -4px rgba(0, 0, 0, 0.1), 0 4px 8px -2px rgba(0, 0, 0, 0.04);
+  --shadow-xs: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow-sm: 0 1px 3px rgba(16, 24, 40, 0.08), 0 1px 2px -1px rgba(16, 24, 40, 0.05);
+  --shadow-md: 0 4px 12px -2px rgba(16, 24, 40, 0.08), 0 2px 6px -1px rgba(16, 24, 40, 0.04);
+  --shadow-lg: 0 12px 32px -4px rgba(16, 24, 40, 0.1), 0 4px 8px -2px rgba(16, 24, 40, 0.04);
   --shadow-xl: 0 20px 32px -6px rgba(0, 0, 0, 0.12), 0 8px 16px -4px rgba(0, 0, 0, 0.06);
   --shadow-2xl: 0 28px 56px -12px rgba(0, 0, 0, 0.2);
   --shadow-skeuomorphic: inset 0 1px 0 0 rgba(255, 255, 255, 0.8), 0 1px 2px rgba(0, 0, 0, 0.05);
 
   /* ── Layout Dimensions ────────────────────────────────────────────── */
-  --sidebar-width: 232px;
+  --sidebar-width: 248px;
   --sidebar-collapsed-width: 56px;
-  --topbar-height: 52px;
+  --topbar-height: 60px;
   --drawer-width: 440px;
 
   /* ── Linear Easing Transitions ────────────────────────────────────── */
@@ -255,15 +257,19 @@
 
 /* ─── Linear Obsidian Dark Mode (Default / Signature Theme) ───────── */
 [data-theme="dark"] {
+  --color-bg-topbar: rgba(15, 16, 17, 0.88);
+  --color-text-brand: #5fb8a8;
+  --color-icon-brand: #5fb8a8;
+  --color-primary-light: rgba(42, 157, 143, 0.16);
   --color-bg-app: #08090a;
   --color-bg-primary: #0f1011;
   --color-bg-secondary: #141517;
   --color-bg-tertiary: #1c1d20;
   --color-bg-hover: rgba(255, 255, 255, 0.05);
   --color-bg-active: rgba(255, 255, 255, 0.09);
-  --color-bg-sidebar: #08090a;
+  --color-bg-sidebar: #0b0f14;
   --color-bg-sidebar-hover: rgba(255, 255, 255, 0.05);
-  --color-bg-sidebar-active: rgba(255, 255, 255, 0.09);
+  --color-bg-sidebar-active: rgba(42, 157, 143, 0.14);
 
   --color-text-primary: #f7f8f8;
   --color-text-secondary: #8a8f98;
@@ -272,7 +278,7 @@
   --color-text-disabled: #383a40;
   --color-text-placeholder: #4b4e54;
   --color-text-sidebar: rgba(255, 255, 255, 0.65);
-  --color-text-sidebar-active: #ffffff;
+  --color-text-sidebar-active: #7fd1bc;
 
   --color-border-primary: rgba(255, 255, 255, 0.08);
   --color-border-secondary: rgba(255, 255, 255, 0.05);
@@ -289,10 +295,10 @@
   --seat-available-text: #34d399;
   --seat-available-dot: #10b981;
 
-  --seat-occupied-bg: rgba(94, 106, 210, 0.08);
-  --seat-occupied-border: rgba(94, 106, 210, 0.25);
-  --seat-occupied-text: #a5b4fc;
-  --seat-occupied-dot: #5e6ad2;
+  --seat-occupied-bg: rgba(42, 157, 143, 0.12);
+  --seat-occupied-border: rgba(42, 157, 143, 0.4);
+  --seat-occupied-text: #7fd1bc;
+  --seat-occupied-dot: #2a9d8f;
 
   --seat-reserved-bg: rgba(249, 115, 22, 0.08);
   --seat-reserved-border: rgba(249, 115, 22, 0.25);
