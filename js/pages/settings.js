@@ -34,8 +34,8 @@ export function renderSettings(container) {
 
     <div class="grid-2" style="gap:var(--space-5);align-items:start;">
       <!-- SaaS Account & Subscription -->
-      <div class="card" style="border:1.5px solid rgba(97, 114, 243, 0.3);">
-        <div class="card-header" style="background:rgba(97, 114, 243, 0.04);">
+      <div class="card" style="border:1.5px solid rgba(15, 118, 110, 0.3);">
+        <div class="card-header" style="background:rgba(15, 118, 110, 0.04);">
           <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;width:100%;">
             <span>SaaS Plan & Subscription</span>
             <div style="display:flex;gap:6px;align-items:center;">

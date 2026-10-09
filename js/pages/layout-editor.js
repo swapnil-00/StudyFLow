@@ -47,7 +47,7 @@ export function renderLayoutEditor(container, params = {}) {
       // Status color styles matching StudyFlow palette
       let style = "rounded=1;whiteSpace=wrap;html=1;arcSize=16;strokeWidth=2;fillColor=#14532d;strokeColor=#22c55e;fontColor=#ffffff;fontSize=13;fontStyle=1;shadow=1;";
       if (status === 'occupied') {
-        style = "rounded=1;whiteSpace=wrap;html=1;arcSize=16;strokeWidth=2;fillColor=#1e1b4b;strokeColor=#6366f1;fontColor=#ffffff;fontSize=13;fontStyle=1;shadow=1;";
+        style = "rounded=1;whiteSpace=wrap;html=1;arcSize=16;strokeWidth=2;fillColor=#06332f;strokeColor=#0f766e;fontColor=#ffffff;fontSize=13;fontStyle=1;shadow=1;";
       } else if (status === 'reserved') {
         style = "rounded=1;whiteSpace=wrap;html=1;arcSize=16;strokeWidth=2;fillColor=#431407;strokeColor=#f97316;fontColor=#ffffff;fontSize=13;fontStyle=1;shadow=1;";
       } else if (status === 'payment-due') {

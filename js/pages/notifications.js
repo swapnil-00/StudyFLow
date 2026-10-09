@@ -433,7 +433,7 @@ export function renderNotifications(container) {
             <div style="background:${n.read ? 'var(--color-bg-primary)' : 'var(--sf-indigo-50)'};border:1px solid ${n.read ? 'var(--color-border-secondary)' : 'var(--sf-indigo-200)'};border-radius:var(--radius-xl);padding:var(--space-4) var(--space-5);display:flex;align-items:flex-start;gap:var(--space-4);cursor:pointer;"
               onclick="readNotifItem('${n.id}')"
             >
-              <div style="width:36px;height:36px;border-radius:var(--radius-lg);background:rgba(97,114,243,0.1);color:var(--sf-indigo-600);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+              <div style="width:36px;height:36px;border-radius:var(--radius-lg);background:rgba(15, 118, 110,0.1);color:var(--sf-indigo-600);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
                 ${icons[n.icon] || icons.bell || '🔔'}
               </div>
               <div style="flex:1;">

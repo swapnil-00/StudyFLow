@@ -75,8 +75,8 @@ export function renderBillingPage(container, params = {}) {
     const over = used > limit;
     const barColor = over || pct >= 100 ? 'var(--sf-error-500)' : pct > 80 ? 'var(--sf-warning-500)' : 'var(--color-primary)';
     return `
-      <div class="card" style="border:1.5px solid rgba(97,114,243,0.3);">
-        <div class="card-header" style="background:rgba(97,114,243,0.04);">
+      <div class="card" style="border:1.5px solid rgba(15, 118, 110,0.3);">
+        <div class="card-header" style="background:rgba(15, 118, 110,0.04);">
           <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;width:100%;">
             <span>Current Plan</span>
             <div style="display:flex;gap:6px;">${statusBadge(sub)}<span class="badge badge-indigo">${esc(sub.planName.toUpperCase())}</span></div>

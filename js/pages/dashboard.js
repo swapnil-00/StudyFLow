@@ -48,7 +48,7 @@ export function renderDashboard(container) {
 
     <!-- KPI Cards -->
     <div class="grid-4" style="margin-bottom:var(--space-6);">
-      ${renderStatCard('Total Seats', stats.totalSeats, '', 'seat-count', '#eef4ff', '#6172f3', icons.map)}
+      ${renderStatCard('Total Seats', stats.totalSeats, '', 'seat-count', '#eef4ff', '#0f766e', icons.map)}
       ${renderStatCard('Occupied', stats.occupied, `${Math.round((stats.occupied / Math.max(stats.totalSeats, 1)) * 100)}% occupancy`, 'occupied', '#eef4ff', '#444ce7', icons.users)}
       ${renderStatCard('Available', stats.available, `${stats.available} unassigned`, 'available', '#ecfdf3', '#17b26a', icons.checkCircle)}
       ${renderStatCard("Today's Revenue", utils.formatINR(stats.todayRevenue), `${utils.formatINR(stats.monthRevenue)} this month`, 'revenue', '#fef0c7', '#f79009', icons['dollar-sign'])}
@@ -62,7 +62,7 @@ export function renderDashboard(container) {
     </div>
 
     <!-- WhatsApp & Invoice Automation Banner -->
-    <div style="background:linear-gradient(135deg, var(--sf-indigo-900) 0%, #1e1b4b 100%);color:white;border-radius:var(--radius-xl);padding:var(--space-4) var(--space-5);margin-bottom:var(--space-6);display:flex;align-items:center;justify-content:space-between;box-shadow:0 4px 14px rgba(0,0,0,0.08);">
+    <div style="background:linear-gradient(135deg, var(--sf-indigo-900) 0%, #06332f 100%);color:white;border-radius:var(--radius-xl);padding:var(--space-4) var(--space-5);margin-bottom:var(--space-6);display:flex;align-items:center;justify-content:space-between;box-shadow:0 4px 14px rgba(0,0,0,0.08);">
       <div style="display:flex;align-items:center;gap:var(--space-4);">
         <div style="width:44px;height:44px;background:rgba(255,255,255,0.12);border-radius:var(--radius-lg);display:flex;align-items:center;justify-content:center;color:#4ade80;">
           ${icons.bell}
